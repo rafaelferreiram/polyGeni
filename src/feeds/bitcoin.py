@@ -83,18 +83,21 @@ def estimate_probability_above(target_price: float, days: int, indicators: dict)
     """
     Estimate P(BTC price > target_price in `days` days).
     Uses log-normal distribution parameterised from recent history.
+    Drift is capped near zero for long horizons to avoid trend extrapolation.
     """
     from scipy.stats import norm
 
     S = indicators["current_price"]
-    mu = indicators["daily_drift"]
     sigma = indicators["daily_vol"]
 
     if sigma <= 0 or S <= 0 or target_price <= 0:
         return 0.5
 
+    # Cap daily drift to ±0.05% so recent momentum doesn't dominate
+    # long-horizon forecasts. Pure volatility dominates for multi-month bets.
+    mu = max(-0.0005, min(0.0005, indicators["daily_drift"]))
+
     # Log-normal: P(S_T > X) = 1 - N(d)
-    # d = (ln(X/S) - mu*T) / (sigma * sqrt(T))
     log_ratio = np.log(target_price / S)
     d = (log_ratio - mu * days) / (sigma * np.sqrt(days))
     prob = float(1 - norm.cdf(d))
