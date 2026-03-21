@@ -1,0 +1,194 @@
+:root {
+  --bg: #0d0d0f;
+  --surface: #16161a;
+  --border: #2a2a30;
+  --accent: #7f5af0;
+  --green: #2cb67d;
+  --red: #ef4565;
+  --yellow: #f2c94c;
+  --text: #fffffe;
+  --muted: #72757e;
+  --font: 'Inter', system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 14px;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 24px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.logo {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+button {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 14px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: background 0.15s;
+}
+button:hover { background: var(--border); }
+
+#btn-start-auto {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+#btn-start-auto:hover { opacity: 0.85; }
+
+.badge {
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+.badge-on  { background: rgba(44,182,125,0.15); color: var(--green); }
+.badge-off { background: rgba(114,117,126,0.15); color: var(--muted); }
+.badge-auto { background: rgba(127,90,240,0.2); color: var(--accent); }
+
+main { padding: 20px 24px; }
+
+.cards-row {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+}
+.card-label { color: var(--muted); font-size: 12px; margin-bottom: 6px; }
+.card-value { font-size: 20px; font-weight: 700; }
+
+.two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+}
+
+.panel h2 {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.scroll-list {
+  max-height: 340px;
+  overflow-y: auto;
+}
+
+.item {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 8px;
+  transition: border-color 0.15s;
+}
+.item:hover { border-color: var(--accent); }
+
+.item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 6px;
+}
+
+.item-question {
+  font-size: 13px;
+  font-weight: 500;
+  flex: 1;
+  margin-right: 10px;
+  line-height: 1.4;
+}
+
+.item-meta {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.tag {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-weight: 500;
+}
+.tag-bitcoin { background: rgba(242,201,76,0.12); color: var(--yellow); }
+.tag-sports  { background: rgba(44,182,125,0.12); color: var(--green); }
+.tag-events  { background: rgba(127,90,240,0.12); color: var(--accent); }
+.tag-yes     { background: rgba(44,182,125,0.12); color: var(--green); }
+.tag-no      { background: rgba(239,69,101,0.12); color: var(--red); }
+.tag-open    { background: rgba(127,90,240,0.12); color: var(--accent); }
+.tag-won     { background: rgba(44,182,125,0.15); color: var(--green); }
+.tag-lost    { background: rgba(239,69,101,0.15); color: var(--red); }
+
+.edge-bar {
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  margin-top: 8px;
+}
+.edge-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.green { color: var(--green); }
+.red   { color: var(--red); }
+.muted { color: var(--muted); }
+
+.reasoning {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 6px;
+  line-height: 1.5;
+}
+
+@media (max-width: 900px) {
+  .cards-row { grid-template-columns: repeat(3, 1fr); }
+  .two-col   { grid-template-columns: 1fr; }
+}

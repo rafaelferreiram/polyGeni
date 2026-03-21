@@ -1,0 +1,10 @@
+services:
+  polygeni:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./polygeni.db:/app/polygeni.db
+    restart: unless-stopped
