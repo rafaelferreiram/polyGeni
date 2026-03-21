@@ -198,10 +198,11 @@ async function loadThinking() {
     // Update cycle badge
     document.getElementById("cycle-badge").textContent = `Cycle #${goal.cycle}`;
 
-    // Update goal progress
+    // Update goal progress (uses full portfolio value)
     const pct = progress !== null ? Math.round(progress * 100) : 0;
+    const portfolio_value = data.portfolio_value ?? balance_usdc;
     document.getElementById("goal-fill").style.width = `${pct}%`;
-    document.getElementById("goal-pct").textContent = `${pct}% — $${fmt(balance_usdc)} of $${fmt(goal.target_usdc)}`;
+    document.getElementById("goal-pct").textContent = `${pct}% — $${fmt(portfolio_value)} of $${fmt(goal.target_usdc)}`;
 
     // Render log entries
     const el = document.getElementById("thinking-log");

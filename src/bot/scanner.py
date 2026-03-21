@@ -190,6 +190,6 @@ def get_thinking_log() -> list[dict]:
 def get_goal_info() -> dict:
     return {
         "target_usdc": TARGET_USDC,
-        "start_usdc": 13.25,  # balance when we set the goal
+        "start_usdc": 17.11,  # original funded balance (weekend start)
         "cycle": _cycle,
     }

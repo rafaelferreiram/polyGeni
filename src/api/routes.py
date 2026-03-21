@@ -73,21 +73,27 @@ def get_live_opportunities():
 
 
 @router.get("/thinking")
-def get_thinking():
+def get_thinking(db: Session = Depends(get_db)):
     """Returns bot decision log and goal progress."""
     goal = scanner.get_goal_info()
     try:
         balance = get_balance()
     except Exception:
-        balance = None
-    progress = None
-    if balance is not None:
-        span = goal["target_usdc"] - goal["start_usdc"]
-        gained = balance - goal["start_usdc"]
-        progress = round(max(0, min(1, gained / span)), 4) if span > 0 else 0
+        balance = 0.0
+
+    # Use full portfolio value (USDC + current position value) for progress
+    positions = db.query(Position).filter_by(is_open=True).all()
+    invested = sum(p.current_value or p.cost_basis for p in positions)
+    portfolio_value = balance + invested
+
+    span = goal["target_usdc"] - goal["start_usdc"]
+    gained = portfolio_value - goal["start_usdc"]
+    progress = round(max(0, min(1, gained / span)), 4) if span > 0 else 0
+
     return {
         "goal": goal,
         "balance_usdc": balance,
+        "portfolio_value": round(portfolio_value, 2),
         "progress": progress,
         "log": scanner.get_thinking_log(),
     }
