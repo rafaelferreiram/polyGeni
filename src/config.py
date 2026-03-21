@@ -5,6 +5,7 @@ load_dotenv()
 
 POLY_PRIVATE_KEY = os.getenv("POLY_PRIVATE_KEY", "")
 POLY_WALLET_ADDRESS = os.getenv("POLY_WALLET_ADDRESS", "")
+POLY_FUNDER_ADDRESS = os.getenv("POLY_FUNDER_ADDRESS", "")
 
 NEWS_API_KEY = os.getenv("NEWS_API_KEY", "")
 ODDS_API_KEY = os.getenv("ODDS_API_KEY", "")

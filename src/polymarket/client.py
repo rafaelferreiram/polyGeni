@@ -4,7 +4,7 @@ Handles authentication and order operations.
 """
 from py_clob_client.client import ClobClient
 from py_clob_client.clob_types import ApiCreds, OrderArgs, BalanceAllowanceParams, AssetType, PartialCreateOrderOptions
-from src.config import CLOB_HOST, POLY_PRIVATE_KEY, CHAIN_ID
+from src.config import CLOB_HOST, POLY_PRIVATE_KEY, CHAIN_ID, POLY_FUNDER_ADDRESS
 
 
 _client: ClobClient | None = None
@@ -13,11 +13,14 @@ _client: ClobClient | None = None
 def get_client() -> ClobClient:
     global _client
     if _client is None:
+        # signature_type=1 for Magic/email proxy wallets (Polymarket default)
+        # funder is the proxy contract address that holds the actual USDC
         _client = ClobClient(
             host=CLOB_HOST,
             key=POLY_PRIVATE_KEY,
             chain_id=CHAIN_ID,
-            signature_type=0,  # EOA wallet
+            signature_type=1,
+            funder=POLY_FUNDER_ADDRESS,
         )
         # Derive and set L2 API credentials automatically
         creds = _client.create_or_derive_api_creds()
