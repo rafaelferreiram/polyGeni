@@ -22,16 +22,20 @@
     <!-- Portfolio summary row -->
     <section class="cards-row" id="portfolio-cards">
       <div class="card">
-        <div class="card-label">Balance</div>
+        <div class="card-label">Portfolio Value</div>
+        <div class="card-value" id="portfolio-value">–</div>
+      </div>
+      <div class="card">
+        <div class="card-label">USDC Balance</div>
         <div class="card-value" id="balance">–</div>
+      </div>
+      <div class="card">
+        <div class="card-label">In Positions</div>
+        <div class="card-value" id="invested">–</div>
       </div>
       <div class="card">
         <div class="card-label">Total P&L</div>
         <div class="card-value" id="total-pnl">–</div>
-      </div>
-      <div class="card">
-        <div class="card-label">Realized P&L</div>
-        <div class="card-value" id="realized-pnl">–</div>
       </div>
       <div class="card">
         <div class="card-label">Unrealized P&L</div>
@@ -41,31 +45,55 @@
         <div class="card-label">Win Rate</div>
         <div class="card-value" id="win-rate">–</div>
       </div>
-      <div class="card">
-        <div class="card-label">Open Positions</div>
-        <div class="card-value" id="open-pos">–</div>
+    </section>
+
+    <div class="layout-with-thinking">
+      <!-- Main content area -->
+      <div class="main-content">
+        <div class="two-col">
+          <!-- Opportunities -->
+          <section class="panel">
+            <h2>Live Opportunities <span class="tag" id="opp-count"></span></h2>
+            <div id="opportunities-list" class="scroll-list"></div>
+          </section>
+
+          <!-- Positions -->
+          <section class="panel">
+            <h2>Open Positions</h2>
+            <div id="positions-list" class="scroll-list"></div>
+          </section>
+        </div>
+
+        <!-- Trades -->
+        <section class="panel">
+          <h2>Trade History</h2>
+          <div id="trades-list" class="scroll-list"></div>
+        </section>
       </div>
-    </section>
 
-    <div class="two-col">
-      <!-- Opportunities -->
-      <section class="panel">
-        <h2>Live Opportunities <span class="tag" id="opp-count"></span></h2>
-        <div id="opportunities-list" class="scroll-list"></div>
-      </section>
+      <!-- Thinking sidebar -->
+      <aside class="thinking-panel">
+        <div class="thinking-header">
+          <h2>Bot Thinking</h2>
+          <span class="tag" id="cycle-badge">Cycle #0</span>
+        </div>
 
-      <!-- Positions -->
-      <section class="panel">
-        <h2>Open Positions</h2>
-        <div id="positions-list" class="scroll-list"></div>
-      </section>
+        <!-- Goal progress -->
+        <div class="goal-block">
+          <div class="goal-label">
+            <span>Goal Progress</span>
+            <span id="goal-amounts">$13.25 → $30.00</span>
+          </div>
+          <div class="goal-bar">
+            <div class="goal-fill" id="goal-fill" style="width:0%"></div>
+          </div>
+          <div class="goal-pct" id="goal-pct">0%</div>
+        </div>
+
+        <!-- Decision log -->
+        <div id="thinking-log" class="thinking-log"></div>
+      </aside>
     </div>
-
-    <!-- Trades -->
-    <section class="panel">
-      <h2>Trade History</h2>
-      <div id="trades-list" class="scroll-list"></div>
-    </section>
   </main>
 
   <script src="/static/app.js"></script>

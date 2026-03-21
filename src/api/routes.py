@@ -72,6 +72,27 @@ def get_live_opportunities():
     return scanner.get_latest_opportunities()
 
 
+@router.get("/thinking")
+def get_thinking():
+    """Returns bot decision log and goal progress."""
+    goal = scanner.get_goal_info()
+    try:
+        balance = get_balance()
+    except Exception:
+        balance = None
+    progress = None
+    if balance is not None:
+        span = goal["target_usdc"] - goal["start_usdc"]
+        gained = balance - goal["start_usdc"]
+        progress = round(max(0, min(1, gained / span)), 4) if span > 0 else 0
+    return {
+        "goal": goal,
+        "balance_usdc": balance,
+        "progress": progress,
+        "log": scanner.get_thinking_log(),
+    }
+
+
 # ─── Trades ──────────────────────────────────────────────────────────────────
 
 @router.get("/trades")
@@ -139,8 +160,12 @@ def get_portfolio(db: Session = Depends(get_db)):
     unrealized = sum(p.unrealized_pnl for p in positions)
     invested = sum(p.cost_basis for p in positions)
 
+    portfolio_value = balance + invested + unrealized
+
     return {
         "balance_usdc": balance,
+        "portfolio_value": round(portfolio_value, 2),
+        "currently_invested": round(invested, 2),
         "total_invested": round(total_spent, 2),
         "realized_pnl": round(total_pnl, 2),
         "unrealized_pnl": round(unrealized, 2),
@@ -148,7 +173,6 @@ def get_portfolio(db: Session = Depends(get_db)):
         "win_rate": round(win_count / total_resolved, 3) if total_resolved > 0 else None,
         "total_trades": len(trades),
         "open_positions": len(positions),
-        "currently_invested": round(invested, 2),
     }
 
 

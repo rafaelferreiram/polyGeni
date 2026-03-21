@@ -28,13 +28,13 @@ function categoryTag(cat) {
 async function loadPortfolio() {
   try {
     const p = await api("/portfolio");
+    document.getElementById("portfolio-value").textContent = `$${fmt(p.portfolio_value ?? p.balance_usdc)}`;
     document.getElementById("balance").textContent = `$${fmt(p.balance_usdc)}`;
+    document.getElementById("invested").textContent = `$${fmt(p.currently_invested)}`;
     document.getElementById("total-pnl").innerHTML = fmtUSDC(p.total_pnl);
-    document.getElementById("realized-pnl").innerHTML = fmtUSDC(p.realized_pnl);
     document.getElementById("unrealized-pnl").innerHTML = fmtUSDC(p.unrealized_pnl);
     document.getElementById("win-rate").textContent =
       p.win_rate !== null ? `${(p.win_rate * 100).toFixed(0)}%` : "–";
-    document.getElementById("open-pos").textContent = p.open_positions ?? "–";
   } catch (e) {
     console.error("portfolio", e);
   }
@@ -189,6 +189,38 @@ async function triggerScan() {
   }
 }
 
+// ─── Thinking log ─────────────────────────────────────────────────────────────
+async function loadThinking() {
+  try {
+    const data = await api("/thinking");
+    const { goal, balance_usdc, progress, log } = data;
+
+    // Update cycle badge
+    document.getElementById("cycle-badge").textContent = `Cycle #${goal.cycle}`;
+
+    // Update goal progress
+    const pct = progress !== null ? Math.round(progress * 100) : 0;
+    document.getElementById("goal-fill").style.width = `${pct}%`;
+    document.getElementById("goal-pct").textContent = `${pct}% — $${fmt(balance_usdc)} of $${fmt(goal.target_usdc)}`;
+
+    // Render log entries
+    const el = document.getElementById("thinking-log");
+    if (!log.length) {
+      el.innerHTML = '<div class="muted" style="padding:8px;font-size:11px">Waiting for first scan...</div>';
+      return;
+    }
+    el.innerHTML = log.slice(0, 50).map(entry => {
+      const t = new Date(entry.timestamp + "Z").toLocaleTimeString();
+      return `<div class="thought thought-${entry.type}">
+        <div class="thought-time">${t} · cycle ${entry.cycle}</div>
+        ${entry.message}
+      </div>`;
+    }).join("");
+  } catch (e) {
+    console.error("thinking", e);
+  }
+}
+
 // ─── Refresh loop ─────────────────────────────────────────────────────────────
 async function refresh() {
   await Promise.all([
@@ -197,6 +229,7 @@ async function refresh() {
     loadOpportunities(),
     loadPositions(),
     loadTrades(),
+    loadThinking(),
   ]);
 }
 

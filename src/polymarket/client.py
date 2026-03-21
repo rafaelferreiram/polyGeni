@@ -56,7 +56,10 @@ def place_order(token_id: str, price: float, size_usdc: float, side: str, tick_s
     Returns order response dict.
     """
     client = get_client()
+    MIN_SHARES = 5  # Polymarket minimum
     shares = round(size_usdc / price, 2)
+    if shares < MIN_SHARES:
+        shares = MIN_SHARES  # round up to meet Polymarket minimum
     order_args = OrderArgs(
         token_id=token_id,
         price=price,
