@@ -98,11 +98,19 @@ def _scan_job():
         open_count = db.query(Position).filter_by(is_open=True).count()
         sync_positions(db)
 
+        # Build set of market_ids we already hold — don't re-enter same market
+        open_market_ids = {
+            p.market_id for p in db.query(Position).filter_by(is_open=True).all()
+        }
+
         if _state["auto_trade"] and opportunities:
             # Try candidates in order: short-term first, then by edge descending
             # Keep trying until one succeeds or all are exhausted
             traded = False
             for candidate in opportunities:
+                if candidate.get("market_id") in open_market_ids:
+                    _log_thought(f"Already holding '{candidate['question'][:50]}' — skip", "info")
+                    continue
                 if candidate["edge"] < 0.04:
                     _log_thought(
                         f"Best remaining edge {candidate['edge']:.1%} < 4% threshold — no trade this cycle",
