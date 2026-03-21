@@ -5,7 +5,7 @@ from src.config import BOT_MAX_POSITION_PCT, BOT_BUDGET_USDC
 
 
 MAX_OPEN_POSITIONS = 3
-MIN_BET_USDC = 1.0
+MIN_BET_USDC = 0.50
 
 
 def check_trade(

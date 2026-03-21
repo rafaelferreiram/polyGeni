@@ -7,6 +7,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from sqlalchemy.orm import Session
 from src.analysis.engine import run_full_scan
 from src.analysis.short_term import scan_short_term_markets
+from src.analysis.same_day import scan_same_day_markets
 from src.bot.trader import execute_opportunity, sync_positions
 from src.polymarket.client import get_balance
 from src.database import SessionLocal
@@ -67,18 +68,19 @@ def _scan_job():
             "info"
         )
 
-        # Always scan short-term markets first (resolving within 7 days)
+        # Scan order: same-day first (resolves tonight), then short-term (7d), then long-term
+        same_day  = scan_same_day_markets(bankroll)
         short_term = scan_short_term_markets(bankroll, days=7)
         long_term   = run_full_scan(bankroll)
         _log_thought(
-            f"Scan complete — {len(short_term)} short-term, {len(long_term)} long-term candidates",
+            f"Scan complete — {len(same_day)} same-day, {len(short_term)} short-term, {len(long_term)} long-term",
             "info"
         )
 
-        # Merge: short-term first, then long-term (deduped)
+        # Merge: same-day first, then short-term, then long-term (deduped)
         seen = set()
         opportunities = []
-        for o in short_term + long_term:
+        for o in same_day + short_term + long_term:
             mid = o.get("market_id")
             if mid not in seen:
                 seen.add(mid)
