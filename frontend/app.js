@@ -20,8 +20,26 @@ function fmtUSDC(val) {
   return `<span class="${cls}">$${n >= 0 ? "+" : ""}${n.toFixed(2)}</span>`;
 }
 
+const SPORT_ICONS = {
+  bitcoin:  "₿",
+  sports:   "🏆",
+  events:   "🌐",
+  soccer:   "⚽",
+  nba:      "🏀",
+  ncaab:    "🏀",
+  nfl:      "🏈",
+  nhl:      "🏒",
+  mlb:      "⚾",
+  mma:      "🥊",
+  esports:  "🎮",
+  tennis:   "🎾",
+  politics: "🗳️",
+};
+
 function categoryTag(cat) {
-  return `<span class="tag tag-${cat}">${cat}</span>`;
+  const key = cat ? cat.toLowerCase() : "";
+  const icon = SPORT_ICONS[key] || "📊";
+  return `<span class="tag tag-${key}">${icon} ${cat}</span>`;
 }
 
 // ─── Portfolio ────────────────────────────────────────────────────────────────

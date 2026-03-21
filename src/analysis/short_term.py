@@ -7,21 +7,10 @@ import json
 import re
 import httpx
 from datetime import datetime, timedelta
-from src.config import GAMMA_HOST, ODDS_API_KEY, ODDS_API_BASE
+from src.config import GAMMA_HOST
 from src.polymarket.gamma import get_market_tokens, get_market_price
 from src.analysis.kelly import edge, compute_bet_size
-
-SPORTS = [
-    "basketball_ncaab",
-    "basketball_wncaab",
-    "basketball_nba",
-    "americanfootball_nfl",
-    "soccer_epl",
-    "soccer_uefa_champs_league",
-    "icehockey_nhl",
-    "baseball_mlb",
-    "mma_mixed_martial_arts",
-]
+from src.feeds.espn_odds import get_bookmaker_events
 
 MIN_EDGE = 0.04
 MIN_VOL  = 500
@@ -48,48 +37,8 @@ def _fetch_poly_short_term(days: int) -> list[dict]:
 
 
 def _fetch_bookmaker_events() -> list[dict]:
-    """Returns list of {home, away, home_prob, away_prob} from all sports."""
-    if not ODDS_API_KEY:
-        return []
-    events = []
-    with httpx.Client(timeout=20) as client:
-        for sport in SPORTS:
-            try:
-                resp = client.get(f"{ODDS_API_BASE}/sports/{sport}/odds", params={
-                    "apiKey": ODDS_API_KEY,
-                    "regions": "us,eu",
-                    "markets": "h2h",
-                    "oddsFormat": "decimal",
-                })
-                if resp.status_code != 200:
-                    continue
-                for game in resp.json():
-                    home = game.get("home_team", "")
-                    away = game.get("away_team", "")
-                    home_probs, away_probs = [], []
-                    for bk in game.get("bookmakers", [])[:4]:
-                        for mkt in bk.get("markets", []):
-                            if mkt["key"] != "h2h":
-                                continue
-                            outcomes = mkt.get("outcomes", [])
-                            raw = [1 / o["price"] for o in outcomes]
-                            overround = sum(raw)
-                            for o in outcomes:
-                                fair = (1 / o["price"]) / overround
-                                if o["name"] == home:
-                                    home_probs.append(fair)
-                                else:
-                                    away_probs.append(fair)
-                    if home_probs and away_probs:
-                        events.append({
-                            "home": home.lower(),
-                            "away": away.lower(),
-                            "home_prob": sum(home_probs) / len(home_probs),
-                            "away_prob": sum(away_probs) / len(away_probs),
-                        })
-            except Exception:
-                continue
-    return events
+    """Returns list of {home, away, home_prob, away_prob} via ESPN free API."""
+    return get_bookmaker_events()
 
 
 def _match_event(q_lower: str, yes_team: str, no_team: str, events: list[dict]) -> tuple[float | None, str]:

@@ -4,7 +4,7 @@ Risk management rules applied before every trade.
 from src.config import BOT_MAX_POSITION_PCT, BOT_BUDGET_USDC
 
 
-MAX_OPEN_POSITIONS = 3
+MAX_OPEN_POSITIONS = 5
 MIN_BET_USDC = 0.50
 
 
