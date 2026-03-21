@@ -3,8 +3,7 @@ Polymarket CLOB client wrapper.
 Handles authentication and order operations.
 """
 from py_clob_client.client import ClobClient
-from py_clob_client.clob_types import ApiCreds, OrderArgs, OrderType
-from py_clob_client.constants import POLYGON
+from py_clob_client.clob_types import ApiCreds, OrderArgs, BalanceAllowanceParams, AssetType, PartialCreateOrderOptions
 from src.config import CLOB_HOST, POLY_PRIVATE_KEY, CHAIN_ID
 
 
@@ -29,8 +28,10 @@ def get_client() -> ClobClient:
 def get_balance() -> float:
     """Returns USDC balance available for trading."""
     client = get_client()
-    bal = client.get_balance_allowance(params={"asset_type": "USDC"})
-    return float(bal.get("balance", 0)) / 1e6  # USDC has 6 decimals
+    bal = client.get_balance_allowance(params=BalanceAllowanceParams(asset_type=AssetType.COLLATERAL))
+    # Balance is returned as a string in raw USDC units (6 decimals)
+    raw = float(bal.get("balance", 0))
+    return raw / 1e6 if raw > 1000 else raw  # handle both raw and already-divided
 
 
 def get_open_positions() -> list[dict]:
@@ -58,9 +59,9 @@ def place_order(token_id: str, price: float, size_usdc: float, side: str, tick_s
         price=price,
         size=shares,
         side=side,
-        order_type=OrderType.GTC,
     )
-    resp = client.create_and_post_order(order_args)
+    options = PartialCreateOrderOptions(tick_size=tick_size)
+    resp = client.create_and_post_order(order_args, options)
     return resp
 
 

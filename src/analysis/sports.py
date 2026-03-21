@@ -5,8 +5,7 @@ Compares bookmaker consensus odds with Polymarket implied probabilities.
 from src.feeds.sports import fetch_all_odds, match_event_to_market
 from src.feeds.news import analyze_news_for_market
 from src.analysis.kelly import edge, compute_bet_size
-from src.polymarket.client import get_midpoint
-from src.polymarket.gamma import get_market_tokens
+from src.polymarket.gamma import get_market_tokens, get_market_price
 from src.config import BOT_MIN_EDGE
 
 # Extra edge buffer for sports (less predictable)
@@ -35,7 +34,8 @@ def analyze_market(market: dict, all_odds: list[dict] | None = None) -> dict | N
     if not yes_token:
         return None
 
-    market_prob = get_midpoint(yes_token)
+    yes_price, _ = get_market_price(market)
+    market_prob = yes_price
     if market_prob is None or market_prob <= 0:
         return None
 

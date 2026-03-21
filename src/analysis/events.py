@@ -4,8 +4,7 @@ Uses news sentiment to estimate probabilities for event markets.
 """
 from src.feeds.news import analyze_news_for_market
 from src.analysis.kelly import edge, compute_bet_size
-from src.polymarket.client import get_midpoint
-from src.polymarket.gamma import get_market_tokens
+from src.polymarket.gamma import get_market_tokens, get_market_price
 from src.config import BOT_MIN_EDGE
 
 # Higher edge threshold for events (most uncertain)
@@ -23,7 +22,8 @@ def analyze_market(market: dict) -> dict | None:
     if not yes_token:
         return None
 
-    market_prob = get_midpoint(yes_token)
+    yes_price, _ = get_market_price(market)
+    market_prob = yes_price
     if market_prob is None or market_prob <= 0:
         return None
 

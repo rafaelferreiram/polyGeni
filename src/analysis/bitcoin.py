@@ -6,8 +6,7 @@ import re
 from datetime import datetime
 from src.feeds.bitcoin import fetch_klines, fetch_current_price, compute_indicators, estimate_probability_above, estimate_probability_below, get_signal
 from src.analysis.kelly import edge, compute_bet_size
-from src.polymarket.client import get_midpoint
-from src.polymarket.gamma import get_market_tokens
+from src.polymarket.gamma import get_market_tokens, get_market_price, parse_end_date
 from src.config import BOT_MIN_EDGE
 
 
@@ -59,31 +58,37 @@ def analyze_market(market: dict, indicators: dict | None = None) -> dict | None:
     if target is None:
         return None
 
-    end_date = market.get("endDate") or market.get("end_date_iso")
+    end_date = parse_end_date(market)
     days = _estimate_days_to_resolution(end_date)
 
-    # Determine direction from question
+    # Determine direction from question keywords AND target vs current price
     question_lower = question.lower()
-    is_above = any(w in question_lower for w in ["above", "over", "exceed", "reach", "hit", "at least"])
-    is_below = any(w in question_lower for w in ["below", "under", "less than", "drop", "fall"])
+    current = indicators["current_price"]
 
-    if is_above:
-        our_prob = estimate_probability_above(target, days, indicators)
-        side = "YES"
-    elif is_below:
-        our_prob = estimate_probability_below(target, days, indicators)
-        side = "YES"
+    explicit_above = any(w in question_lower for w in ["above", "over", "exceed", "at least", "surpass"])
+    explicit_below = any(w in question_lower for w in ["below", "under", "less than", "drop", "fall", "dip", "crash"])
+
+    if explicit_above:
+        framing = "above"
+    elif explicit_below:
+        framing = "below"
     else:
-        # Default: assume "above" framing
-        our_prob = estimate_probability_above(target, days, indicators)
-        side = "YES"
+        # Infer from whether target is above or below current price
+        framing = "above" if target > current else "below"
 
-    # Get market implied probability
+    if framing == "above":
+        our_prob = estimate_probability_above(target, days, indicators)
+    else:
+        our_prob = estimate_probability_below(target, days, indicators)
+    side = "YES"
+
+    # Get market implied probability from outcomePrices (no extra API call)
     yes_token, _ = get_market_tokens(market)
     if not yes_token:
         return None
 
-    market_prob = get_midpoint(yes_token)
+    yes_price, _ = get_market_price(market)
+    market_prob = yes_price
     if market_prob is None or market_prob <= 0:
         return None
 

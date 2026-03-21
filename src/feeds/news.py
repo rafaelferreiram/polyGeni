@@ -6,9 +6,16 @@ import httpx
 from src.config import NEWSAPI_BASE, NEWS_API_KEY
 
 
+_news_calls_today = 0
+_MAX_NEWS_CALLS = 80  # stay under the 100/day free limit
+
+
 def fetch_headlines(query: str, language: str = "en", page_size: int = 20) -> list[dict]:
+    global _news_calls_today
     if not NEWS_API_KEY:
         return []
+    if _news_calls_today >= _MAX_NEWS_CALLS:
+        return []  # budget exhausted for today
     with httpx.Client(timeout=15) as client:
         resp = client.get(
             f"{NEWSAPI_BASE}/everything",
@@ -20,8 +27,11 @@ def fetch_headlines(query: str, language: str = "en", page_size: int = 20) -> li
                 "apiKey": NEWS_API_KEY,
             },
         )
+        if resp.status_code == 429:
+            return []  # rate limited, skip gracefully
         if resp.status_code != 200:
             return []
+        _news_calls_today += 1
         return resp.json().get("articles", [])
 
 

@@ -78,18 +78,35 @@ def get_consensus_probability(event: dict, outcome_name: str) -> float | None:
     return sum(bookmaker_probs) / len(bookmaker_probs)
 
 
+SEASON_LONG_KEYWORDS = [
+    "champion", "championship", "cup", "finals", "final", "title",
+    "season", "series", "playoff", "qualify", "world cup",
+    "stanley cup", "nba finals", "super bowl", "world series",
+    "finish in", "finish top", "finish last", "relegated", "promotion",
+    "premier league", "la liga", "bundesliga", "serie a", "ligue 1",
+    "win the", "nba champion", "nfl champion",
+]
+
+
+def _is_season_long(question: str) -> bool:
+    q = question.lower()
+    return any(kw in q for kw in SEASON_LONG_KEYWORDS)
+
+
 def match_event_to_market(event: dict, market_question: str) -> float | None:
     """
-    Try to match a bookmaker event to a Polymarket question and return
-    the consensus win probability for the implied favorite/underdog.
-    Returns probability for YES outcome.
+    Match a bookmaker H2H event to a Polymarket question.
+    Only matches single-game questions — ignores season-long markets
+    (championships, cups, finals) to avoid comparing game odds to futures.
     """
+    if _is_season_long(market_question):
+        return None  # Don't match H2H odds against season-long markets
+
     home = event.get("home_team", "").lower()
     away = event.get("away_team", "").lower()
     question_lower = market_question.lower()
 
     if home in question_lower or away in question_lower:
-        # Determine which team the question is asking about
         for team in [event.get("home_team"), event.get("away_team")]:
             if team and team.lower() in question_lower:
                 prob = get_consensus_probability(event, team)
