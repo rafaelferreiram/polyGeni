@@ -16,7 +16,7 @@ from src.models import Position
 
 logger = logging.getLogger("scanner")
 
-TARGET_USDC = 30.0  # weekend goal
+TARGET_USDC = 20.0  # weekend goal
 
 _state = {
     "running": False,
@@ -97,8 +97,8 @@ def _scan_job():
         _state["last_opportunities"] = opportunities
         _state["last_scan"] = datetime.utcnow()
 
+        sync_positions(db)  # auto-closes near-resolved positions
         open_count = db.query(Position).filter_by(is_open=True).count()
-        sync_positions(db)
 
         # Build set of market_ids we already hold — don't re-enter same market
         open_market_ids = {
@@ -190,6 +190,6 @@ def get_thinking_log() -> list[dict]:
 def get_goal_info() -> dict:
     return {
         "target_usdc": TARGET_USDC,
-        "start_usdc": 17.11,  # original funded balance (weekend start)
+        "start_usdc": 8.90,  # current USDC balance (weekend trading start)
         "cycle": _cycle,
     }

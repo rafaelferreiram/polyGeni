@@ -18,7 +18,7 @@ def analyze_market(market: dict) -> dict | None:
     question = market.get("question", "")
     condition_id = market.get("conditionId") or market.get("id")
 
-    yes_token, _ = get_market_tokens(market)
+    yes_token, no_token = get_market_tokens(market)
     if not yes_token:
         return None
 
@@ -66,10 +66,11 @@ def analyze_market(market: dict) -> dict | None:
         "question": question,
         "category": "events",
         "recommended_side": side,
-        "market_prob": round(mkt_prob_adj, 4),
+        "market_prob": round(market_prob, 4),  # always YES price
         "estimated_prob": round(our_prob_adj, 4),
         "edge": round(calc_edge, 4),
         "yes_token_id": yes_token,
+        "no_token_id": no_token,
         "reasoning": reasoning,
     }
 

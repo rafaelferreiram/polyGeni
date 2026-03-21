@@ -111,7 +111,7 @@ def scan_same_day_markets(bankroll: float) -> list[dict]:
         if yes_price is None or not (0.02 < yes_price < 0.98):
             continue
 
-        yes_token, _ = get_market_tokens(m)
+        yes_token, no_token = get_market_tokens(m)
         if not yes_token:
             continue
 
@@ -148,6 +148,7 @@ def scan_same_day_markets(bankroll: float) -> list[dict]:
             "edge": round(calc_edge, 4),
             "kelly_size_usdc": kelly_size,
             "yes_token_id": yes_token,
+            "no_token_id": no_token,
             "reasoning": reasoning,
             "resolves": end,
         })

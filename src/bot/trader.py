@@ -24,20 +24,18 @@ def execute_opportunity(
         return {"success": False, "reason": reason}
 
     side = opportunity["recommended_side"]  # YES or NO
-    token_id = opportunity["yes_token_id"]
-    market_prob = opportunity["market_prob"]
+    token_id = opportunity["yes_token_id"]  # always YES for position tracking / sync
+    market_prob = opportunity["market_prob"]  # always YES price
     size_usdc = opportunity["kelly_size_usdc"]
 
-    # For NO bets, we buy the NO token — get its midpoint
     if side == "NO":
+        # Buy the NO token at the NO price
+        no_token_id = opportunity.get("no_token_id") or token_id
         no_price = round(1.0 - market_prob, 4)
-        price = no_price
-        # NO token is the second token; for now we approximate
-        # In a real market, you'd get the NO token_id from gamma separately
-        # We'll use a flag approach: buy YES at inverse price isn't valid,
-        # so we buy NO token directly (same token_id logic via CLOB)
+        order_token_id = no_token_id
         price = no_price
     else:
+        order_token_id = token_id
         price = market_prob
 
     if dry_run:
@@ -59,7 +57,7 @@ def execute_opportunity(
 
     try:
         response = poly.place_order(
-            token_id=token_id,
+            token_id=order_token_id,
             price=price,
             size_usdc=size_usdc,
             side="BUY",
@@ -126,12 +124,22 @@ def execute_opportunity(
 
 
 def sync_positions(db: Session):
-    """Update current prices and unrealized PnL for all open positions."""
+    """Update current prices and unrealized PnL for all open positions.
+    Auto-closes positions that are essentially resolved (value < 3% of cost).
+    """
     open_positions = db.query(Position).filter_by(is_open=True).all()
     for pos in open_positions:
-        current = poly.get_midpoint(pos.token_id)
-        if current:
-            pos.current_price = current
-            pos.current_value = round(pos.shares * current, 2)
+        yes_mid = poly.get_midpoint(pos.token_id)
+        if yes_mid is not None:
+            # For YES positions: value tracks YES midpoint
+            # For NO positions: value tracks (1 - YES midpoint) = NO midpoint
+            price = yes_mid if pos.side == "YES" else (1.0 - yes_mid)
+            pos.current_price = round(price, 4)
+            pos.current_value = round(pos.shares * price, 2)
             pos.unrealized_pnl = round(pos.current_value - pos.cost_basis, 2)
+            # Auto-close positions where value has dropped to <3% of cost basis
+            # (market has effectively resolved against us)
+            if pos.cost_basis > 0 and pos.current_value < pos.cost_basis * 0.03:
+                pos.is_open = False
+                pos.pnl = pos.unrealized_pnl
     db.commit()

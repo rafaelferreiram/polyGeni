@@ -99,7 +99,7 @@ def scan_short_term_markets(bankroll: float, days: int = 7) -> list[dict]:
         if yes_price is None or not (0.04 < yes_price < 0.96):
             continue
 
-        yes_token, _ = get_market_tokens(m)
+        yes_token, no_token = get_market_tokens(m)
         if not yes_token:
             continue
 
@@ -151,6 +151,7 @@ def scan_short_term_markets(bankroll: float, days: int = 7) -> list[dict]:
             "edge": round(calc_edge, 4),
             "kelly_size_usdc": kelly_size,
             "yes_token_id": yes_token,
+            "no_token_id": no_token,
             "reasoning": reasoning,
             "resolves": end,
         })

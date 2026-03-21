@@ -30,7 +30,7 @@ def analyze_market(market: dict, all_odds: list[dict] | None = None) -> dict | N
     if bookmaker_prob is None:
         return None
 
-    yes_token, _ = get_market_tokens(market)
+    yes_token, no_token = get_market_tokens(market)
     if not yes_token:
         return None
 
@@ -74,10 +74,11 @@ def analyze_market(market: dict, all_odds: list[dict] | None = None) -> dict | N
         "question": question,
         "category": "sports",
         "recommended_side": side,
-        "market_prob": round(mkt_prob, 4),
+        "market_prob": round(market_prob, 4),  # always YES price
         "estimated_prob": round(our_prob, 4),
         "edge": round(calc_edge, 4),
         "yes_token_id": yes_token,
+        "no_token_id": no_token,
         "reasoning": reasoning,
     }
 

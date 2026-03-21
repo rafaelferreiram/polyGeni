@@ -83,7 +83,7 @@ def analyze_market(market: dict, indicators: dict | None = None) -> dict | None:
     side = "YES"
 
     # Get market implied probability from outcomePrices (no extra API call)
-    yes_token, _ = get_market_tokens(market)
+    yes_token, no_token = get_market_tokens(market)
     if not yes_token:
         return None
 
@@ -99,12 +99,14 @@ def analyze_market(market: dict, indicators: dict | None = None) -> dict | None:
     if abs(no_edge) > abs(yes_edge) and no_edge > yes_edge:
         side = "NO"
         final_our_prob = 1 - our_prob
-        final_market_prob = 1 - market_prob
+        # Use NO price for edge calc, but keep market_prob as YES price
+        # so trader.py can compute no_price = 1 - market_prob correctly
+        calc_edge = edge(final_our_prob, 1 - market_prob)
+        final_market_prob = market_prob  # always store YES price
     else:
         final_our_prob = our_prob
         final_market_prob = market_prob
-
-    calc_edge = edge(final_our_prob, final_market_prob)
+        calc_edge = edge(final_our_prob, final_market_prob)
     if calc_edge < BOT_MIN_EDGE:
         return None
 
@@ -125,6 +127,7 @@ def analyze_market(market: dict, indicators: dict | None = None) -> dict | None:
         "estimated_prob": round(final_our_prob, 4),
         "edge": round(calc_edge, 4),
         "yes_token_id": yes_token,
+        "no_token_id": no_token,
         "reasoning": reasoning,
     }
 
