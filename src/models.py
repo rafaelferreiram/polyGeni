@@ -45,6 +45,17 @@ class Position(Base):
     closed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
+class PortfolioSnapshot(Base):
+    __tablename__ = "portfolio_snapshots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    balance_usdc: Mapped[float] = mapped_column(Float)
+    portfolio_value: Mapped[float] = mapped_column(Float)
+    open_positions: Mapped[int] = mapped_column(Integer)
+    trade_count: Mapped[int] = mapped_column(Integer)
+
+
 class Opportunity(Base):
     __tablename__ = "opportunities"
 

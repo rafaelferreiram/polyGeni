@@ -65,6 +65,40 @@
           </section>
         </div>
 
+        <!-- Analytics: chart + gauge -->
+        <section class="panel analytics-row">
+          <div class="chart-block">
+            <div class="analytics-header">
+              <h2>Portfolio Value</h2>
+              <div class="period-toggle">
+                <button class="period-btn active" onclick="setPeriod('hourly',this)">Hourly</button>
+                <button class="period-btn" onclick="setPeriod('daily',this)">Daily</button>
+              </div>
+            </div>
+            <canvas id="portfolio-chart" height="130"></canvas>
+          </div>
+          <div class="gauge-block">
+            <h2>Strategy Meter</h2>
+            <div class="gauge-wrap">
+              <svg class="gauge-svg" viewBox="0 0 200 120">
+                <!-- Background arc -->
+                <path d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="#2a2a30" stroke-width="18" stroke-linecap="round"/>
+                <!-- Colored arc -->
+                <path id="gauge-arc" d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="#7f5af0" stroke-width="18" stroke-linecap="round" stroke-dasharray="251" stroke-dashoffset="251"/>
+                <!-- Needle -->
+                <line id="gauge-needle" x1="100" y1="100" x2="100" y2="30" stroke="#fffffe" stroke-width="2.5" stroke-linecap="round"/>
+                <circle cx="100" cy="100" r="5" fill="#fffffe"/>
+                <!-- Labels -->
+                <text x="14" y="118" fill="#72757e" font-size="9">Safe</text>
+                <text x="160" y="118" fill="#72757e" font-size="9">Bold</text>
+              </svg>
+              <div class="gauge-score" id="gauge-score">–</div>
+              <div class="gauge-label" id="gauge-label">–</div>
+            </div>
+            <div class="gauge-stats" id="gauge-stats"></div>
+          </div>
+        </section>
+
         <!-- Trades -->
         <section class="panel">
           <h2>Trade History</h2>
@@ -97,6 +131,7 @@
     </div>
   </main>
 
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="/static/app.js"></script>
 </body>
 </html>

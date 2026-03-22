@@ -278,9 +278,67 @@ main { padding: 20px 24px; }
   line-height: 1.5;
 }
 
+/* Analytics row: chart + gauge */
+.analytics-row {
+  display: grid;
+  grid-template-columns: 1fr 220px;
+  gap: 20px;
+  align-items: start;
+  margin-bottom: 16px;
+}
+
+.analytics-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.period-toggle { display: flex; gap: 6px; }
+.period-btn {
+  padding: 4px 10px;
+  font-size: 11px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.period-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+/* Gauge */
+.gauge-block h2 { margin-bottom: 8px; }
+.gauge-wrap { text-align: center; }
+.gauge-svg { width: 100%; max-width: 200px; }
+.gauge-score {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--accent);
+  margin-top: 2px;
+}
+.gauge-label {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+.gauge-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.gauge-stat-row {
+  display: flex;
+  justify-content: space-between;
+}
+.gauge-stat-val { color: var(--text); font-weight: 500; }
+
 @media (max-width: 1200px) {
   .layout-with-thinking { grid-template-columns: 1fr; }
   .thinking-panel { position: static; max-height: 400px; }
+  .analytics-row { grid-template-columns: 1fr; }
 }
 @media (max-width: 900px) {
   .cards-row { grid-template-columns: repeat(3, 1fr); }

@@ -1,10 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from src.database import get_db
-from src.models import Trade, Position, Opportunity
+from src.models import Trade, Position, Opportunity, PortfolioSnapshot
 from src.bot import scanner
 from src.bot.trader import execute_opportunity, sync_positions
 from src.polymarket.client import get_balance
+from src.config import BOT_KELLY_FRACTION, BOT_MAX_POSITION_PCT
+from src.bot.risk import MAX_OPEN_POSITIONS
 from pydantic import BaseModel
 
 router = APIRouter()
@@ -195,6 +197,100 @@ class ManualTradeRequest(BaseModel):
     kelly_size_usdc: float
     yes_token_id: str
     reasoning: str = "Manual trade"
+
+
+@router.get("/portfolio/history")
+def get_portfolio_history(db: Session = Depends(get_db), period: str = "hourly"):
+    """Returns portfolio value snapshots grouped by hour or day."""
+    from sqlalchemy import func
+    snapshots = (
+        db.query(PortfolioSnapshot)
+        .order_by(PortfolioSnapshot.timestamp.asc())
+        .all()
+    )
+    if not snapshots:
+        return []
+
+    # Group by hour or day
+    grouped = {}
+    for s in snapshots:
+        if period == "daily":
+            key = s.timestamp.strftime("%Y-%m-%d")
+        else:
+            key = s.timestamp.strftime("%Y-%m-%dT%H:00")
+        grouped[key] = {
+            "timestamp": key,
+            "portfolio_value": round(s.portfolio_value, 2),
+            "balance_usdc": round(s.balance_usdc, 2),
+            "open_positions": s.open_positions,
+            "trade_count": s.trade_count,
+        }
+
+    return list(grouped.values())
+
+
+@router.get("/aggression")
+def get_aggression(db: Session = Depends(get_db)):
+    """Returns bot aggressiveness index (0=very conservative, 100=very aggressive)."""
+    try:
+        balance = get_balance()
+    except Exception:
+        balance = 1.0
+
+    open_count = db.query(Position).filter_by(is_open=True).count()
+    recent_trades = (
+        db.query(Trade)
+        .filter(Trade.status != "cancelled")
+        .order_by(Trade.created_at.desc())
+        .limit(10)
+        .all()
+    )
+
+    # Kelly fraction component (0.25 → 25pts, 0.5 → 50pts, 1.0 → 100pts)
+    kelly_score = min(BOT_KELLY_FRACTION / 1.0, 1.0) * 40
+
+    # Positions fill rate (how full is our book)
+    fill_score = min(open_count / MAX_OPEN_POSITIONS, 1.0) * 25
+
+    # Average bet size as % of max allowed
+    if recent_trades and balance > 0:
+        avg_bet_pct = sum(t.usdc_spent for t in recent_trades) / len(recent_trades) / max(balance, 1)
+        bet_score = min(avg_bet_pct / BOT_MAX_POSITION_PCT, 1.0) * 20
+    else:
+        bet_score = 10
+
+    # Average edge taken (lower edge = more aggressive, higher = more selective/conservative)
+    if recent_trades:
+        avg_edge = sum(t.edge for t in recent_trades) / len(recent_trades)
+        # Invert: edge 0.05 = aggressive (high score), edge 0.50 = conservative (low score)
+        edge_score = max(0, (0.30 - avg_edge) / 0.30) * 15
+    else:
+        edge_score = 7
+
+    score = round(kelly_score + fill_score + bet_score + edge_score)
+    score = max(0, min(100, score))
+
+    if score < 30:
+        label = "Very Conservative"
+    elif score < 50:
+        label = "Conservative"
+    elif score < 65:
+        label = "Moderate"
+    elif score < 80:
+        label = "Aggressive"
+    else:
+        label = "Very Aggressive"
+
+    return {
+        "score": score,
+        "label": label,
+        "components": {
+            "kelly_fraction": BOT_KELLY_FRACTION,
+            "positions_fill": round(open_count / MAX_OPEN_POSITIONS, 2),
+            "avg_edge": round(sum(t.edge for t in recent_trades) / len(recent_trades), 3) if recent_trades else 0,
+            "avg_bet_pct": round(bet_score / 20, 2),
+        }
+    }
 
 
 @router.post("/trade/manual")

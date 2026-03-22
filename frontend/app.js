@@ -240,6 +240,128 @@ async function loadThinking() {
   }
 }
 
+// ─── Portfolio Chart ──────────────────────────────────────────────────────────
+let _chart = null;
+let _chartPeriod = "hourly";
+
+function setPeriod(period, btn) {
+  _chartPeriod = period;
+  document.querySelectorAll(".period-btn").forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
+  loadChart();
+}
+
+async function loadChart() {
+  try {
+    const data = await api(`/portfolio/history?period=${_chartPeriod}`);
+    const labels = data.map(d => {
+      const t = new Date(d.timestamp + (d.timestamp.includes("T") ? ":00Z" : "T00:00Z"));
+      return _chartPeriod === "daily"
+        ? t.toLocaleDateString([], { month: "short", day: "numeric" })
+        : t.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    });
+    const values = data.map(d => d.portfolio_value);
+    const trades = data.map(d => d.trade_count);
+
+    const ctx = document.getElementById("portfolio-chart").getContext("2d");
+    if (_chart) _chart.destroy();
+
+    _chart = new Chart(ctx, {
+      type: "line",
+      data: {
+        labels,
+        datasets: [
+          {
+            label: "Portfolio Value ($)",
+            data: values,
+            borderColor: "#7f5af0",
+            backgroundColor: "rgba(127,90,240,0.08)",
+            borderWidth: 2,
+            pointRadius: 3,
+            pointBackgroundColor: "#7f5af0",
+            fill: true,
+            tension: 0.35,
+            yAxisID: "y",
+          },
+          {
+            label: "Total Trades",
+            data: trades,
+            borderColor: "#2cb67d",
+            borderWidth: 1.5,
+            pointRadius: 2,
+            pointBackgroundColor: "#2cb67d",
+            borderDash: [4, 3],
+            fill: false,
+            tension: 0.2,
+            yAxisID: "y2",
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        interaction: { mode: "index", intersect: false },
+        plugins: {
+          legend: { labels: { color: "#72757e", font: { size: 11 } } },
+          tooltip: { backgroundColor: "#16161a", borderColor: "#2a2a30", borderWidth: 1 },
+        },
+        scales: {
+          x: { ticks: { color: "#72757e", font: { size: 10 } }, grid: { color: "#1e1e24" } },
+          y: {
+            position: "left",
+            ticks: { color: "#72757e", font: { size: 10 }, callback: v => "$" + v.toFixed(2) },
+            grid: { color: "#1e1e24" },
+          },
+          y2: {
+            position: "right",
+            ticks: { color: "#2cb67d", font: { size: 10 } },
+            grid: { display: false },
+          },
+        },
+      },
+    });
+  } catch (e) {
+    console.error("chart", e);
+  }
+}
+
+// ─── Aggressiveness Gauge ─────────────────────────────────────────────────────
+async function loadAggression() {
+  try {
+    const d = await api("/aggression");
+    const score = d.score;
+
+    // Arc: full arc length ≈ 251px for r=80 half-circle
+    const ARC_LEN = 251;
+    const offset = ARC_LEN - (score / 100) * ARC_LEN;
+    document.getElementById("gauge-arc").setAttribute("stroke-dashoffset", offset);
+
+    // Color gradient: green → yellow → red based on score
+    const color = score < 40 ? "#2cb67d" : score < 65 ? "#f2c94c" : "#ef4565";
+    document.getElementById("gauge-arc").setAttribute("stroke", color);
+
+    // Needle: rotate from -90deg (score=0) to +90deg (score=100)
+    const angle = -90 + (score / 100) * 180;
+    const rad = (angle * Math.PI) / 180;
+    const nx = 100 + 65 * Math.cos(rad - Math.PI / 2);
+    const ny = 100 + 65 * Math.sin(rad - Math.PI / 2);
+    document.getElementById("gauge-needle").setAttribute("x2", nx.toFixed(1));
+    document.getElementById("gauge-needle").setAttribute("y2", ny.toFixed(1));
+
+    document.getElementById("gauge-score").textContent = score;
+    document.getElementById("gauge-label").textContent = d.label;
+    document.getElementById("gauge-label").style.color = color;
+
+    const c = d.components;
+    document.getElementById("gauge-stats").innerHTML = `
+      <div class="gauge-stat-row"><span>Kelly fraction</span><span class="gauge-stat-val">${(c.kelly_fraction*100).toFixed(0)}%</span></div>
+      <div class="gauge-stat-row"><span>Positions used</span><span class="gauge-stat-val">${(c.positions_fill*100).toFixed(0)}%</span></div>
+      <div class="gauge-stat-row"><span>Avg edge</span><span class="gauge-stat-val">${(c.avg_edge*100).toFixed(1)}%</span></div>
+    `;
+  } catch (e) {
+    console.error("aggression", e);
+  }
+}
+
 // ─── Refresh loop ─────────────────────────────────────────────────────────────
 async function refresh() {
   await Promise.all([
@@ -249,6 +371,8 @@ async function refresh() {
     loadPositions(),
     loadTrades(),
     loadThinking(),
+    loadChart(),
+    loadAggression(),
   ]);
 }
 

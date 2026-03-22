@@ -12,7 +12,7 @@ from src.bot.trader import execute_opportunity, sync_positions
 from src.polymarket.client import get_balance
 from src.database import SessionLocal
 from src.config import BOT_SCAN_INTERVAL_SEC
-from src.models import Position
+from src.models import Position, PortfolioSnapshot, Trade
 
 logger = logging.getLogger("scanner")
 
@@ -104,6 +104,20 @@ def _scan_job():
         open_market_ids = {
             p.market_id for p in db.query(Position).filter_by(is_open=True).all()
         }
+
+        # Record portfolio snapshot
+        positions = db.query(Position).filter_by(is_open=True).all()
+        invested = sum(p.current_value or p.cost_basis for p in positions)
+        portfolio_value = round(bankroll + invested, 2)
+        trade_count = db.query(Trade).count()
+        snapshot = PortfolioSnapshot(
+            balance_usdc=round(bankroll, 4),
+            portfolio_value=portfolio_value,
+            open_positions=open_count,
+            trade_count=trade_count,
+        )
+        db.add(snapshot)
+        db.commit()
 
         if _state["auto_trade"] and opportunities:
             # Try candidates in order: short-term first, then by edge descending
