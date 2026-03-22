@@ -105,10 +105,11 @@ def _scan_job():
             p.market_id for p in db.query(Position).filter_by(is_open=True).all()
         }
 
-        # Record portfolio snapshot
+        # Record portfolio snapshot — same formula as /api/portfolio
         positions = db.query(Position).filter_by(is_open=True).all()
-        invested = sum(p.current_value or p.cost_basis for p in positions)
-        portfolio_value = round(bankroll + invested, 2)
+        invested = sum(p.cost_basis for p in positions)
+        unrealized = sum(p.unrealized_pnl for p in positions)
+        portfolio_value = round(bankroll + invested + unrealized, 2)
         trade_count = db.query(Trade).count()
         snapshot = PortfolioSnapshot(
             balance_usdc=round(bankroll, 4),
