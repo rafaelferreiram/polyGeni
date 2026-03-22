@@ -255,7 +255,9 @@ async function loadChart() {
   try {
     const data = await api(`/portfolio/history?period=${_chartPeriod}`);
     const labels = data.map(d => {
-      const t = new Date(d.timestamp + (d.timestamp.includes("T") ? ":00Z" : "T00:00Z"));
+      // Normalise: "2026-03-22T09:00" → append seconds+Z so Date parses as UTC
+      const raw = d.timestamp.length === 16 ? d.timestamp + ":00Z" : d.timestamp + "Z";
+      const t = new Date(raw);
       return _chartPeriod === "daily"
         ? t.toLocaleDateString([], { month: "short", day: "numeric" })
         : t.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });

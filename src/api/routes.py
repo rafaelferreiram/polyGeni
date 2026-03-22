@@ -201,8 +201,8 @@ class ManualTradeRequest(BaseModel):
 
 @router.get("/portfolio/history")
 def get_portfolio_history(db: Session = Depends(get_db), period: str = "hourly"):
-    """Returns portfolio value snapshots grouped by hour or day."""
-    from sqlalchemy import func
+    """Returns portfolio value snapshots. Hourly = last point per hour; daily = last per day.
+    When fewer than 24 snapshots exist, returns all raw points."""
     snapshots = (
         db.query(PortfolioSnapshot)
         .order_by(PortfolioSnapshot.timestamp.asc())
@@ -211,20 +211,24 @@ def get_portfolio_history(db: Session = Depends(get_db), period: str = "hourly")
     if not snapshots:
         return []
 
-    # Group by hour or day
-    grouped = {}
-    for s in snapshots:
-        if period == "daily":
-            key = s.timestamp.strftime("%Y-%m-%d")
-        else:
-            key = s.timestamp.strftime("%Y-%m-%dT%H:00")
-        grouped[key] = {
-            "timestamp": key,
+    def to_point(s, label=None):
+        return {
+            "timestamp": label or s.timestamp.strftime("%Y-%m-%dT%H:%M"),
             "portfolio_value": round(s.portfolio_value, 2),
             "balance_usdc": round(s.balance_usdc, 2),
             "open_positions": s.open_positions,
             "trade_count": s.trade_count,
         }
+
+    # With few snapshots, return every individual point (no grouping)
+    if len(snapshots) < 24 or period == "raw":
+        return [to_point(s) for s in snapshots]
+
+    # Group by hour or day — keep last snapshot of each bucket
+    grouped = {}
+    for s in snapshots:
+        key = s.timestamp.strftime("%Y-%m-%d") if period == "daily" else s.timestamp.strftime("%Y-%m-%dT%H:00")
+        grouped[key] = to_point(s, label=key)
 
     return list(grouped.values())
 
