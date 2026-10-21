@@ -476,6 +476,15 @@ def arena_train_boost(req: TrainBoost):
         raise HTTPException(400, str(e))
 
 
+@router.post("/arena/ai-full-scan", dependencies=LOCAL)
+def arena_ai_full_scan(req: TrainBoost):
+    from src.solana import arena
+    try:
+        return arena.ai_full_scan(req.bot, req.hours)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
 @router.post("/arena/boost", dependencies=LOCAL)
 def arena_boost(req: Boost):
     """Give an AI bot a stronger model (Sonnet, Opus, Fable…) for N cycles; it then returns to its default."""

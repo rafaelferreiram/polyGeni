@@ -151,9 +151,28 @@ def boost_training(model: str, hours: float = 24) -> dict:
     return {"until": until}
 
 
+def ai_full_scan(model: str, hours: float = 24) -> dict:
+    """Training for the AI bot: it analyses every coin on every closed candle (no pre-filter) for a while.
+    Costs real AI money (~29 calls/hour with Haiku ≈ $0.03/h); the monthly AI allowance still caps it."""
+    eng = bots().get(model)
+    if not eng or not eng.llm:
+        raise ValueError(f"{model} não é um bot de IA")
+    until = (datetime.now(timezone.utc) + timedelta(hours=min(max(hours, 1), 48))).isoformat(timespec="seconds")
+    eng.ledger.set_state("ai_full_scan_until", until)
+    eng.llm._seen.clear()
+    local = datetime.fromisoformat(until).astimezone(cfg.TZ).strftime("%d/%m %H:%M")
+    eng.ledger.log_decision("boost", reason=f"🧠 análise de todas as moedas a cada vela até {local} (Lisboa)")
+    _apply_training_boost(eng)
+    return {"until": until}
+
+
 def _apply_training_boost(eng):
+    now = datetime.now(timezone.utc).isoformat()
+    if eng.llm:
+        scan = eng.ledger.get_state("ai_full_scan_until")
+        eng.llm.full_scan = bool(scan) and now < scan
     until = eng.ledger.get_state("train_boost_until")
-    on = bool(until) and datetime.now(timezone.utc).isoformat() < until
+    on = bool(until) and now < until
     eng.risk.max_positions = cfg.TRAIN_BOOST_MAX_POSITIONS if on else cfg.LAB_MAX_POSITIONS
     eng.risk.max_entries_per_day = 10_000 if on else cfg.LAB_MAX_ENTRIES_PER_DAY
     eng.risk.max_capital_usd = max(cfg.TRAIN_BOOST_CAPITAL_USD, cfg.LAB_CAPITAL_USD) if on else cfg.LAB_CAPITAL_USD
@@ -309,6 +328,7 @@ def leaderboard() -> list[dict]:
             "open": [x["symbol"] for x in led.positions()], "reward": reward(model),
             "model_now": eng.llm.model if eng.llm else None, "boost": led.get_state("boost") or {},
             "green_light": green_light(model), "train_boost_until": led.get_state("train_boost_until"),
+            "ai_full_scan_until": led.get_state("ai_full_scan_until"),
             "last_decision": next(({"market": k, **{x: v.get(x) for x in ("action", "reason", "model")}}
                                    for k, v in sorted(last.items(), key=lambda kv: -(kv[1].get("t") or 0))), None)
                              if eng.llm else _rules_last(led),

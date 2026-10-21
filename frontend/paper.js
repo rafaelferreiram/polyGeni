@@ -692,8 +692,9 @@ function greenLine(g) {
 function trainButton(model, r) {
   if (!r?.green_light || r.green_light.ok) return "";
   const until = r.train_boost_until && new Date(r.train_boost_until) > new Date() ? r.train_boost_until : null;
-  return until ? `<button class="tboost on" disabled>🚀 treino intensivo até ${hhmm(until)}</button>`
-               : `<button class="tboost" onclick="trainBoost('${esc(model)}', this)">🚀 Treino intensivo 24h</button>`;
+  const scan = r.ai_full_scan_until && new Date(r.ai_full_scan_until) > new Date() ? `<div class="gl ok">🧠 analisa as 29 moedas a cada hora até ${hhmm(r.ai_full_scan_until)}</div>` : "";
+  return scan + (until ? `<button class="tboost on" disabled>🚀 treino intensivo até ${hhmm(until)}</button>`
+               : `<button class="tboost" onclick="trainBoost('${esc(model)}', this)">🚀 Treino intensivo 24h</button>`);
 }
 function trainBoost(model, btn) {
   run(btn, "Ativando…", () => api("/arena/train-boost", "POST", { bot: model, hours: 24 }),

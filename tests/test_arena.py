@@ -188,3 +188,15 @@ def test_training_boost_doubles_lab_slots_then_expires(tmp_path, monkeypatch):
     eng.ledger.set_state("train_boost_until", "2000-01-01T00:00:00+00:00")
     arena._apply_training_boost(eng)
     assert eng.risk.max_positions == cfg.LAB_MAX_POSITIONS
+
+
+def test_ai_full_scan_turns_off_the_prefilter_for_a_while(tmp_path, monkeypatch):
+    bots, _ = make_bots(tmp_path, {"claude-haiku-5-5": "{}"})
+    monkeypatch.setattr(arena, "_bots", bots)
+    eng = bots["claude-haiku-5-5"]
+    assert not eng.llm.full_scan
+    arena.ai_full_scan("claude-haiku-5-5", 24)
+    assert eng.llm.full_scan
+    eng.ledger.set_state("ai_full_scan_until", "2000-01-01T00:00:00+00:00")
+    arena._apply_training_boost(eng)
+    assert not eng.llm.full_scan

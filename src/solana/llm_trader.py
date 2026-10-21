@@ -89,6 +89,7 @@ class LLMDecider:
         self.entry_system, self.exit_system = entry_system, exit_system
         self._seen: dict[tuple, object] = {}     # (kind, market) -> last candle t already decided on
         self.record_fn = None                     # -> this bot's reward points and recent trades (set by the lab)
+        self.full_scan = False                    # training: analyse every coin every candle (no pre-filter)
         self.last: dict[str, dict] = {}          # market -> last decision, for the UI
 
     @property
@@ -113,7 +114,7 @@ class LLMDecider:
             self.model = self.router(market) or self.model
         from src.solana.strategies import features
         f = features(candles)
-        if cfg.LLM_PREFILTER and not _worth_asking(f, candles, context):
+        if cfg.LLM_PREFILTER and not self.full_scan and not _worth_asking(f, candles, context):
             # no dip, breakout, whale buying or top-trader entry: nothing worth paying an AI call for
             self.last[market] = {"action": "HOLD", "reason": "sem oportunidade — IA não foi chamada (custo $0)",
                                  "model": self.model, "t": candles[-1]["t"], "free": True}
