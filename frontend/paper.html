@@ -123,6 +123,18 @@
     @keyframes pulse { to { opacity: .25; } }
     @keyframes zz { 0% { opacity: 0; transform: translate(0, 4px); } 50% { opacity: 1; } 100% { opacity: 0; transform: translate(6px, -8px); } }
     @media (prefers-reduced-motion: reduce) { .room *, .wire { animation: none !important; transition: none !important; } }
+    .flow { display: flex; align-items: stretch; gap: 10px; flex-wrap: wrap; }
+    .flow > div:not(.op) { flex: 1 1 140px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .flow .op { align-self: center; color: var(--muted); font-size: 20px; font-weight: 300; }
+    .flow .l { color: var(--muted); font-size: 12px; }
+    .flow b { font-size: 22px; font-variant-numeric: tabular-nums; letter-spacing: -.3px; }
+    .flow .s { color: var(--muted); font-size: 11.5px; }
+    .flow .net { border-color: rgba(52,211,153,.45) !important; }
+    .flow .net.loss { border-color: rgba(248,113,113,.5) !important; }
+    .budget { margin-top: 12px; }
+    .bar { height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden; }
+    .bar span { display: block; height: 100%; background: var(--accent); width: 0; transition: width .4s; }
+    .bar span.warn { background: var(--yellow); } .bar span.full { background: var(--red); }
     .team { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
     .tb { background: var(--surface-2); border: 1px solid var(--border); border-radius: 14px; padding: 14px; position: relative;
           transition: border-color .3s, box-shadow .3s, transform .3s; min-width: 0; }
@@ -199,9 +211,23 @@
   <main>
     <div class="setup" id="setup" hidden></div>
 
+    <section class="panel" id="lucro">
+      <h2><span>Lucro real <span class="tag" id="verdict">–</span></span><span class="note" id="budget-note"></span></h2>
+      <div class="flow">
+        <div><span class="l">Ganho dos trades</span><b id="f-trade">–</b><span class="s">já inclui taxas e funding</span></div>
+        <div class="op">−</div>
+        <div><span class="l">Custo da IA</span><b id="f-ai">–</b><span class="s" id="f-ai-s">–</span></div>
+        <div class="op">−</div>
+        <div><span class="l">Servidor</span><b id="f-vps">–</b><span class="s">VPS_MONTHLY_USD</span></div>
+        <div class="op">=</div>
+        <div class="net"><span class="l">Lucro líquido</span><b id="f-net">–</b><span class="s" id="f-net-s">–</span></div>
+      </div>
+      <div class="budget"><div class="bar"><span id="budget-bar"></span></div></div>
+    </section>
+
     <section class="kpis">
       <div class="kpi"><div class="l" id="k-eq-l">Saldo</div><div class="v" id="k-eq">–</div><div class="s" id="k-eq-s">–</div></div>
-      <div class="kpi"><div class="l">Lucro</div><div class="v" id="k-pnl">–</div><div class="s" id="k-pnl-s">–</div></div>
+      <div class="kpi"><div class="l">Lucro líquido <span class="muted">(depois de IA e custos)</span></div><div class="v" id="k-pnl">–</div><div class="s" id="k-pnl-s">–</div></div>
       <div class="kpi"><div class="l">Posição aberta</div><div class="v" id="k-pos">–</div><div class="s" id="k-pos-s">–</div></div>
       <div class="kpi"><div class="l">Trades · acerto</div><div class="v" id="k-tr">–</div><div class="s" id="k-tr-s">–</div></div>
     </section>
@@ -255,6 +281,6 @@
     </details>
   </main>
 
-  <script src="/static/paper.js?v=13"></script>
+  <script src="/static/paper.js?v=14"></script>
 </body>
 </html>

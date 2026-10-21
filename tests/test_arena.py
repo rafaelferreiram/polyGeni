@@ -11,6 +11,7 @@ from tests.test_engine import FakeScout
 @pytest.fixture(autouse=True)
 def key(monkeypatch):
     monkeypatch.setattr(cfg, "ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr(cfg, "LLM_PREFILTER", False)      # these tests use flat candles; prefilter has its own test
 
 
 def make_bots(tmp_path, answers):

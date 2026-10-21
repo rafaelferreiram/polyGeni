@@ -18,6 +18,7 @@ def decider(answer, calls=None):
 @pytest.fixture(autouse=True)
 def key(monkeypatch):
     monkeypatch.setattr(cfg, "ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr(cfg, "LLM_PREFILTER", False)      # these tests use flat candles; prefilter has its own test
 
 
 def test_buy_with_stop_and_tp_clamped():

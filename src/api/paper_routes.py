@@ -504,6 +504,26 @@ def _account_engine(kind: str):
     raise HTTPException(400, "kind must be 'sim' or 'real'")
 
 
+def profit(eng) -> dict:
+    """Net profit = trading P&L (fees and funding already inside) − AI cost − server cost."""
+    from src.solana import costs
+    led = eng.ledger
+    hist = led.equity_history(100_000)
+    trade_all = eng.portfolio().equity - led.contributed()
+    trade_30 = (performance(hist).get("month") or {}).get("gain_usd", trade_all) if hist else trade_all
+    days = ((datetime.now(timezone.utc) - datetime.fromisoformat(hist[0]["ts"])).total_seconds() / 86400) if hist else 0
+    b = costs.book()
+    ai_30, ai_all = b.total(days=30), b.total()
+    vps_30, vps_all = cfg.VPS_MONTHLY_USD * min(days, 30) / 30, cfg.VPS_MONTHLY_USD * days / 30
+    net_30, net_all = trade_30 - ai_30 - vps_30, trade_all - ai_all - vps_all
+    return {"trading_30d": round(trade_30, 4), "ai_30d": round(ai_30, 4), "server_30d": round(vps_30, 4),
+            "net_30d": round(net_30, 4), "trading_all": round(trade_all, 4), "ai_all": round(ai_all, 4),
+            "server_all": round(vps_all, 4), "net_all": round(net_all, 4),
+            "ai_month": round(b.month_spent(), 4), "ai_budget": cfg.LLM_MONTHLY_BUDGET_USD, "ai_calls_30d": b.calls(30),
+            "prefilter": cfg.LLM_PREFILTER,
+            "verdict": "sem dados ainda" if not (ai_all or trade_all) else ("a dar lucro" if net_all > 0 else "a dar prejuízo")}
+
+
 @router.get("/account")
 def account(kind: str = "sim"):
     from src.solana import hl_live
@@ -522,6 +542,7 @@ def account(kind: str = "sim"):
                   "pnl_usd": round(sum(t["pnl_usd"] for t in trades if t["strategy"] == m.name), 4),
                   "open": [x["symbol"] for x in led.positions() if x["strategy"] == m.name]} for m in eng.team],
         "sleep": led.get_state("sleep") or {},
+        "profit": profit(eng),
         "equity": round(p.equity, 4), "cash": round(p.cash, 4), "exposure": round(p.exposure, 4),
         "pnl_usd": round(p.equity - led.contributed(), 4), "contributed": led.contributed(),
         "performance": performance(led.equity_history(100_000)),

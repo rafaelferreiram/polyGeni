@@ -70,7 +70,7 @@ def eligible_for_real(members: list) -> list:
             ok.append(m)
             continue
         exp, n = score(m.model)
-        if n >= cfg.LIVE_MIN_LAB_TRADES and exp > 0:
+        if n >= cfg.LIVE_MIN_LAB_TRADES and exp > 0 and net_of_cost(m.model)[2] > 0:   # profitable AFTER its AI cost
             ok.append(m)
     return ok
 
@@ -91,10 +91,34 @@ def bots() -> dict[str, PaperEngine]:
     return _bots
 
 
+def net_of_cost(model: str) -> tuple[float, float, float]:
+    """(trading P&L in the lab, AI cost so far, net) for one bot."""
+    from src.solana import costs
+    eng = bots().get(model)
+    pnl = (eng.portfolio().equity - eng.ledger.contributed()) if eng else 0.0
+    cost = costs.book().total(model=model) if model != "rules" else 0.0
+    return pnl, cost, pnl - cost
+
+
+def _pause_if_unprofitable(model: str, eng) -> bool:
+    if model == "rules" or not eng.ledger.get_state("running", False):
+        return False
+    pnl, cost, net = net_of_cost(model)
+    if net < -cfg.LLM_BOT_MAX_NET_LOSS_USD:
+        eng.ledger.set_state("running", False)
+        eng.ledger.set_state("paused_reason", f"custa mais do que ganha (IA ${cost:.2f} vs lucro ${pnl:.2f})")
+        eng.ledger.log_decision("pause", reason=f"auto-pause: AI cost ${cost:.2f} > trading P&L ${pnl:.2f}")
+        return True
+    return False
+
+
 def run_round() -> dict:
     """One cycle for every bot (sequential: they share the public rate limits)."""
     out = {}
     for model, eng in bots().items():
+        if _pause_if_unprofitable(model, eng):
+            out[model] = {"paused": "unprofitable"}
+            continue
         if eng.ledger.get_state("running", False) and (not eng.llm or eng.llm.enabled):
             try:
                 out[model] = eng.run_cycle()
@@ -109,6 +133,8 @@ def set_running(on: bool):
     from src.solana import engine as paper_engine
     for eng in bots().values():
         eng.ledger.set_state("running", on)
+        if on:
+            eng.ledger.set_state("paused_reason", None)
         eng.ledger.log_decision("arena", reason=f"arena {'started' if on else 'stopped'} {now_iso()}")
     sch = paper_engine.scheduler()
     if on and sch.get_job("arena_round") is None:
@@ -129,13 +155,16 @@ def leaderboard() -> list[dict]:
         last = eng.llm.last if eng.llm else {}
         sleep = led.get_state("sleep") or {}
         needs_key = bool(eng.llm) and not eng.llm.enabled
-        state = ("parado" if not led.get_state("running", False) else "sem chave API" if needs_key
+        paused = led.get_state("paused_reason")
+        state = ((f"pausado: {paused}" if paused else "parado") if not led.get_state("running", False)
+                 else "sem chave API" if needs_key
                  else "a trabalhar" if eng.scanning() else "posição aberta" if led.positions()
                  else "a dormir" if sleep.get("until") else "à espera do próximo ciclo")
         rows.append({
             "model": model, "running": led.get_state("running", False), "state": state, "needs_key": needs_key,
             "sleep_until": sleep.get("until"), "sleep_reason": sleep.get("reason"),
             "live": led.get_state("live", {}), "equity": round(p.equity, 2),
+            "ai_cost_usd": round(net_of_cost(model)[1], 4), "net_usd": round(net_of_cost(model)[2], 4),
             "pnl_usd": round(p.equity - led.contributed(), 2), "twr": perf.get("twr", 0.0), "hold_btc": perf.get("hold_btc"),
             "trades": len(trades), "win_rate": round(sum(t["pnl_usd"] > 0 for t in trades) / len(trades), 3) if trades else None,
             "open": [x["symbol"] for x in led.positions()],

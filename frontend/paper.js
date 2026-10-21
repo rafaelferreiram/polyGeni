@@ -208,9 +208,11 @@ async function refresh() {
   document.getElementById("k-eq-l").textContent = KIND === "sim" ? "Saldo simulado" : "Saldo real na Hyperliquid";
   document.getElementById("k-eq").textContent = usd(KIND === "real" && a.exchange_balance !== undefined ? a.exchange_balance : a.equity);
   document.getElementById("k-eq-s").textContent = `cash ${usd(a.cash)} · em posição ${usd(a.exposure)}`;
-  document.getElementById("k-pnl").innerHTML = pnl(a.pnl_usd);
+  const P = a.profit || {};
+  document.getElementById("k-pnl").innerHTML = pnl(P.net_all);
   const all = a.performance?.all;
-  document.getElementById("k-pnl-s").textContent = all ? `${pct(all.twr)} · segurar BTC ${pct(all.hold_btc)}` : "ainda sem histórico";
+  document.getElementById("k-pnl-s").textContent = `trades ${usd(P.trading_all)} · IA −${usd(P.ai_all)}${all ? ` · segurar BTC ${pct(all.hold_btc)}` : ""}`;
+  renderProfit(P);
   const p = a.positions[0];
   const kp = document.getElementById("k-pos");
   kp.textContent = p ? p.symbol : "Sem posição";
@@ -243,6 +245,25 @@ async function refresh() {
     <td>${pnl(t.pnl_usd)}<br><span class="muted">${pct(t.pnl_pct)}</span></td><td class="muted">${esc(t.reason)}</td></tr>`));
   const L = a.limits;
   document.getElementById("limits").textContent = `Limites (iguais na simulação e no real): capital ${usd(L.max_capital_usd, 0)}, posição ${usd(L.max_position_usd, 0)}, ${L.max_positions} de cada vez, 1x só compra, perda diária ${pct(L.max_daily_loss_pct)}, mercados ${L.markets.join(", ")}.`;
+}
+
+function renderProfit(P) {
+  if (!P) return;
+  document.getElementById("f-trade").innerHTML = pnl(P.trading_30d);
+  document.getElementById("f-ai").innerHTML = P.ai_30d ? `<span class="red">−${usd(P.ai_30d)}</span>` : "$0.00";
+  document.getElementById("f-ai-s").textContent = `${P.ai_calls_30d} análises pagas em 30 dias${P.prefilter ? " · só quando há oportunidade" : ""}`;
+  document.getElementById("f-vps").innerHTML = P.server_30d ? `<span class="red">−${usd(P.server_30d)}</span>` : "$0.00";
+  document.getElementById("f-net").innerHTML = pnl(P.net_30d);
+  document.getElementById("f-net").parentElement.classList.toggle("loss", P.net_30d < 0);
+  document.getElementById("f-net-s").textContent = `últimos 30 dias · desde o início ${P.net_all >= 0 ? "+" : "−"}$${Math.abs(P.net_all).toFixed(2)}`;
+  const v = document.getElementById("verdict");
+  v.textContent = P.verdict;
+  v.style.color = P.verdict === "a dar lucro" ? "var(--green)" : P.verdict === "a dar prejuízo" ? "var(--red)" : "";
+  const used = P.ai_budget ? Math.min(P.ai_month / P.ai_budget, 1) : 0;
+  const bar = document.getElementById("budget-bar");
+  bar.style.width = `${(used * 100).toFixed(1)}%`;
+  bar.className = used >= 1 ? "full" : used > 0.8 ? "warn" : "";
+  document.getElementById("budget-note").innerHTML = `Orçamento de IA este mês: <b>${usd(P.ai_month)}</b> de ${usd(P.ai_budget)}${used >= 1 ? " — esgotado: só o bot de Regras (grátis) trabalha" : ""}`;
 }
 
 function renderFoot() {
@@ -361,7 +382,9 @@ function renderTeam() {
         <div><div class="nm">${esc(L.label)}</div><span class="pill ${cls === "working" || cls === "holding" ? "on" : ""}">${esc(state)}</span></div></div>
       <div class="bubble">${esc(bubble)}</div>
       <div class="meta"><span>Na carteira<br><b>${m.trades ?? 0} trades ${pnl(m.pnl_usd ?? 0)}</b></span>
-        <span>Laboratório<br><b>${usd(r.equity)} · ${pct(r.twr)}</b></span></div>
+        <span>Laboratório<br><b>${usd(r.equity)} · ${pct(r.twr)}</b></span>
+        <span>Custo IA<br><b>${m.model === "rules" ? "grátis" : usd(r.ai_cost_usd ?? 0)}</b></span>
+        <span>Líquido<br><b>${pnl(r.net_usd ?? 0)}</b></span></div>
     </div>`;
   }).join("");
 }

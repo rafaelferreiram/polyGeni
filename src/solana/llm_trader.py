@@ -64,7 +64,7 @@ class LLMDecider:
         self.router = router            # market -> model chosen by the coordinator (None = always self.model)
         self.name = "llm"
         self.llm_fn = llm_fn or (lambda prompt, system: anthropic_llm(prompt, system=system, max_searches=2,
-                                                                       model=self.model))
+                                                                       model=self.model, who=self.name))
         self.entry_system, self.exit_system = entry_system, exit_system
         self._seen: dict[tuple, object] = {}     # (kind, market) -> last candle t already decided on
         self.last: dict[str, dict] = {}          # market -> last decision, for the UI
@@ -89,6 +89,13 @@ class LLMDecider:
             return None
         if self.router:
             self.model = self.router(market) or self.model
+        from src.solana.strategies import features
+        f = features(candles)
+        if cfg.LLM_PREFILTER and not (f.get("uptrend") and (f.get("below_lower_band") or (f.get("rsi14") or 100) < 40)):
+            # no dip inside an uptrend: nothing worth paying an AI call for
+            self.last[market] = {"action": "HOLD", "reason": "sem oportunidade — IA não foi chamada (custo $0)",
+                                 "model": self.model, "t": candles[-1]["t"], "free": True}
+            return None
         try:
             from src.solana.strategies import features
             out = _json(self.llm_fn(json.dumps({"market": context, "indicators": features(candles),

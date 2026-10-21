@@ -169,9 +169,13 @@ DEBATE_SYSTEM = (
 )
 
 
-def anthropic_llm(prompt: str, system: str = DEBATE_SYSTEM, max_searches: int = 3, model: str | None = None) -> str:
-    """Claude via the official SDK with server-side web search (+ optional remote MCP servers)."""
+def anthropic_llm(prompt: str, system: str = DEBATE_SYSTEM, max_searches: int = 3, model: str | None = None,
+                  who: str = "?") -> str:
+    """Claude via the official SDK with server-side web search (+ optional remote MCP servers).
+    Refuses to call once the monthly AI budget is spent; records the real cost of every call."""
     import anthropic
+    from src.solana import costs
+    costs.check_budget()
 
     model = model or cfg.DEBATE_MODEL
     # dynamic-filtering web search only on Opus/Sonnet; server-side refusal fallback not on Haiku
@@ -192,6 +196,13 @@ def anthropic_llm(prompt: str, system: str = DEBATE_SYSTEM, max_searches: int = 
         model=model, max_tokens=4000, system=system, betas=betas, output_config={"effort": "low"}, tools=tools,
         messages=[{"role": "user", "content": prompt}], **kwargs,
     )
+    u = resp.usage
+    stu = getattr(u, "server_tool_use", None)
+    costs.book().record(model, who, {
+        "input_tokens": u.input_tokens or 0, "output_tokens": u.output_tokens or 0,
+        "cache_creation": getattr(u, "cache_creation_input_tokens", 0) or 0,
+        "cache_read": getattr(u, "cache_read_input_tokens", 0) or 0,
+        "searches": (getattr(stu, "web_search_requests", 0) or 0) if stu else 0})
     if resp.stop_reason == "refusal":
         raise RuntimeError("model refused")
     return "".join(b.text for b in resp.content if b.type == "text")

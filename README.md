@@ -126,6 +126,16 @@ docker-compose publishes `127.0.0.1:8000` only (inside Docker set `PAPER_TRUSTED
   wallet to its public address; withdrawals only to an allow-listed address with daily limits; real swaps via
   Jupiter only with `LIVE_TRADING=1` **after** 4–8 weeks of 24/7 paper trading that beats hold SOL after costs.
 
+### Profitability guards — the AI must earn more than it costs
+- **Real cost per call** (`costs.py`, `costs.db`): priced from the usage each API response returns (tokens,
+  cache, web searches at $10/1000) with the published per-model rates.
+- **Monthly budget** `LLM_MONTHLY_BUDGET_USD` (default $5): once spent, no AI call is made; the rules bot keeps going.
+- **Pre-filter** `LLM_PREFILTER=1`: the AI is only asked when there is a dip inside an uptrend; otherwise HOLD for $0.
+- **Auto-pause**: an AI bot whose cost exceeds its lab gains by `LLM_BOT_MAX_NET_LOSS_USD` stops; AI bots reach the
+  real wallet only when profitable *after* their AI cost.
+- **Dashboard "Lucro real"**: trades (fees+funding included) − AI − server (`VPS_MONTHLY_USD`) = net, 30 days and all-time.
+- Default team: `rules` (free) + Haiku. With small capital, expensive models cost more than they can earn.
+
 ### Strategy v2 (`reports/study_v2_*.md`) — what changed and why
 Out-of-sample May→Oct 2026, Hyperliquid BTC/ETH/SOL/HYPE/XRP 1h, taker fees + spread + hourly funding:
 

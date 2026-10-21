@@ -112,8 +112,8 @@ HL_LIVE_MARKETS = [m for m in os.getenv("HL_LIVE_MARKETS", "BTC,ETH,SOL,HYPE,XRP
 
 # ─── Model arena: one paper bot per LLM, same markets and risk limits, separate portfolios ───
 # "rules" = deterministic baseline bot (no LLM, no API cost) that every model must beat
-ARENA_MODELS = [m for m in os.getenv("ARENA_MODELS", "rules,claude-fable-5-1,claude-opus-5-5,claude-opus-5,"
-                                                     "claude-sonnet-5-5,claude-haiku-5-5").split(",") if m]
+# default: free rules bot + the cheap Haiku; add Sonnet/Opus/Fable when capital makes their cost worthwhile
+ARENA_MODELS = [m for m in os.getenv("ARENA_MODELS", "rules,claude-haiku-5-5").split(",") if m]
 ARENA_START_USDC = _f("ARENA_START_USDC", 20.0)     # each bot gets what the real account would have
 # self-pause: a bot with nothing to do sleeps (up to BOT_MAX_SLEEP_MIN) and wakes early if price moves
 BOT_MAX_SLEEP_MIN = _i("BOT_MAX_SLEEP_MIN", 120)
@@ -125,3 +125,10 @@ ARENA_CYCLE_SEC = _i("ARENA_CYCLE_SEC", 900)
 # ─── Simulation of the real account: same limits/markets as live, real mainnet books, fake money ───
 SHADOW_DB_PATH = os.getenv("SHADOW_DB_PATH", "./shadow.db")
 SHADOW_START_USDC = _f("SHADOW_START_USDC", 20.0)
+
+# ─── Profitability guards: AI must earn more than it costs ───
+COSTS_DB_PATH = os.getenv("COSTS_DB_PATH", "./costs.db")
+LLM_MONTHLY_BUDGET_USD = _f("LLM_MONTHLY_BUDGET_USD", 5.0)      # hard cap on AI spend per calendar month
+LLM_PREFILTER = os.getenv("LLM_PREFILTER", "1") == "1"           # ask the AI only when there is a real setup
+LLM_BOT_MAX_NET_LOSS_USD = _f("LLM_BOT_MAX_NET_LOSS_USD", 1.0)   # pause an AI bot whose cost exceeds its gains by this
+VPS_MONTHLY_USD = _f("VPS_MONTHLY_USD", 0.0)                     # server cost, counted in net profit
