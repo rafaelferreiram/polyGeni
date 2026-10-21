@@ -101,7 +101,8 @@ HL_NETWORK = os.getenv("HL_NETWORK", "testnet")                 # testnet | main
 HL_ACCOUNT_ADDRESS = os.getenv("HL_ACCOUNT_ADDRESS", "")       # your MetaMask 0x address (public)
 # HL_API_WALLET_KEY is read directly from the environment by hl_live and never stored in config/logs
 LIVE_TRADING_ALLOWED = os.getenv("LIVE_TRADING", "0") == "1"
-LIVE_DB_PATH = os.getenv("LIVE_DB_PATH", "./live.db")
+# one ledger per network, so test money never mixes with real money in P&L or reports
+LIVE_DB_PATH = os.getenv("LIVE_DB_PATH", f"./live_{HL_NETWORK}.db")
 LIVE_CYCLE_SEC = _i("LIVE_CYCLE_SEC", 300)
 LIVE_MAX_CAPITAL_USD = _f("LIVE_MAX_CAPITAL_USD", 20.0)        # the bots never size off more than this (raise it as the wallet grows)
 LIVE_MAX_POSITION_USD = _f("LIVE_MAX_POSITION_USD", 12.0)      # Hyperliquid minimum order is $10
