@@ -462,6 +462,20 @@ class Boost(BaseModel):
     cycles: int = 3
 
 
+class TrainBoost(BaseModel):
+    bot: str
+    hours: float = 24
+
+
+@router.post("/arena/train-boost", dependencies=LOCAL)
+def arena_train_boost(req: TrainBoost):
+    from src.solana import arena
+    try:
+        return arena.boost_training(req.bot, req.hours)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
 @router.post("/arena/boost", dependencies=LOCAL)
 def arena_boost(req: Boost):
     """Give an AI bot a stronger model (Sonnet, Opus, Fable…) for N cycles; it then returns to its default."""

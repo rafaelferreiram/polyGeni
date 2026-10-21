@@ -639,7 +639,7 @@ function renderTeam() {
         <div><div class="nm">${esc(L.label)}${r.model_now && r.model_now !== m.model ? ` <small class="green">🚀 ${esc(look(r.model_now).label)}</small>` : ""}</div><div class="rl">${esc(L.role)}</div></div></div>
       <span class="chip">${esc(chip)}</span>
       <div class="now">Última decisão: ${now}</div>
-      ${rewardLine(r.reward, rankOf[m.model])}${greenLine(r.green_light)}
+      ${rewardLine(r.reward, rankOf[m.model])}${greenLine(r.green_light)}${trainButton(m.model, r)}
       <div class="stats"><span><b>${pnl(m.pnl_usd ?? 0)}</b>resultado</span><span><b>${m.trades ?? 0}</b>trades</span>
         <span><b>${isRules ? "grátis" : usd(r.ai_cost_usd ?? 0)}</b>custo IA</span></div>
       <div class="tip" role="tooltip">${tip}<div class="note" style="margin-top:6px">${esc(bubble)}</div></div>
@@ -674,9 +674,19 @@ function greenLine(g) {
   if (!g) return "";
   if (g.trusted) return `<div class="gl ok" title="validado no backtest — opera na conta real">✅ conta real</div>`;
   if (g.ok) return `<div class="gl ok" title="passou no laboratório: ${g.trades} trades, acerto ${pct(g.win_rate)}, fator ${g.profit_factor}">🟢 luz verde · conta real</div>`;
-  const w = clamp01(g.trades / g.needed) * 100;
-  return `<div class="gl" title="Para a conta real: ${g.needed} trades, lucro líquido > 0, acerto ≥ 45%, fator de lucro ≥ 1,2. Falta: ${(g.missing || []).join(", ")}">
-    <span>🚦 lab ${g.trades}/${g.needed}${g.trades ? ` · ${pct(g.win_rate)} · PF ${g.profit_factor}` : ""}</span><i style="width:${w.toFixed(0)}%"></i></div>`;
+  const w = clamp01(g.wins / g.needed) * 100;
+  return `<div class="gl" title="Para a conta real: ${g.needed} trades vencedores, acerto ≥ 50%, fator de lucro ≥ 1,2, lucro líquido > 0. Falta: ${(g.missing || []).join(", ")}">
+    <span>🚦 ${g.wins}/${g.needed} vitórias${g.trades ? ` · ${pct(g.win_rate)} · PF ${g.profit_factor}` : ""}</span><i style="width:${w.toFixed(0)}%"></i></div>`;
+}
+function trainButton(model, r) {
+  if (!r?.green_light || r.green_light.ok) return "";
+  const until = r.train_boost_until && new Date(r.train_boost_until) > new Date() ? r.train_boost_until : null;
+  return until ? `<button class="tboost on" disabled>🚀 treino intensivo até ${hhmm(until)}</button>`
+               : `<button class="tboost" onclick="trainBoost('${esc(model)}', this)">🚀 Treino intensivo 24h</button>`;
+}
+function trainBoost(model, btn) {
+  run(btn, "Ativando…", () => api("/arena/train-boost", "POST", { bot: model, hours: 24 }),
+      `🚀 ${look(model).label} em treino intensivo por 24h: o dobro de vagas no laboratório, mesmas regras`);
 }
 
 // ─── advanced (old Solana paper + readiness) ───

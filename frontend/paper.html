@@ -157,7 +157,9 @@
     .tip dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; margin: 6px 0 0; }
     .tip dt { color: var(--muted); } .tip dd { margin: 0; overflow-wrap: anywhere; }
     .tip .wip { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
-    .st:hover .tip, .st:focus-within .tip, .tb:hover .tip, .tb:focus-within .tip { opacity: 1; transform: none; pointer-events: auto; }
+    /* bot cards: details on hovering the bot itself, so the buttons below stay clickable */
+    .st:hover .tip, .st:focus-within .tip, .tb .head:hover ~ .tip, .tb:focus-visible .tip { opacity: 1; transform: none; pointer-events: auto; }
+    .tb .head { cursor: help; }
     .st:hover, .st:focus-within, .tb:hover, .tb:focus-within { z-index: 6; }
     .st:last-child .tip, .tb:last-child .tip { left: auto; right: 6px; }
     @media (hover: none) { .st, .tb { cursor: pointer; } }
@@ -191,7 +193,11 @@
     .bar { height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden; }
     .bar span { display: block; height: 100%; background: var(--accent); width: 0; transition: width .4s; }
     .bar span.warn { background: var(--yellow); } .bar span.full { background: var(--red); }
-    .team { display: grid; grid-template-columns: repeat(auto-fill, minmax(215px, 1fr)); gap: 12px; }
+    .team { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+    @media (max-width: 960px) { .team { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    @media (max-width: 600px) { .team { grid-template-columns: 1fr !important; } }
+    .tboost { margin-top: 8px; width: 100%; font-size: 12px; padding: 6px 8px; border-color: rgba(251,191,36,.45); color: #fcd34d; background: rgba(251,191,36,.06); }
+    .tboost.on { border-color: rgba(52,211,153,.45); color: var(--green); background: rgba(52,211,153,.06); cursor: default; }
     .tb { display: flex; flex-direction: column; overflow: hidden; }
     .tb .head { gap: 16px; } .tb .head > div:last-child { min-width: 0; flex: 1; }
     .tb .bot2 .badge-ico { right: -9px; bottom: -6px; font-size: 14px; }
@@ -540,7 +546,7 @@
         <button onclick="startBoost(this)">Ativar</button>
         <span class="note" id="boost-status"></span>
       </div>
-      <div class="legend"><span>🏆 Recompensa: 1 ponto = 1 centavo de lucro líquido (30 dias) → mais pontos = prioridade e posição cheia; prejuízo = posição mínima</span><span>🛡️ Na conta real: São Marcos e Endrick já operam; Gabriel Jesus, Evair, Veiga e Valdivia só depois de 10 trades com lucro no laboratório</span><span>👆 Passe o mouse num bot para ver detalhes</span></div>
+      <div class="legend"><span>🚦 Luz verde para a conta real: ≥ 10 trades vencedores no laboratório, acerto ≥ 50%, fator de lucro ≥ 1,2 e lucro líquido positivo</span><span>🚀 Treino intensivo: o dobro de vagas no laboratório e sem limite diário por 24h — mesmas regras, mais trades, prova mais rápida</span><span>🏆 Recompensa: 1 ponto = 1 centavo de lucro líquido (30 dias) → mais pontos = prioridade e posição cheia; prejuízo = posição mínima</span><span>🛡️ Na conta real: São Marcos e Endrick já operam; Gabriel Jesus, Evair, Veiga e Valdivia só depois de 10 trades com lucro no laboratório</span><span>👆 Passe o mouse num bot para ver detalhes</span></div>
     </section>
     <section class="panel" id="treino">
       <h2><span>🎓 Centro de treino <span class="tag" id="train-tag">–</span></span><span class="note">dados de treino dos bots — separados da prova do laboratório</span></h2>
@@ -645,6 +651,6 @@
 
   <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <script src="https://unpkg.com/qrcode-generator@1.4.4/qrcode.js"></script>
-  <script src="/static/paper.js?v=57"></script>
+  <script src="/static/paper.js?v=58"></script>
 </body>
 </html>

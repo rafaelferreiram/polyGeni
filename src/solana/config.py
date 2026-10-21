@@ -146,9 +146,11 @@ TRAINING_DB_PATH = os.getenv("TRAINING_DB_PATH", "./training.db")   # training c
 LAB_CAPITAL_USD = _f("LAB_CAPITAL_USD", 100.0)
 LAB_MAX_POSITIONS = _i("LAB_MAX_POSITIONS", 8)
 LAB_MAX_ENTRIES_PER_DAY = _i("LAB_MAX_ENTRIES_PER_DAY", 48)
-# green light to real money (bots not in REAL_TRUSTED_BOTS): LIVE_MIN_LAB_TRADES closed lab trades, net profit after
-# their AI cost, win rate and profit factor at least these
-GREEN_LIGHT_WIN_RATE = _f("GREEN_LIGHT_WIN_RATE", 0.45)
+TRAIN_BOOST_MAX_POSITIONS = _i("TRAIN_BOOST_MAX_POSITIONS", 16)   # "treino intensivo": double the lab slots for 24h
+# green light to real money (bots not in REAL_TRUSTED_BOTS): at least GREEN_LIGHT_WINS winning lab trades, net profit
+# after their AI cost, win rate and profit factor at least these (the user's rule: 10 wins with good accuracy)
+GREEN_LIGHT_WINS = _i("GREEN_LIGHT_WINS", 10)
+GREEN_LIGHT_WIN_RATE = _f("GREEN_LIGHT_WIN_RATE", 0.5)
 GREEN_LIGHT_PROFIT_FACTOR = _f("GREEN_LIGHT_PROFIT_FACTOR", 1.2)
 # self-pause: a bot with nothing to do sleeps (up to BOT_MAX_SLEEP_MIN) and wakes early if price moves.
 # Off by default: the bots watch the market every cycle 24/7 (the AI pre-filter already keeps idle cycles free).

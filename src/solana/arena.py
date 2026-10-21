@@ -128,11 +128,31 @@ def green_light(model: str) -> dict:
     n, net = len(trades), net_of_cost(model)[2] if eng else 0.0
     wr = len(wins) / n if n else 0.0
     pf = (sum(wins) / sum(losses)) if losses and sum(losses) > 0 else (99.0 if wins else 0.0)
-    need = {"trades": n >= cfg.LIVE_MIN_LAB_TRADES, "lucro": net > 0, "acerto": wr >= cfg.GREEN_LIGHT_WIN_RATE,
+    need = {"vitórias": len(wins) >= cfg.GREEN_LIGHT_WINS, "lucro": net > 0, "acerto": wr >= cfg.GREEN_LIGHT_WIN_RATE,
             "fator": pf >= cfg.GREEN_LIGHT_PROFIT_FACTOR}
-    return {"ok": all(need.values()), "trusted": False, "trades": n, "needed": cfg.LIVE_MIN_LAB_TRADES,
+    return {"ok": all(need.values()), "trusted": False, "trades": n, "wins": len(wins), "needed": cfg.GREEN_LIGHT_WINS,
             "win_rate": round(wr, 3), "profit_factor": round(pf, 2), "net_usd": round(net, 4),
             "missing": [k for k, v in need.items() if not v]}
+
+
+def boost_training(model: str, hours: float = 24) -> dict:
+    """'Treino intensivo': double the lab slots and lift the daily entry cap for a while, so the bot closes more lab
+    trades (more evidence, faster) — entry rules, size, stops and targets stay exactly the same."""
+    eng = bots().get(model)
+    if not eng:
+        raise ValueError(f"bot {model} não existe")
+    until = (datetime.now(timezone.utc) + timedelta(hours=min(max(hours, 1), 72))).isoformat(timespec="seconds")
+    eng.ledger.set_state("train_boost_until", until)
+    eng.ledger.log_decision("boost", reason=f"🚀 treino intensivo até {until[11:16]} UTC: {cfg.TRAIN_BOOST_MAX_POSITIONS} vagas, sem limite diário")
+    _apply_training_boost(eng)
+    return {"until": until}
+
+
+def _apply_training_boost(eng):
+    until = eng.ledger.get_state("train_boost_until")
+    on = bool(until) and datetime.now(timezone.utc).isoformat() < until
+    eng.risk.max_positions = cfg.TRAIN_BOOST_MAX_POSITIONS if on else cfg.LAB_MAX_POSITIONS
+    eng.risk.max_entries_per_day = 10_000 if on else cfg.LAB_MAX_ENTRIES_PER_DAY
 
 
 def eligible_for_real(members: list) -> list:
@@ -234,6 +254,7 @@ def run_round() -> dict:
             continue
         if eng.ledger.get_state("running", False) and (not eng.llm or eng.llm.enabled):
             _apply_boost(model, eng)
+            _apply_training_boost(eng)
             try:
                 out[model] = eng.run_cycle()
             except Exception as e:
@@ -283,7 +304,7 @@ def leaderboard() -> list[dict]:
             "trades": len(trades), "win_rate": round(sum(t["pnl_usd"] > 0 for t in trades) / len(trades), 3) if trades else None,
             "open": [x["symbol"] for x in led.positions()], "reward": reward(model),
             "model_now": eng.llm.model if eng.llm else None, "boost": led.get_state("boost") or {},
-            "green_light": green_light(model),
+            "green_light": green_light(model), "train_boost_until": led.get_state("train_boost_until"),
             "last_decision": next(({"market": k, **{x: v.get(x) for x in ("action", "reason", "model")}}
                                    for k, v in sorted(last.items(), key=lambda kv: -(kv[1].get("t") or 0))), None)
                              if eng.llm else _rules_last(led),
