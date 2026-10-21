@@ -20,6 +20,7 @@ make install     # Python 3.11 venv via uv
 make demo        # dummy account: real quotes, forced trades on both venues, ledger self-check, UI on :8001
 make run         # 24/7 loop + dashboard on http://127.0.0.1:8000
 make test        # offline pytest suite
+make service     # run 24/7 on this Mac as a launchd agent (see "Running 24/7" below)
 make backtest    # walk-forward reports in reports/
 ```
 
@@ -149,6 +150,14 @@ docker-compose publishes `127.0.0.1:8000` only (inside Docker set `PAPER_TRUSTED
 - Phase 3 (not built): a dedicated bot hot wallet with a small balance; funding = sending USDC/SOL from your
   wallet to its public address; withdrawals only to an allow-listed address with daily limits; real swaps via
   Jupiter only with `LIVE_TRADING=1` **after** 4–8 weeks of 24/7 paper trading that beats hold SOL after costs.
+
+### Running 24/7 on a Mac (`scripts/kairos_service.sh`)
+`make service` installs a launchd user agent (`~/Library/LaunchAgents/com.kairos.bots.plist`): it starts at login,
+restarts the server within ~15 s if it crashes, and wraps it in `caffeinate -i -s` so the Mac does not idle-sleep.
+Logs go to `~/Library/Logs/kairos.log`; `scripts/kairos_service.sh status|restart|logs|uninstall`.
+Limits: closing the lid or shutting down still stops the bots (open positions stay protected by their exchange
+stop/target orders); for true 24/7 use a small cloud server. The agent runs from this checkout's folder — re-run
+`make service` if the project moves.
 
 ### Daily report and morning/evening routine
 - **Daily report:** dashboard table "Relatório diário" (`GET /api/paper/report/daily?kind=real|sim`) — trades, wins,

@@ -8,6 +8,12 @@ install:
 run:            ## 24/7 loop + dashboard on http://127.0.0.1:8000
 	PAPER_AUTOSTART=1 $(UV) src.main:app --host 127.0.0.1 --port 8000
 
+service:        ## run Kairos 24/7 on this Mac (launchd: starts at login, restarts on crash, no idle sleep)
+	scripts/kairos_service.sh install
+
+service-stop:   ## remove the launchd service
+	scripts/kairos_service.sh uninstall
+
 demo:           ## dummy account: real quotes, forced trades on both venues, then dashboard on :8001
 	rm -f demo.db && $(PY) -m src.solana.demo --db demo.db --cycles 4
 	PAPER_DB_PATH=./demo.db $(UV) src.main:app --host 127.0.0.1 --port 8001
