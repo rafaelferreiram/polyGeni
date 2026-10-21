@@ -77,7 +77,7 @@ def snapshot(base: str, hours: float = 24) -> dict:
         out["lab"] = get("/arena").get("leaderboard")
         out["server"] = "online"
     except Exception as e:
-        out["server"] = f"OFFLINE ou erro: {str(e)[:160]} — os bots não estão a correr; abrir com `make run`"
+        out["server"] = f"OFFLINE ou erro: {str(e)[:160]} — os bots não estão rodando; abrir com `make run`"
     out["setups"] = setups(cfg.HL_LIVE_MARKETS)
     out["projection"] = projection(cfg.LIVE_MAX_POSITION_USD)
     out["limits"] = {"max_capital_usd": cfg.LIVE_MAX_CAPITAL_USD, "max_position_usd": cfg.LIVE_MAX_POSITION_USD,

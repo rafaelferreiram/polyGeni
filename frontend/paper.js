@@ -22,7 +22,7 @@ const pnl = (v) => {
   return `<span class="${n >= 0 ? "green" : "red"}">${n >= 0 ? "+" : "−"}$${Math.abs(n).toFixed(2)}</span>`;
 };
 const pct = (v) => (v === null || v === undefined ? "–" : `${(v * 100).toFixed(2)}%`);
-const time = (iso) => (iso ? new Date(iso).toLocaleString() : "–");
+const time = (iso) => (iso ? new Date(iso).toLocaleString("pt-BR") : "–");
 const short = (m) => (m ? `${m.slice(0, 4)}…${m.slice(-4)}` : "");
 const ago = (iso) => {
   const s = Math.max(0, (Date.now() - new Date(iso)) / 1000);
@@ -87,35 +87,60 @@ function go(btn) {
     const net = acc?.network === "mainnet" ? "MAINNET — DINHEIRO REAL" : "testnet (dinheiro de teste)";
     if (!confirm(`Ligar os bots na conta REAL (${net})?\n\nLimites: capital ${usd(L.max_capital_usd, 0)}, posição ${usd(L.max_position_usd, 0)}, 1x, stop e alvo na exchange, perda diária ${pct(L.max_daily_loss_pct)}.`)) return;
   }
-  run(btn, on ? "A parar…" : "A ligar os bots…",
+  run(btn, on ? "Parando…" : "Ligando os bots…",
       () => api(`/account/${on ? "stop" : "start"}`, "POST", { kind: KIND }),
-      on ? "■ Equipa parada — não abre novas posições (stops continuam ativos)"
-         : (r) => `▶ Equipa a trabalhar na carteira ${KIND === "sim" ? "simulada" : "REAL"}${r.llm_bots_need_key ? " — só o bot de Regras trabalha até pôr ANTHROPIC_API_KEY" : ""}`);
+      on ? "■ Equipe parada — não abre novas posições (stops continuam ativos)"
+         : (r) => `▶ Equipe trabalhando na carteira ${KIND === "sim" ? "simulada" : "REAL"}${r.llm_bots_need_key ? " — só o bot de Regras trabalha até você colocar a ANTHROPIC_API_KEY" : ""}`);
 }
 
 function scanNow(btn) {
-  run(btn, "A acordar a equipa…", () => api("/account/scan", "POST", { kind: KIND }),
-      (r) => (r.started ? "🔍 Equipa acordada — a analisar os mercados agora" : "Já está uma análise a correr"));
+  run(btn, "Acordando a equipe…", () => api("/account/scan", "POST", { kind: KIND }),
+      (r) => (r.started ? "🔍 Equipe acordada — analisando os mercados agora" : "Já tem uma análise rodando"));
 }
 
 function giveCoffee(btn) {
-  if (!acc?.running) return toast("Carregue em ▶ Start primeiro", true);
-  run(btn, "A preparar o café…", () => api("/account/coffee", "POST", { kind: KIND, hours: 4 }),
-      (r) => `☕ Equipa com cafeína até ${new Date(r.coffee_until).toLocaleTimeString().slice(0, 5)} nas contas simulada e real — sem pausas, a analisar todos os ciclos`);
+  if (!acc?.running) return toast("Clique em ▶ Start primeiro", true);
+  run(btn, "Preparando o café…", () => api("/account/coffee", "POST", { kind: KIND, hours: 4 }),
+      (r) => `☕ Equipe com cafeína até ${hhmm(r.coffee_until)} nas contas simulada e real — sem pausas, analisando todos os ciclos`);
 }
 
 function setMode(mode, btn) {
   run(btn, "…", () => api("/account/mode", "POST", { mode }),
-      mode === "llm" ? "🧠 A equipa de bots decide; o Coordenador escolhe o melhor por mercado" : "✓ Só o bot de regras decide");
+      mode === "llm" ? "🧠 A equipe de bots decide; o Coordenador escolhe o melhor por mercado" : "✓ Só o bot de regras decide");
 }
+
+// ─── cute bot face (inline SVG): colour via --c, mood via the card's class (working / sleeping / blocked…) ───
+function botFace(color, ico) {
+  return `<div class="bot2" style="--c:${color}" aria-hidden="true"><svg viewBox="0 0 64 64">
+    <line x1="32" y1="10" x2="32" y2="4" class="ant-l"/><circle cx="32" cy="4" r="3.4" class="bulb"/>
+    <rect x="4" y="26" width="7" height="14" rx="3.5" class="ear"/><rect x="53" y="26" width="7" height="14" rx="3.5" class="ear"/>
+    <rect x="9" y="10" width="46" height="44" rx="17" class="head"/>
+    <rect x="15" y="18" width="34" height="25" rx="12" class="visor"/>
+    <g class="eyes"><ellipse cx="25" cy="29" rx="4.2" ry="4.8" class="eye"/><ellipse cx="39" cy="29" rx="4.2" ry="4.8" class="eye"/>
+      <circle cx="26.5" cy="27.2" r="1.4" class="glint"/><circle cx="40.5" cy="27.2" r="1.4" class="glint"/></g>
+    <ellipse cx="19" cy="37" rx="2.8" ry="1.6" class="blush"/><ellipse cx="45" cy="37" rx="2.8" ry="1.6" class="blush"/>
+    <path d="M28 37 Q32 40.5 36 37" class="smile"/></svg><span class="badge-ico">${ico}</span></div>`;
+}
+// re-render only when something changed, so a hovered/focused card keeps its tooltip open
+function setHTML(id, html) {
+  const el = document.getElementById(id);
+  if (el.dataset.html !== html) { el.innerHTML = html; el.dataset.html = html; }
+}
+const tipRows = (rows) => `<dl>${rows.filter(([, v]) => v !== null && v !== undefined && v !== "").map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>`;
+const hhmm = (iso) => (iso ? new Date(iso).toLocaleTimeString("pt-BR").slice(0, 5) : "–");
 
 // ─── animated bot room ───
 const STATIONS = [
-  { key: "scout", ico: "🔭", name: "Scout", role: "observa os mercados" },
-  { key: "decider", ico: "🎯", name: "Estratégia", role: "decide se compra" },
-  { key: "risk", ico: "🛡️", name: "Risk", role: "limites e tamanho" },
-  { key: "executor", ico: "⚙️", name: "Executor", role: "envia a ordem" },
-  { key: "guard", ico: "👁️", name: "Guarda", role: "vigia stop e alvo" },
+  { key: "scout", ico: "🔭", name: "Scout", role: "observa os mercados", color: "#7dd3fc",
+    about: "Busca preço, candles de 1h e funding de cada mercado e entrega os candidatos aos outros bots." },
+  { key: "decider", ico: "🎯", name: "Estratégia", role: "decide se compra", color: "#34d399",
+    about: "Procura uma queda forte dentro de uma tendência de alta. Sem queda, não compra." },
+  { key: "risk", ico: "🛡️", name: "Risk", role: "limites e tamanho", color: "#fbbf24",
+    about: "Define o tamanho da posição e pode vetar qualquer compra: limites de capital, perda diária e kill switch." },
+  { key: "executor", ico: "⚙️", name: "Executor", role: "envia a ordem", color: "#fb923c",
+    about: "O único que fala com a corretora. Envia a ordem aprovada com stop e alvo na Hyperliquid." },
+  { key: "guard", ico: "👁️", name: "Guarda", role: "vigia stop e alvo", color: "#a3e635",
+    about: "Acompanha as posições abertas, o stop-loss e o alvo, e registra as saídas." },
 ];
 let replay = null, lastCycleSeen = null;
 
@@ -146,20 +171,25 @@ function renderRoom(a) {
     const working = a.running && activeKey === st.key;
     let cls = !a.running ? "off" : working ? "working" : !acted ? "idle" : d.last_ok === false ? "blocked" : "ok";
     if (st.key === "guard" && a.running && !working) cls = a.positions.length ? "ok" : "idle";
-    const state = !a.running ? "desligado" : working ? "a trabalhar" : cls === "idle" ? "à espera" : cls === "blocked" ? "bloqueou" : "feito";
-    const bubble = !a.running ? "Carregue em ▶ Start para me pôr a trabalhar"
-      : working && !replay ? (a.live.detail || "a pensar…") : (d.last_reason || (st.key === "risk" || st.key === "executor" ? "Só entro em ação quando há sinal de compra" : "…"));
+    const state = !a.running ? "desligado" : working ? "trabalhando" : cls === "idle" ? "aguardando" : cls === "blocked" ? "bloqueou" : "feito";
+    const bubble = !a.running ? "Clique em ▶ Start para me colocar para trabalhar"
+      : working && !replay ? (a.live.detail || "pensando…") : (d.last_reason || (st.key === "risk" || st.key === "executor" ? "Só entro em ação quando há sinal de compra" : "…"));
+    const tip = `<b>${esc(d.name || st.name)}</b> · ${esc(d.role || st.role)}<div class="note" style="margin-top:4px">${esc(d.about || st.about)}</div>
+      ${tipRows([["Status", esc(state)], ["Última vez", d.last_run ? `${hhmm(d.last_run)} (há ${ago(d.last_run)})` : "ainda não rodou"],
+                 ["Ciclo", a.cycle ? `#${a.cycle}` : null], ["Próxima", nextCycleAt && a.running ? hhmm(new Date(nextCycleAt).toISOString()) : null]])}
+      <div class="wip"><b>Em andamento</b><br>${esc(working ? (a.live.detail || "pensando…") : bubble)}</div>`;
     const wireOn = a.running && (working || (replay && replay.order.indexOf(st.key) >= 0 && replay.order.indexOf(st.key) < replay.i));
     return `${i ? `<div class="wire ${wireOn ? "on" : ""}"></div>` : ""}
-      <div class="st ${cls}">
+      <div class="st ${cls}" tabindex="0" style="--c:${st.color}" aria-label="${esc(d.name || st.name)}: ${esc(state)}">
         ${cls === "idle" ? '<span class="zz">z z</span>' : ""}
-        <div class="head"><div class="bot"><span class="ant"></span><span class="mouth"></span><span class="badge-ico">${d.ico || st.ico}</span></div>
+        <div class="head">${botFace(st.color, d.ico || st.ico)}
           <div><div class="nm">${esc(d.name || st.name)}</div><div class="rl">${esc(d.role || st.role)}</div></div></div>
         <div class="state"><span class="dot"></span>${state}</div>
         <div class="bubble">${esc(bubble)}</div>
+        <div class="tip" role="tooltip">${tip}</div>
       </div>`;
   }).join("");
-  document.getElementById("line").innerHTML = html;
+  setHTML("line", html);
 }
 
 function maybeReplay(a) {
@@ -188,7 +218,8 @@ function maybeReplay(a) {
 
 // ─── main refresh ───
 const KINDS = { entry: "🟢 compra", exit: "🔵 venda", veto: "🟡 bloqueio", error: "🔴 erro", kill_switch: "🛑 kill switch",
-                reconcile: "🧾 reconciliação", arm: "🔓 ligado", disarm: "🔒 desligado", mode: "🔀 modo" };
+                reconcile: "🧾 reconciliação", arm: "🔓 ligado", disarm: "🔒 desligado", mode: "🔀 modo",
+                sleep: "😴 pausa", wake: "⏰ acordou", coffee: "☕ café" };
 let nextCycleAt = null;
 
 async function refresh() {
@@ -197,7 +228,7 @@ async function refresh() {
   // header
   document.querySelectorAll("#acct-seg button").forEach((b) => b.classList.toggle("on", b.dataset.k === KIND));
   document.querySelectorAll("#mode-seg button").forEach((b) => b.classList.toggle("on", b.dataset.m === a.decision_mode));
-  document.querySelector('#mode-seg [data-m="llm"]').title = a.llm_available ? "O LLM decide compras e vendas" : "Precisa de ANTHROPIC_API_KEY no .env";
+  document.querySelector('#mode-seg [data-m="llm"]').title = a.llm_available ? "O LLM decide compras e vendas" : "Precisa da ANTHROPIC_API_KEY no .env";
   const strip = document.getElementById("strip");
   strip.className = `strip ${KIND}`;
   strip.textContent = KIND === "sim" ? "SIMULAÇÃO — dinheiro falso, preços e order books reais da Hyperliquid"
@@ -212,15 +243,15 @@ async function refresh() {
   const problems = a.config?.problems || [];
   setup.hidden = !(KIND === "real" && (problems.length || a.exchange_error));
   if (!setup.hidden) {
-    setup.innerHTML = `<b>Para ligar a conta real falta:</b> ${problems.map(esc).join(" · ")}${a.exchange_error ? ` <span class="red">${esc(a.exchange_error)}</span>` : ""}
+    setup.innerHTML = `<b>Para ativar a conta real falta:</b> ${problems.map(esc).join(" · ")}${a.exchange_error ? ` <span class="red">${esc(a.exchange_error)}</span>` : ""}
       <ol><li>Depositar ≥ 5 USDC na Hyperliquid (rede Arbitrum) com a MetaMask</li>
-      <li>Testnet: Faucet → More → API → <b>Generate</b> → Authorize (guarde a chave só no <code>.env</code>)</li>
-      <li>No <code>.env</code>: <code>HL_NETWORK=testnet</code>, <code>HL_ACCOUNT_ADDRESS=0x…</code>, <code>HL_API_WALLET_KEY=…</code> e reiniciar</li></ol>`;
+      <li>Testnet: Faucet → More → API → <b>Generate</b> → Authorize (salve a chave só no <code>.env</code>)</li>
+      <li>No <code>.env</code>: <code>HL_NETWORK=testnet</code>, <code>HL_ACCOUNT_ADDRESS=0x…</code>, <code>HL_API_WALLET_KEY=…</code> e reinicie</li></ol>`;
   }
   // KPIs
   document.getElementById("k-eq-l").textContent = KIND === "sim" ? "Saldo simulado" : "Saldo real na Hyperliquid";
   document.getElementById("k-eq").textContent = usd(KIND === "real" && a.exchange_balance !== undefined ? a.exchange_balance : a.equity);
-  document.getElementById("k-eq-s").textContent = `cash ${usd(a.cash)} · em posição ${usd(a.exposure)}`;
+  document.getElementById("k-eq-s").textContent = `caixa ${usd(a.cash)} · em posição ${usd(a.exposure)}`;
   const P = a.profit || {};
   document.getElementById("k-pnl").innerHTML = pnl(P.net_all);
   const all = a.performance?.all;
@@ -230,7 +261,7 @@ async function refresh() {
   const kp = document.getElementById("k-pos");
   kp.textContent = p ? p.symbol : "Sem posição";
   kp.classList.toggle("soft", !p);
-  document.getElementById("k-pos-s").innerHTML = p ? `${usd(p.cost_usd)} → ${usd(p.mark_value)} ${pnl(p.mark_value !== null ? p.mark_value - p.cost_usd : null)}` : "à espera de uma oportunidade";
+  document.getElementById("k-pos-s").innerHTML = p ? `${usd(p.cost_usd)} → ${usd(p.mark_value)} ${pnl(p.mark_value !== null ? p.mark_value - p.cost_usd : null)}` : "esperando uma oportunidade";
   const kt = document.getElementById("k-tr");
   kt.textContent = a.trades.length ? `${a.trades.length} · ${pct(a.win_rate)}` : "Nenhum";
   kt.classList.toggle("soft", !a.trades.length);
@@ -239,9 +270,9 @@ async function refresh() {
   nextCycleAt = a.running && a.heartbeat ? new Date(a.heartbeat.ts).getTime() + a.cycle_interval_sec * 1000 : null;
   const scanning = a.scanning || (a.live?.running && Date.now() - new Date(a.live.ts) < 60000);
   document.getElementById("scanbar").hidden = !scanning;
-  if (scanning) document.getElementById("scan-text").textContent = `A analisar o mercado (ciclo #${a.cycle})…`;
+  if (scanning) document.getElementById("scan-text").textContent = `Analisando o mercado (ciclo #${a.cycle})…`;
   document.getElementById("room-tag").textContent = KIND === "sim" ? "simulação" : `real · ${a.network}`;
-  document.getElementById("room-head").innerHTML = scanning ? '<span class="live-chip">a analisar o mercado</span>' : "";
+  document.getElementById("room-head").innerHTML = scanning ? '<span class="live-chip">analisando o mercado</span>' : "";
   if (!replay) renderRoom(a);
   renderTeam();
   maybeReplay(a);
@@ -271,7 +302,7 @@ function renderProfit(P) {
   document.getElementById("f-net-s").textContent = `últimos 30 dias · desde o início ${P.net_all >= 0 ? "+" : "−"}$${Math.abs(P.net_all).toFixed(2)}`;
   const v = document.getElementById("verdict");
   v.textContent = P.verdict;
-  v.style.color = P.verdict === "a dar lucro" ? "var(--green)" : P.verdict === "a dar prejuízo" ? "var(--red)" : "";
+  v.style.color = P.verdict === "dando lucro" ? "var(--green)" : P.verdict === "dando prejuízo" ? "var(--red)" : "";
   const used = P.ai_budget ? Math.min(P.ai_month / P.ai_budget, 1) : 0;
   const bar = document.getElementById("budget-bar");
   bar.style.width = `${(used * 100).toFixed(1)}%`;
@@ -284,22 +315,22 @@ function renderFoot() {
   const left = document.getElementById("room-left"), right = document.getElementById("room-right");
   if (!acc.running) { left.innerHTML = "Bots <b>desligados</b>"; right.textContent = ""; return; }
   const secs = nextCycleAt ? Math.round((nextCycleAt - Date.now()) / 1000) : null;
-  left.innerHTML = acc.scanning ? `Ciclo <b>#${acc.cycle}</b> a decorrer` : `Próxima análise em <b>${secs > 0 ? `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}` : "instantes"}</b>`;
+  left.innerHTML = acc.scanning ? `Ciclo <b>#${acc.cycle}</b> em andamento` : `Próxima análise em <b>${secs > 0 ? `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}` : "instantes"}</b>`;
   right.innerHTML = `Quem decide: <b>${acc.decision_mode === "llm" ? `🧠 ${esc(acc.model)}` : "regras"}</b>`;
 }
 
 // ─── advanced actions (real account) ───
 function flatten(btn) {
-  if (!confirm("Fechar TODAS as posições reais a mercado e desligar os bots da conta real?")) return;
-  run(btn, "A fechar…", () => api("/live/flatten", "POST"),
+  if (!confirm("Fechar TODAS as posições reais a preço de mercado e desligar os bots da conta real?")) return;
+  run(btn, "Fechando…", () => api("/live/flatten", "POST"),
       (r) => (r.errors.length ? `Fechadas: ${r.closed.join(", ") || "nenhuma"} · erros: ${r.errors.join("; ")}` : `✓ Fechadas: ${r.closed.join(", ") || "nenhuma posição aberta"}`));
 }
 function testOrder(btn) {
-  run(btn, "A enviar…", () => api("/live/test-order", "POST"),
-      (r) => (r.position ? `✓ Ordem de teste: ${r.position.symbol} com stop e alvo na exchange` : "Sem ordem — ver o feed"));
+  run(btn, "Enviando…", () => api("/live/test-order", "POST"),
+      (r) => (r.position ? `✓ Ordem de teste: ${r.position.symbol} com stop e alvo na exchange` : "Sem ordem — veja o feed"));
 }
 function killReset(btn) {
-  run(btn, "A rearmar…", () => api(KIND === "real" ? "/live/kill-switch/reset" : "/kill-switch/reset", "POST", { reason: "dashboard" }), "✓ Kill switch rearmado");
+  run(btn, "Rearmando…", () => api(KIND === "real" ? "/live/kill-switch/reset" : "/kill-switch/reset", "POST", { reason: "dashboard" }), "✓ Kill switch rearmado");
 }
 
 // ─── wallets (watch-only) ───
@@ -327,18 +358,18 @@ async function connectWallet(kind) {
     let address, label;
     if (kind === "metamask") {
       const mm = metamaskProvider();
-      if (!mm) throw new Error("MetaMask não encontrada. Só ligamos à MetaMask e à Phantom — instale/ative a extensão MetaMask neste browser (outras carteiras são ignoradas).");
+      if (!mm) throw new Error("MetaMask não encontrada. Só conectamos a MetaMask e a Phantom — instale/ative a extensão MetaMask neste navegador (outras carteiras são ignoradas).");
       [address] = await mm.request({ method: "eth_requestAccounts" });   // public address only, no signature
       label = "MetaMask";
     } else {
       const provider = phantomProvider();
-      if (!provider) throw new Error("Phantom não encontrada neste browser. Instale a extensão Phantom no Chrome ou Brave.");
+      if (!provider) throw new Error("Phantom não encontrada neste navegador. Instale a extensão Phantom no Chrome ou no Brave.");
       const res = await provider.connect();
       address = (res?.publicKey || provider.publicKey).toString();
       label = "Phantom";
     }
     await api("/wallets", "POST", { address, label });
-    toast(`✓ ${label} ligada: ${short(address)} (só leitura)`);
+    toast(`✓ ${label} conectada: ${short(address)} (só leitura)`);
     safe(loadWallets);
   } catch (e) { toast(`✖ ${e.message || e}`, true); }
 }
@@ -358,7 +389,7 @@ function walletCard(w) {
 }
 async function loadWallets() {
   const { wallets } = await api("/wallets");
-  document.getElementById("wallets").innerHTML = wallets.length ? wallets.map(walletCard).join("") : '<p class="note">Nenhuma carteira ligada.</p>';
+  document.getElementById("wallets").innerHTML = wallets.length ? wallets.map(walletCard).join("") : '<p class="note">Nenhuma carteira conectada.</p>';
 }
 
 // ─── team of bots (one shared wallet) + lab results ───
@@ -370,7 +401,7 @@ const MODEL_LOOK = {
   "claude-sonnet-5-5": { label: "Sonnet 5.5", color: "#60a5fa", ico: "📜" },
   "claude-haiku-5-5": { label: "Haiku 5.5", color: "#34d399", ico: "🍃" },
 };
-const ACTION_PT = { BUY: "🟢 comprar", HOLD: "⏸ esperar", SELL: "🔵 vender", sleep: "😴 a dormir", wake: "⏰ acordou",
+const ACTION_PT = { BUY: "🟢 comprar", HOLD: "⏸ esperar", SELL: "🔵 vender", sleep: "😴 dormindo", wake: "⏰ acordou",
                     entry: "🟢 comprou", exit: "🔵 vendeu", veto: "🟡 bloqueado" };
 const look = (m) => MODEL_LOOK[m] || { label: m, color: "#9fe8c7", ico: "🤖" };
 let lastArena = null;
@@ -392,38 +423,48 @@ function renderTeam() {
   const liveName = acc.live?.running && Date.now() - new Date(acc.live.ts) < 30000 ? acc.live.agent : null;
   const awake = members.filter((m) => lab[m.model]?.running && !lab[m.model]?.needs_key).length;
   document.getElementById("team-head").innerHTML = acc.running
-    ? `<b>${awake}</b> de ${members.length} bots ativos${acc.sleep?.until ? ` · carteira em pausa até <b>${new Date(acc.sleep.until).toLocaleTimeString().slice(0, 5)}</b>` : ""}`
-    : "equipa desligada — carregue em ▶ Start";
+    ? `<b>${awake}</b> de ${members.length} bots ativos${acc.sleep?.until ? ` · carteira pausada até <b>${hhmm(acc.sleep.until)}</b>` : ""}`
+    : "equipe desligada — clique em ▶ Start";
   const coffee = acc.running && acc.coffee_until;
   const cb = document.getElementById("btn-coffee");
   cb.classList.toggle("on", !!coffee);
-  cb.textContent = coffee ? `☕ até ${new Date(coffee).toLocaleTimeString().slice(0, 5)}` : "☕ Café";
-  document.getElementById("team-grid").innerHTML = members.map((m) => {
+  cb.textContent = coffee ? `☕ até ${hhmm(coffee)}` : "☕ Café";
+  setHTML("team-grid", members.map((m) => {
     const L = look(m.model), r = lab[m.model] || {};
-    const working = acc.running && (liveName === m.name || r.state === "a trabalhar");
+    const working = acc.running && (liveName === m.name || (r.state === "trabalhando" || r.state === "a trabalhar"));
     const cls = !acc.running || !r.running ? "off" : r.needs_key ? "nokey" : working ? "working" : (m.open || []).length || r.open?.length ? "holding" : r.sleep_until ? "sleeping" : "";
-    const state = !acc.running || !r.running ? "desligado" : r.needs_key ? "falta chave da API" : working ? "a analisar…"
-      : r.sleep_until ? `a dormir até ${new Date(r.sleep_until).toLocaleTimeString().slice(0, 5)}` : r.state || "à espera";
+    const state = !acc.running || !r.running ? "desligado" : r.needs_key ? "falta chave da API" : working ? "analisando…"
+      : r.sleep_until ? `dormindo até ${hhmm(r.sleep_until)}` : r.state || "aguardando";
     const last = m.last || (r.last_decision ? { action: r.last_decision.action, reason: r.last_decision.reason, market: r.last_decision.market } : null);
-    const bubble = r.needs_key ? "Ponha ANTHROPIC_API_KEY no .env para eu começar a decidir."
-      : last ? `${last.market ? last.market + ": " : ""}${ACTION_PT[last.action] || last.action || ""} — ${(last.reason || "").replace(/^a dormir [^:]*: /, "")}` : r.sleep_reason || "Ainda sem decisões.";
-    return `<div class="tb ${cls}">
+    const bubble = r.needs_key ? "Coloque a ANTHROPIC_API_KEY no .env para eu começar a decidir."
+      : last ? `${last.market ? last.market + ": " : ""}${ACTION_PT[last.action] || last.action || ""} — ${(last.reason || "").replace(/^(a dormir|dormindo) [^:]*: /, "")}` : r.sleep_reason || "Ainda sem decisões.";
+    const isRules = m.model === "rules";
+    const tip = `<b>${esc(L.label)}</b> · ${isRules ? "regras fixas, grátis" : "decide com IA (Claude)"}
+      ${tipRows([["Modelo", esc(m.model)], ["Status", esc(state)],
+                 ["Mercado", last?.market ? esc(last.market) : null],
+                 ["Posições", (m.open || []).length ? esc(m.open.join(", ")) : "nenhuma"],
+                 ["Laboratório", `${usd(r.equity)} · ${pct(r.twr)} · ${r.trades ?? 0} trades${r.win_rate != null ? ` · acerto ${pct(r.win_rate)}` : ""}`],
+                 ["Custo IA", isRules ? "grátis" : `${usd(r.ai_cost_usd ?? 0)} · líquido ${pnl(r.net_usd ?? 0)}`],
+                 ["Café", coffee ? `☕ atento até ${hhmm(coffee)}` : null]])}
+      <div class="wip"><b>Em andamento</b><br>${esc(working ? (r.live?.detail || "analisando os mercados…") : r.sleep_until ? `Dormindo até ${hhmm(r.sleep_until)} — ${r.sleep_reason || "sem sinais"}` : bubble)}</div>`;
+    return `<div class="tb ${cls}" tabindex="0" style="--c:${L.color}" aria-label="${esc(L.label)}: ${esc(state)}">
       ${cls === "sleeping" ? '<span class="zz">z z</span>' : ""}${coffee && cls !== "off" ? '<span class="cup" title="com cafeína: sem pausas">☕</span>' : ""}
-      <div class="head"><div class="bot" style="--c:${L.color}"><span class="ant"></span><span class="mouth"></span><span class="badge-ico">${L.ico}</span></div>
+      <div class="head">${botFace(L.color, L.ico)}
         <div><div class="nm">${esc(L.label)}</div><span class="pill ${cls === "working" || cls === "holding" ? "on" : ""}">${esc(state)}</span></div></div>
       <div class="bubble">${esc(bubble)}</div>
       <div class="meta"><span>Na carteira<br><b>${m.trades ?? 0} trades ${pnl(m.pnl_usd ?? 0)}</b></span>
         <span>Laboratório<br><b>${usd(r.equity)} · ${pct(r.twr)}</b></span>
         <span>Custo IA<br><b>${m.model === "rules" ? "grátis" : usd(r.ai_cost_usd ?? 0)}</b></span>
         <span>Líquido<br><b>${pnl(r.net_usd ?? 0)}</b></span></div>
+      <div class="tip" role="tooltip">${tip}</div>
     </div>`;
-  }).join("");
+  }).join(""));
 }
 
 // ─── advanced (old Solana paper + readiness) ───
 async function loadAdvanced() {
   const [s, r, dec] = await Promise.all([api("/status"), api("/readiness"), api("/decisions?limit=100")]);
-  document.getElementById("old-paper").textContent = `${s.running ? "A correr" : "Parado"} · património ${usd(s.equity)} · ${s.closed_trades} trades · ciclo #${s.cycle}`;
+  document.getElementById("old-paper").textContent = `${s.running ? "Rodando" : "Parado"} · patrimônio ${usd(s.equity)} · ${s.closed_trades} trades · ciclo #${s.cycle}`;
   document.getElementById("readiness").innerHTML = r.checks.map((c) => `<div class="note">${c.ok ? "✅" : "⬜"} ${esc(c.name)} (${esc(c.value)})</div>`).join("");
   table("decisions", ["Quando", "Tipo", "Ativo", "Motivo"], dec.decisions.map((d) =>
     `<tr><td>${time(d.ts)}</td><td class="k-${esc(d.kind)}">${esc(d.kind)}</td><td>${esc(d.symbol || "")}</td><td>${esc(d.reason)}</td></tr>`));

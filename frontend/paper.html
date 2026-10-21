@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="pt">
+<html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
@@ -71,7 +71,7 @@
               radial-gradient(ellipse at 50% -20%, rgba(52,211,153,.10), transparent 60%),
               repeating-linear-gradient(0deg, transparent 0 31px, rgba(255,255,255,.035) 31px 32px),
               repeating-linear-gradient(90deg, transparent 0 31px, rgba(255,255,255,.035) 31px 32px), var(--floor);
-            border: 1px solid var(--border); border-radius: 14px; padding: 26px 18px 20px; overflow: hidden; }
+            border: 1px solid var(--border); border-radius: 14px; padding: 26px 18px 20px; }
     .line { display: flex; align-items: stretch; gap: 0; }
     .st { flex: 1 1 0; min-width: 0; background: rgba(18,23,21,.96); border: 1px solid var(--border); border-radius: 14px;
           padding: 14px 12px 12px; transition: border-color .3s, box-shadow .3s, transform .3s; position: relative; }
@@ -80,15 +80,13 @@
                animation: flow .6s linear infinite; }
     @keyframes flow { to { background-position: 28px 0; } }
     .head { display: flex; gap: 10px; align-items: center; }
-    .bot { width: 52px; height: 44px; border-radius: 13px; background: linear-gradient(180deg, var(--metal-2), var(--metal));
-           position: relative; flex: none; border: 2px solid #4a4a58; margin-top: 10px; }
-    .bot::before, .bot::after { content: ""; position: absolute; top: 15px; width: 9px; height: 9px; border-radius: 50%;
-           background: #9fe8c7; box-shadow: 0 0 6px #9fe8c7; animation: blink 4s infinite; }
-    .bot::before { left: 11px; } .bot::after { right: 11px; }
-    .ant { position: absolute; top: -13px; left: 50%; width: 2px; height: 11px; background: #4a4a58; transform: translateX(-50%); }
-    .ant::after { content: ""; position: absolute; top: -6px; left: -3px; width: 8px; height: 8px; border-radius: 50%; background: #555; }
+
+
+
+
+
     .badge-ico { position: absolute; bottom: -8px; right: -10px; font-size: 16px; filter: drop-shadow(0 1px 2px #000); }
-    .mouth { position: absolute; bottom: 7px; left: 50%; transform: translateX(-50%); width: 14px; height: 3px; border-radius: 2px; background: #4a4a58; }
+
     .nm { font-weight: 700; font-size: 14px; }
     .rl { color: var(--muted); font-size: 11.5px; line-height: 1.35; }
     .bubble { margin-top: 12px; background: var(--surface-2); border-radius: 10px; padding: 8px 10px; font-size: 12px; line-height: 1.45;
@@ -102,21 +100,65 @@
     .zz { position: absolute; top: 6px; right: 10px; color: var(--muted); font-size: 11px; font-weight: 700; animation: zz 2.4s ease-in-out infinite; }
     /* working: scanning eyes, blinking antenna, glow, typing */
     .st.working { border-color: var(--green); box-shadow: 0 0 0 1px var(--green), 0 0 28px var(--glow); transform: translateY(-4px); }
-    .st.working .bot { border-color: var(--green); animation: hop .9s ease-in-out infinite; }
-    .st.working .bot::before, .st.working .bot::after { animation: scan 1s ease-in-out infinite; }
-    .st.working .ant::after { background: var(--green); box-shadow: 0 0 10px var(--green); animation: pulse .5s infinite alternate; }
-    .st.working .mouth { width: 8px; height: 6px; border-radius: 50%; background: var(--green); }
+
+
+
+
     .st.working .dot { background: var(--green); animation: pulse .5s infinite alternate; }
     .st.working .bubble::after { content: " ▍"; color: var(--green); animation: pulse .5s infinite alternate; }
     .st.ok .dot { background: var(--green); }
-    .st.ok .bot { border-color: rgba(44,182,125,.7); }
+
     .st.blocked .dot { background: var(--yellow); }
-    .st.blocked .bot { border-color: rgba(242,201,76,.8); }
-    .st.blocked .bot::before, .st.blocked .bot::after { height: 3px; border-radius: 2px; top: 18px; background: var(--yellow); box-shadow: none; }
+
+
     .st.blocked .bubble { box-shadow: inset 3px 0 0 var(--yellow); }
-    .st.idle .bot::before, .st.idle .bot::after { height: 2px; top: 19px; box-shadow: none; background: #7d8a84; animation: none; }
+
     .st.idle { opacity: .8; }
     .st.off { opacity: .45; filter: grayscale(.6); }
+
+    /* ── cute bots (inline SVG from botFace()): colour per bot via --c, mood via the card's state class ── */
+    .bot2 { width: 58px; height: 58px; flex: none; position: relative; --c: #9fe8c7; }
+    .bot2 svg { width: 100%; height: 100%; overflow: visible; display: block; }
+    .bot2 .head { fill: color-mix(in srgb, var(--c) 20%, #1b2320); stroke: color-mix(in srgb, var(--c) 70%, #1b2320); stroke-width: 2; }
+    .bot2 .ear { fill: color-mix(in srgb, var(--c) 55%, #1b2320); }
+    .bot2 .ant-l { stroke: color-mix(in srgb, var(--c) 60%, #1b2320); stroke-width: 2; stroke-linecap: round; }
+    .bot2 .bulb { fill: var(--c); filter: drop-shadow(0 0 3px var(--c)); }
+    .bot2 .visor { fill: #0a0f0d; }
+    .bot2 .eye { fill: var(--c); transform-box: fill-box; transform-origin: center; animation: blink 4.5s infinite; filter: drop-shadow(0 0 2px var(--c)); }
+    .bot2 .glint { fill: #fff; opacity: .85; }
+    .bot2 .blush { fill: #fb8f8f; opacity: .45; }
+    .bot2 .smile { fill: none; stroke: var(--c); stroke-width: 1.8; stroke-linecap: round; }
+    .bot2 .eyes { transform-box: fill-box; transform-origin: center; }
+    .bot2 .badge-ico { bottom: -4px; right: -8px; }
+    .badge-ico { position: absolute; font-size: 16px; filter: drop-shadow(0 1px 2px #000); }
+    /* working: hops, eyes look around, antenna pulses */
+    .working .bot2 { animation: hop .9s ease-in-out infinite; }
+    .working .bot2 .eyes { animation: scan 1.1s ease-in-out infinite; }
+    .working .bot2 .bulb { animation: pulse .45s infinite alternate; }
+    .working .bot2 .smile { stroke-width: 2.4; }
+    /* sleeping / idle: closed eyes, no glint, dim antenna */
+    .sleeping .bot2 .eye, .idle .bot2 .eye { animation: none; transform: scaleY(.18); filter: none; }
+    .sleeping .bot2 .glint, .idle .bot2 .glint { opacity: 0; }
+    .sleeping .bot2 .bulb, .idle .bot2 .bulb { fill: #5c6762; filter: none; }
+    /* blocked: amber squint */
+    .blocked .bot2 { --c: #fbbf24; }
+    .blocked .bot2 .eye { animation: none; transform: scaleY(.45); }
+    .off .bot2 .eye { animation: none; }
+
+    /* ── hover / focus cards: a few facts about the agent and what it is doing now ── */
+    .st, .tb { outline-offset: 3px; }
+    .tip { position: absolute; left: 6px; top: 6px; width: max(calc(100% - 12px), 230px); max-width: calc(100vw - 40px); z-index: 5;
+           background: rgba(10,14,12,.97); border: 1px solid color-mix(in srgb, var(--c, var(--accent)) 45%, var(--border)); border-radius: 12px;
+           padding: 10px 12px; font-size: 12px; line-height: 1.5; color: var(--text); box-shadow: 0 10px 30px rgba(0,0,0,.5);
+           opacity: 0; transform: translateY(6px); pointer-events: none; transition: opacity .15s, transform .15s; }
+    .tip b { color: var(--c, var(--accent)); font-weight: 650; }
+    .tip dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; margin: 6px 0 0; }
+    .tip dt { color: var(--muted); } .tip dd { margin: 0; overflow-wrap: anywhere; }
+    .tip .wip { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+    .st:hover .tip, .st:focus-within .tip, .tb:hover .tip, .tb:focus-within .tip { opacity: 1; transform: none; pointer-events: auto; }
+    .st:hover, .st:focus-within, .tb:hover, .tb:focus-within { z-index: 6; }
+    .st:last-child .tip, .tb:last-child .tip { left: auto; right: 6px; }
+    @media (hover: none) { .st, .tb { cursor: pointer; } }
     @keyframes blink { 0%, 92%, 100% { transform: scaleY(1); } 95% { transform: scaleY(.1); } }
     @keyframes scan { 0%, 100% { transform: translateX(-3px); } 50% { transform: translateX(3px); } }
     @keyframes hop { 50% { transform: translateY(-4px); } }
@@ -143,17 +185,17 @@
     .tb { background: var(--surface-2); border: 1px solid var(--border); border-radius: 14px; padding: 14px; position: relative;
           transition: border-color .3s, box-shadow .3s, transform .3s; min-width: 0; }
     .tb .head { align-items: flex-start; }
-    .tb .bot { --c: #9fe8c7; }
-    .tb .bot::before, .tb .bot::after { background: var(--c); box-shadow: 0 0 6px var(--c); }
+
+
     .tb .meta { font-size: 12px; color: var(--muted); margin-top: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px; }
     .tb .meta b { color: var(--text); font-variant-numeric: tabular-nums; }
     .tb .bubble { min-height: 44px; }
     .tb.working { border-color: var(--green); box-shadow: 0 0 0 1px var(--green), 0 0 24px var(--glow); transform: translateY(-3px); }
-    .tb.working .bot { animation: hop .9s ease-in-out infinite; border-color: var(--green); }
-    .tb.working .bot::before, .tb.working .bot::after { animation: scan 1s ease-in-out infinite; }
-    .tb.working .ant::after { background: var(--green); box-shadow: 0 0 10px var(--green); animation: pulse .5s infinite alternate; }
+
+
+
     .tb.holding { border-color: rgba(52,211,153,.5); }
-    .tb.sleeping .bot::before, .tb.sleeping .bot::after { height: 2px; top: 19px; box-shadow: none; background: #7d8a84; animation: none; }
+
     .tb.off { opacity: .5; filter: grayscale(.7); }
     .tb.nokey .bubble { box-shadow: inset 3px 0 0 var(--yellow); }
     .pill { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); white-space: nowrap; }
@@ -183,14 +225,26 @@
     details.more[open] summary { margin-bottom: 10px; }
     .k-entry { color: var(--green); } .k-exit { color: #7dd3fc; } .k-veto { color: var(--yellow); } .k-error, .k-kill_switch { color: var(--red); }
     main a { color: var(--accent); }
-    @media (max-width: 960px) {
-      .two { grid-template-columns: 1fr; }
-      .line { flex-direction: column; }
-      .wire { flex-basis: 24px; width: 4px; height: 24px; align-self: center; }
-      .wire.on { background: repeating-linear-gradient(180deg, var(--green) 0 8px, transparent 8px 14px); background-size: 4px 28px; animation: flowv .6s linear infinite; }
-      @keyframes flowv { to { background-position: 0 28px; } }
+    @media (max-width: 1100px) {
+      .line { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+      .wire { display: none; }
+      .st.working { transform: none; }
     }
-    @media (max-width: 600px) { header { position: static; } .go { width: 100%; } }
+    @media (max-width: 960px) { .two { grid-template-columns: 1fr; } }
+    @media (max-width: 600px) {
+      header { position: static; padding: 12px 16px !important; }
+      header .ctrls { width: 100%; } header .seg { flex: 1 1 auto; } header .seg button { flex: 1; }
+      .go { width: 100%; }
+      main { padding: 12px; gap: 12px; }
+      .panel { padding: 14px !important; }
+      .panel h2 > .ctrls { width: 100%; } .panel h2 > .ctrls .note { width: 100%; } .panel h2 > .ctrls button { flex: 1; white-space: nowrap; }
+      .kpi .v { font-size: 24px; }
+      .flow .op { display: none; } .flow > div:not(.op) { flex-basis: calc(50% - 5px); }
+      .flow b { font-size: 18px; }
+      .room { padding: 16px 12px; }
+      .team, .line { grid-template-columns: 1fr; }
+      .fi { flex-wrap: wrap; gap: 2px 10px; }
+    }
   </style>
 </head>
 <body>
@@ -204,12 +258,12 @@
       </div>
       <div class="seg" id="mode-seg" role="group" aria-label="Quem decide">
         <button data-m="rules" onclick="setMode('rules', this)">Só regras</button>
-        <button data-m="llm" onclick="setMode('llm', this)">🧠 Equipa IA</button>
+        <button data-m="llm" onclick="setMode('llm', this)">🧠 Equipe IA</button>
       </div>
       <button class="go start" id="btn-go" onclick="go(this)">▶ Start</button>
     </div>
   </header>
-  <div class="scanbar" id="scanbar" hidden><span class="spin"></span><span id="scan-text">A analisar o mercado…</span></div>
+  <div class="scanbar" id="scanbar" hidden><span class="spin"></span><span id="scan-text">Analisando o mercado…</span></div>
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
   <main>
@@ -237,7 +291,7 @@
     </section>
 
     <section class="panel" id="team">
-      <h2><span>Equipa de bots <span class="tag">uma carteira, vários bots</span></span>
+      <h2><span>Equipe de bots <span class="tag">uma carteira, vários bots</span></span>
         <span class="ctrls"><span class="note" id="team-head"></span><button id="btn-coffee" onclick="giveCoffee(this)" title="Mantém os bots das contas simulada e real acordados e atentos durante 4 horas (as regras de compra não mudam)">☕ Café</button><button id="btn-scan" onclick="scanNow(this)">🔍 Analisar agora</button></span></h2>
       <div class="team" id="team-grid"></div>
       <p class="note" style="margin-top:12px">Cada bot pensa uma vez por hora em cada mercado. O Coordenador executa na carteira a proposta do bot com melhor histórico nesse mercado (medido no laboratório, onde cada bot tem $20 simulados).</p>
@@ -252,7 +306,7 @@
     </section>
 
     <section class="panel" id="relatorio">
-      <h2><span>Relatório diário <span class="tag" id="rep-tag">–</span></span><span class="note">guardado também em reports/daily/ às 23:55</span></h2>
+      <h2><span>Relatório diário <span class="tag" id="rep-tag">–</span></span><span class="note">salvo também em reports/daily/ às 23:55</span></h2>
       <div class="tbl"><table id="daily"></table></div>
     </section>
 
@@ -268,12 +322,12 @@
           <button onclick="connectWallet('metamask')">🦊 Conectar MetaMask</button>
           <button onclick="connectWallet('phantom')">👻 Conectar Phantom</button>
         </div>
-        <p class="note">Só leitura: a ligação partilha o endereço público para mostrar saldos. Nada é assinado.</p>
+        <p class="note">Só leitura: a conexão compartilha o endereço público para mostrar saldos. Nada é assinado.</p>
         <div id="wallets"></div>
       </section>
       <section class="panel" id="arena">
         <h2><span>Laboratório <span class="tag">cada bot com $20 simulados</span></span></h2>
-        <p class="note">Resultados de cada bot na sua própria carteira simulada — é daqui que o Coordenador aprende quem é melhor em cada mercado.</p>
+        <p class="note">Resultados de cada bot em sua própria carteira simulada — é daqui que o Coordenador aprende quem é melhor em cada mercado.</p>
         <div class="tbl"><table id="arena-table"></table></div>
       </section>
     </div>
@@ -287,10 +341,10 @@
       <p class="note" id="limits"></p>
       <h3 style="margin-top:12px">Pronto para dinheiro real?</h3><div id="readiness"></div>
       <h3 style="margin-top:12px">Paper de tokens Solana ($100)</h3><p class="note" id="old-paper"></p>
-      <h3 style="margin-top:12px">Decision log (paper Solana)</h3><div class="tbl"><table id="decisions"></table></div>
+      <h3 style="margin-top:12px">Registro de decisões (paper Solana)</h3><div class="tbl"><table id="decisions"></table></div>
     </details>
   </main>
 
-  <script src="/static/paper.js?v=20"></script>
+  <script src="/static/paper.js?v=22"></script>
 </body>
 </html>

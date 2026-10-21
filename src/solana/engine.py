@@ -299,10 +299,10 @@ class PaperEngine:
             ref = (sleep.get("prices") or {}).get(mint)
             if ref and px and abs(px / ref - 1) >= cfg.BOT_WAKE_MOVE_PCT:
                 self.ledger.set_state("sleep", {})
-                self.ledger.log_decision("wake", cycle=self.cycle, mint=mint, reason=f"acordei: preço mexeu {px / ref - 1:+.1%}")
+                self.ledger.log_decision("wake", cycle=self.cycle, mint=mint, reason=f"acordei: o preço mexeu {px / ref - 1:+.1%}")
                 return False
         stats["sleeping_until"] = sleep["until"]
-        self._agent("scout", last_reason=f"a dormir até {_ts(sleep['until']).astimezone().strftime('%H:%M')} — {sleep.get('reason', '')}"[:200])
+        self._agent("scout", last_reason=f"dormindo até {_ts(sleep['until']).astimezone().strftime('%H:%M')} — {sleep.get('reason', '')}"[:200])
         return True
 
     def _maybe_sleep(self, stats: dict):
@@ -326,7 +326,7 @@ class PaperEngine:
             until = datetime.now(timezone.utc) + timedelta(minutes=minutes)
             self.ledger.set_state("sleep", {"until": until.isoformat(timespec="seconds"), "reason": reason,
                                             "prices": getattr(self, "_last_prices", {})})
-            self.ledger.log_decision("sleep", cycle=self.cycle, reason=f"a dormir {minutes:.0f} min: {reason}")
+            self.ledger.log_decision("sleep", cycle=self.cycle, reason=f"dormindo {minutes:.0f} min: {reason}")
             stats["sleeping_until"] = until.isoformat(timespec="seconds")
 
     def _entries(self, stats: dict):

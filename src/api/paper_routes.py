@@ -521,7 +521,7 @@ def profit(eng) -> dict:
             "server_all": round(vps_all, 4), "net_all": round(net_all, 4),
             "ai_month": round(b.month_spent(), 4), "ai_budget": cfg.LLM_MONTHLY_BUDGET_USD, "ai_calls_30d": b.calls(30),
             "prefilter": cfg.LLM_PREFILTER,
-            "verdict": "sem dados ainda" if not (ai_all or trade_all) else ("a dar lucro" if net_all > 0 else "a dar prejuízo")}
+            "verdict": "sem dados ainda" if not (ai_all or trade_all) else ("dando lucro" if net_all > 0 else "dando prejuízo")}
 
 
 @router.get("/account")
@@ -534,7 +534,7 @@ def account(kind: str = "sim"):
     out = {
         "kind": kind, "money": "fake" if kind == "sim" else "real", "network": "mainnet" if kind == "sim" else hl_live.network(),
         "running": led.get_state("running", False) if kind == "sim" else hl_live.is_armed(),
-        "scanning": eng.scanning(), "decision_mode": eng.decision_mode(), "model": "equipa" if len(eng.team) > 1 else (eng.llm.model if eng.llm else None),
+        "scanning": eng.scanning(), "decision_mode": eng.decision_mode(), "model": "equipe" if len(eng.team) > 1 else (eng.llm.model if eng.llm else None),
         "llm_available": bool(cfg.ANTHROPIC_API_KEY),
         "team": [{"name": m.name, "model": m.model, "enabled": m.enabled,
                   "last": next((dict(v, market=k) for k, v in sorted(m.last.items(), key=lambda kv: -(kv[1].get("t") or 0))), None),
@@ -612,7 +612,7 @@ def account_scan(req: Kind):
     from src.solana import hl_live
     running = hl_live.is_armed() if req.kind == "real" else hl_live.get_shadow_engine().ledger.get_state("running", False)
     if not running:
-        raise HTTPException(400, "carregue em Start primeiro")
+        raise HTTPException(400, "clique em Start primeiro")
     # a manual scan wakes the wallet and the whole team (self-pause is only for unattended running)
     from src.solana import arena
     for eng in [_account_engine(req.kind), *arena.bots().values()]:

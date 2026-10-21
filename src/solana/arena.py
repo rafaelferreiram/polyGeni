@@ -158,8 +158,8 @@ def leaderboard() -> list[dict]:
         paused = led.get_state("paused_reason")
         state = ((f"pausado: {paused}" if paused else "parado") if not led.get_state("running", False)
                  else "sem chave API" if needs_key
-                 else "a trabalhar" if eng.scanning() else "posição aberta" if led.positions()
-                 else "a dormir" if sleep.get("until") else "à espera do próximo ciclo")
+                 else "trabalhando" if eng.scanning() else "posição aberta" if led.positions()
+                 else "dormindo" if sleep.get("until") else "aguardando o próximo ciclo")
         rows.append({
             "model": model, "running": led.get_state("running", False), "state": state, "needs_key": needs_key,
             "sleep_until": sleep.get("until"), "sleep_reason": sleep.get("reason"),

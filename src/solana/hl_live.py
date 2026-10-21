@@ -416,7 +416,7 @@ def shadow_status() -> dict:
     p = eng.portfolio()
     trades = led.closed_trades()
     return {"mode": "PAPER", "running": led.get_state("running", False), "scanning": eng.scanning(),
-            "decision_mode": eng.decision_mode(), "model": "equipa",
+            "decision_mode": eng.decision_mode(), "model": "equipe",
             "start_usdc": cfg.SHADOW_START_USDC, "equity": round(p.equity, 4), "cash": round(p.cash, 4),
             "exposure": round(p.exposure, 4), "pnl_usd": round(p.equity - led.contributed(), 4),
             "performance": performance(led.equity_history(100_000)), "positions": led.positions(),
@@ -529,7 +529,7 @@ def test_order(coin: str = "BTC") -> dict:
     stats = one.run_cycle()
     pos = [p for p in eng.ledger.positions() if p["mint"] == hl.instrument_id(coin)]
     return {"cycle": stats, "position": pos[0] if pos else None,
-            "note": "A posição tem stop-loss e take-profit de ±2% na exchange. Use 'Fechar tudo' para a fechar já."}
+            "note": "A posição tem stop-loss e take-profit de ±2% na exchange. Use 'Fechar tudo' para fechá-la agora."}
 
 
 def status() -> dict:
