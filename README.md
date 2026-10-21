@@ -137,6 +137,14 @@ the others must first show ≥ 10 profitable lab trades.
 - **Personalities and talk**: every bot speaks like its player (São Marcos calm, Endrick fast, Evair follows whales…),
   thanks a teammate for a pass, answers a teammate's win or loss by @name, and every 15 min (`teamchat.chatter`) tips a
   teammate — titular or reserve — about a coin close to that teammate's buy rule.
+- **Real dialogues in the Vestiário** (every 5 min): a bot tips a teammate about a coin near that teammate's rule and
+  the teammate answers with its own context (holding it, its record on the coin, or that it will wait for its rule);
+  when a bot buys, the teammate with the most history on that coin shares it; every 30 min the network posts a market
+  snapshot (breadth, movers, whale buying, top traders); every hour a titular coaches a reserve at risk of the cut with
+  its real numbers and its costliest situation.
+- **Legacy removed from the running system**: the old Solana paper engine no longer autostarts; health checks no longer
+  poll Jupiter, DexScreener, Solana RPC, Arbitrum or CoinAPI; the funds panel no longer reads the Hyperliquid testnet and
+  polls Arbitrum only while open.
 - **Margin of error** (`edge.py`): before a buy, the chance of a winning trade in this situation (own + team realized
   trades on specific labels, Bayesian prior) with a ±margin and the expected value from real average win/loss. The bot
   skips only when confident the situation is clearly worse than its usual and loses money; otherwise it buys and says
@@ -597,6 +605,6 @@ scale: recommendations, the "ready to add money?" checklist and a linear project
 below entry + 0.3% fees), so small wins are banked if the price turns while the target stays reachable. Titulares
 keep their strategy's own time limit (the turbo's forced 2h exit only applies to reserves).
 
-Stop 2 ATR, target 3 ATR and a max holding time per bot. Once a trade is halfway to its target the stop moves to breakeven
+Stop 2 ATR, target 3 ATR and a max holding time per bot. Reserves no longer use the turbo's forced 2h exit either (`TURBO_FAST_EXITS=0`). Once a trade is halfway to its target the stop moves to breakeven
 (+0.3% for fees) and then trails 1 ATR below the price (`PROTECT_PROFIT=1`), so winners are held but never turn into losers.
 On the real account the exchange stop stays at the original level as a backstop; the raised stop is enforced by the bot.

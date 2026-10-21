@@ -195,7 +195,7 @@ def wallet_balances(owner: str) -> dict:
 
 
 def evm_wallet_balances(address: str) -> dict:
-    """Watch-only: Arbitrum ETH + native USDC, and Hyperliquid account value (mainnet + testnet). Public reads only."""
+    """Watch-only: Arbitrum ETH + native USDC (the MetaMask side of a deposit). Public reads only."""
     def rpc_evm(method, params):
         r = request_json("POST", cfg.ARBITRUM_RPC_URL, json={"jsonrpc": "2.0", "id": 1, "method": method, "params": params})
         if "error" in r:
@@ -205,15 +205,4 @@ def evm_wallet_balances(address: str) -> dict:
     data = "0x70a08231" + address[2:].lower().rjust(64, "0")      # balanceOf(address)
     usdc = int(rpc_evm("eth_call", [{"to": cfg.ARBITRUM_USDC, "data": data}, "latest"]), 16) / 1e6
     out = {"address": address, "chain": "evm", "arbitrum_eth": eth, "arbitrum_usdc": usdc}
-    for key, url in (("hyperliquid", cfg.HYPERLIQUID_INFO_URL), ("hyperliquid_testnet", cfg.HYPERLIQUID_TESTNET_INFO_URL)):
-        try:
-            st = request_json("POST", url, json={"type": "clearinghouseState", "user": address})
-            spot = request_json("POST", url, json={"type": "spotClearinghouseState", "user": address})
-            out[key] = {"account_value": float(st["marginSummary"]["accountValue"]),
-                        "withdrawable": float(st.get("withdrawable") or 0),
-                        "positions": len(st.get("assetPositions") or []),
-                        "spot": [{"coin": b["coin"], "total": float(b["total"])} for b in spot.get("balances", [])
-                                 if float(b["total"])]}
-        except Exception as e:
-            out[key] = {"error": str(e)[:200]}
     return out

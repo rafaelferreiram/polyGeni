@@ -123,6 +123,7 @@ def from_decision(source: str, model: str | None, kind: str, symbol: str | None,
                 giver = reason.split("recebida de ")[-1].split(":")[0]
                 line = f"Valeu pelo passe, @{name(giver)}! Entrei em {symbol}."
             post(author, "entry", f"{line}{f' ({where})' if where else ''}{f' · chance {odds}' if odds else ''}", symbol, throttle=False)
+            _comment_entry(author, symbol)
         elif kind == "exit" and symbol:
             pnl = sig.get("pnl_usd")
             res = f" · {'+' if pnl >= 0 else '−'}${abs(pnl):.2f}" if isinstance(pnl, (int, float)) else ""
@@ -155,21 +156,108 @@ def _react(author: str, symbol: str, win: bool):
     post(mate, "chat", _voice(mate, 4 if win else 5).format(to=name(author)), symbol, throttle=False)
 
 
+def _coin_record(model: str, symbol: str) -> dict | None:
+    """This bot's own closed-trade record on one coin (the learning memory), or None."""
+    from src.solana import arena, learning
+    eng = (arena._bots or {}).get(model)
+    return learning.record(eng.ledger).get(f"moeda {symbol}") if eng else None
+
+
+def _record_txt(r: dict | None) -> str:
+    if not r or not r.get("n"):
+        return ""
+    return f"{r['wins']}/{r['n']} ganhos, {'+' if r['pnl'] >= 0 else '−'}${abs(r['pnl']):.2f}"
+
+
+def _reply_to_tip(target: str, tipper: str, symbol: str, held: set):
+    """The tipped bot answers with its own context: holding it, its record on the coin, or that it will watch."""
+    rec = _record_txt(_coin_record(target, symbol))
+    if symbol in held:
+        txt = f"Valeu, @{name(tipper)}! Já estou posicionado em {symbol}."
+    elif rec:
+        txt = f"Valeu, @{name(tipper)}! Meu histórico em {symbol}: {rec}. Se a regra bater, eu entro."
+    else:
+        txt = f"Valeu, @{name(tipper)}! Nunca operei {symbol} — fico de olho e entro só se a minha regra confirmar."
+    post(target, "chat", txt, symbol, throttle=False)
+
+
+def _comment_entry(author: str, symbol: str):
+    """When a bot buys, a teammate with real history on that coin shares it (good or bad)."""
+    from src.solana import arena
+    best = None
+    for m in (arena._bots or {}):
+        if m == author:
+            continue
+        r = _coin_record(m, symbol)
+        if r and r["n"] >= 3 and (best is None or r["n"] > best[1]["n"]):
+            best = (m, r)
+    if not best:
+        return
+    m, r = best
+    if r["pnl"] >= 0:
+        txt = f"@{name(author)}, boa escolha: em {symbol} eu tenho {_record_txt(r)}. Segura o stop que ela costuma andar."
+    else:
+        txt = f"@{name(author)}, cuidado com {symbol}: eu tenho {_record_txt(r)} nela. Protege o lucro cedo se subir."
+    post(m, "chat", txt, symbol)
+
+
+def market_update():
+    """The network posts a market snapshot from real data: breadth, movers, strongest whale buying, top traders."""
+    from src.api.paper_routes import _market_temp
+    from src.solana import toptraders, whales
+    mt = _market_temp()
+    if not mt.get("n"):
+        return
+    up = f"{mt['uptrend']}/{mt['n']} moedas em alta, média 24h {mt.get('avg_ch24', 0):+.1f}%"
+    best = ", ".join(f"{c} {v:+.1f}%" for c, v in (mt.get("best") or [])[:3])
+    worst = ", ".join(f"{c} {v:+.1f}%" for c, v in (mt.get("worst") or [])[:2])
+    coins = [w["symbol"] for w in mt.get("watch") or []]
+    flows = sorted(((c, (whales.summary(c).get("1h") or {}).get("net_usd", 0)) for c in coins), key=lambda x: -x[1])
+    whale = f"baleias comprando forte: {flows[0][0]} (${flows[0][1]:,.0f} líquidos em 1h)" if flows and flows[0][1] > 0 else "baleias sem compra forte"
+    cons = sorted(((c, toptraders.consensus(c)) for c in coins), key=lambda x: -x[1].get("long", 0))
+    top = f"top traders mais comprados em {cons[0][0]} ({cons[0][1]['long']} de {cons[0][1]['of']})" if cons and cons[0][1].get("long") else ""
+    post("rede", "network", f"📊 Mercado agora: {up}. Sobem: {best}. Caem: {worst}. {whale}{f'; {top}' if top else ''}.", throttle=False)
+
+
+def coaching():
+    """A titular coaches a reserve at risk of the next cut, with the reserve's real numbers and its worst situation."""
+    from src.solana import arena, learning
+    tits = [m for m in (arena._bots or {}) if arena.is_titular(m)]
+    for m, eng in list((arena._bots or {}).items()):
+        a = arena.advise(m) or {}
+        if a.get("flag") != "cut" or not tits:
+            continue
+        rec = learning.record(eng.ledger, m)
+        total = learning._total(rec)
+        worst = min(((t, r) for t, r in rec.items() if r["n"] >= 3 and r["n"] <= total / 2 and not t.startswith("moeda")),
+                    key=lambda x: x[1]["pnl"], default=None)
+        p = a.get("period") or {}
+        coach = _pick(f"{m}{int(time.time() // 3600)}", tits)
+        tip = f" O que mais te custa: '{worst[0]}' ({worst[1]['wins']}/{worst[1]['n']}, −${abs(worst[1]['pnl']):.2f}) — evita." if worst and worst[1]["pnl"] < 0 else ""
+        post(coach, "chat", f"@{name(m)}, você está {p.get('wins', 0)}/{p.get('trades', 0)} neste período, precisa de 60% até o corte.{tip}", m)
+
+
 def chatter():
-    """Scheduler job: bots tip each other about coins close to a teammate's buy rule (the 'Próximas trades' of each)."""
+    """Scheduler job (every 5 min): bots tip each other about coins close to a teammate's buy rule and the tipped bot
+    answers with its own context; every 30 min a market snapshot; every hour titulares coach reserves at risk."""
     from src.api.paper_routes import _market_temp, _opportunities
     from src.solana import arena
     bots = list((arena._bots or {}).items())
     watch = _market_temp().get("watch") or []
+    slot = int(time.time() // 300)
     for target, eng in bots:
         held = {p["symbol"] for p in eng.ledger.positions()}
         opp = next((o for o in _opportunities(target, watch, held) if o["status"] in ("pronto", "perto") and not o["held"]), None)
         if not opp:
             continue
         mates = [m for m, _ in bots if m != target]
-        tipper = _pick(f"{target}{opp['symbol']}{int(time.time() // 3600)}", mates)
-        if tipper:
-            post(tipper, "tip", _voice(tipper, 3).format(to=name(target), s=opp["symbol"], d=opp["detail"]), opp["symbol"])
+        tipper = _pick(f"{target}{opp['symbol']}{slot}", mates)
+        if tipper and post(tipper, "tip", _voice(tipper, 3).format(to=name(target), s=opp["symbol"], d=opp["detail"]), opp["symbol"]):
+            _reply_to_tip(target, tipper, opp["symbol"], held)
+    if slot % 6 == 0:
+        market_update()
+    if slot % 12 == 0:
+        coaching()
 
 
 def team_lessons(avoid: list[dict]):

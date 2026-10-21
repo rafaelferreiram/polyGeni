@@ -46,38 +46,9 @@ def _anthropic():
     if r.status_code != 200:
         return False, f"HTTP {r.status_code}: {r.text[:120]}"
     ids = {m["id"] for m in r.json().get("data", [])}
-    llm = [m for m in cfg.ARENA_MODELS if m.startswith("claude")]
+    llm = sorted({cfg.DEBATE_MODEL, *(m for m in cfg.ARENA_MODELS if m.startswith("claude"))})
     missing = [m for m in llm if m not in ids]
     return not missing, "chave válida" + (f" · modelo indisponível: {', '.join(missing)}" if missing else f" · {', '.join(llm)} OK")
-
-
-def _coinapi():
-    import os
-    key = os.getenv("COINAPI_KEY", "")
-    if not key:
-        return None, "sem chave (opcional)"
-    r = httpx.get("https://rest.coinapi.io/v1/exchangerate/BTC/USD", timeout=10, headers={"X-CoinAPI-Key": key})
-    if r.status_code == 200:
-        return True, f"BTC ${r.json().get('rate', 0):,.0f}"
-    return None, "chave válida, conta sem créditos — não usada" if "Credits" in r.text else f"HTTP {r.status_code}"
-
-
-def _get(url: str, ok_fn, **kw):
-    r = httpx.get(url, timeout=10, **kw)
-    r.raise_for_status()
-    return ok_fn(r.json())
-
-
-def _arbitrum():
-    r = httpx.post(cfg.ARBITRUM_RPC_URL, json={"jsonrpc": "2.0", "id": 1, "method": "eth_blockNumber", "params": []}, timeout=10)
-    r.raise_for_status()
-    return True, f"bloco {int(r.json()['result'], 16):,}"
-
-
-def _solana():
-    r = httpx.post(cfg.SOLANA_RPC_URL, json={"jsonrpc": "2.0", "id": 1, "method": "getHealth"}, timeout=10)
-    r.raise_for_status()
-    return r.json().get("result") == "ok", str(r.json().get("result") or r.json().get("error"))[:80]
 
 
 def _whales():
@@ -100,16 +71,7 @@ CHECKS = [
      lambda: (lambda st, n: (bool(n) if st["polled_at"] or st["error"] else None,
                              f"{n} traders seguidos" + (f" · {st['error']}" if st["error"] else "") if n else (st["error"] or "a carregar ranking…")))(
          __import__("src.solana.toptraders", fromlist=["x"])._status, len(__import__("src.solana.toptraders", fromlist=["x"])._traders))),
-    ("Anthropic Claude", "decisões do bot de IA e debate", _anthropic),
-    ("Arbitrum RPC", "saldos da MetaMask no painel", _arbitrum),
-    ("Jupiter", "paper de tokens Solana (legado)",
-     lambda: _get(cfg.JUPITER_QUOTE_URL, lambda j: (True, "cotação OK"),
-                  params={"inputMint": "So11111111111111111111111111111111111111112",
-                          "outputMint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", "amount": 10**8})),
-    ("DexScreener", "paper de tokens Solana (legado)",
-     lambda: _get(f"{cfg.DEXSCREENER_BASE}/token-boosts/latest/v1", lambda j: (True, f"{len(j)} tokens"))),
-    ("Solana RPC", "carteira Phantom e paper Solana", _solana),
-    ("CoinAPI", "dados extra de mercado (opcional)", _coinapi),
+    ("Anthropic Claude", "revisor das compras dos titulares (Haiku)", _anthropic),
 ]
 
 

@@ -1039,11 +1039,11 @@ def _opportunities(model: str, watch: list[dict], held: set[str]) -> list[dict]:
             if drop <= 0 and (w.get("rsi") or 100) >= 30:            # in the zone, but not oversold yet
                 add(w, 0.95, f"já na zona de compra; falta o RSI cair abaixo de 30 (agora {w.get('rsi', 0):.0f})", "")
             else:
-                add(w, 1 - drop / 0.05, f"precisa cair {drop:.1%} até {w['dip_at']:.6g} (e RSI abaixo de 30)",
+                add(w, 1 - drop / 0.05, f"{'está a menos de 0,1% da zona' if drop < 0.001 else f'precisa cair {drop:.1%}'} até {w['dip_at']:.6g} (e RSI abaixo de 30)",
                     f"caiu até a zona de compra ({w['dip_at']:.6g}) com RSI abaixo de 30")
         elif base in ("trend", "trend4h") and w.get("strong") and w.get("break_at"):
             rise = (w["break_at"] - w["price"]) / w["price"]
-            add(w, 1 - rise / 0.03, f"precisa subir {rise:.1%} e romper {w['break_at']:.6g}", f"rompeu {w['break_at']:.6g}")
+            add(w, 1 - rise / 0.03, f"{'a menos de 0,1% de romper' if rise < 0.001 else f'precisa subir {rise:.1%} e romper'} {w['break_at']:.6g}", f"rompeu {w['break_at']:.6g}")
         elif base == "whales" and w.get("up"):
             sm = whales.summary(w["symbol"])
             net, need = (sm.get("1h") or {}).get("net_usd", 0), 2 * sm.get("threshold_usd", 0)

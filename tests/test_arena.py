@@ -241,7 +241,7 @@ def test_turbo_runs_the_bot_every_minute_until_midnight(tmp_path, monkeypatch):
     assert eng.ledger.get_state("train_boost_until") >= r["until"][:13]
     assert r["until"].endswith(":00:00+00:00")      # Lisbon midnight
     from src.solana.engine import _max_hold
-    assert _max_hold("claude-haiku-5-5", 48) == cfg.TURBO_MAX_HOLD_H and arena.fast_exit_hold("rules") is None
+    assert _max_hold("claude-haiku-5-5", 48) == 48 and arena.fast_exit_hold("claude-haiku-5-5") is None   # no forced 2h exit
 
 
 def test_titular_rule_bot_gets_its_reviews_by_the_chosen_model_and_reserves_one_coffee_a_day(tmp_path, monkeypatch):
