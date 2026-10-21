@@ -263,6 +263,12 @@
     .band::after { content: ""; flex: 1; height: 1px; background: var(--border); }
     .two > .panel { min-width: 0; }
     @media (max-width: 600px) { .statusbar { padding: 8px 12px; } .sb-nav { display: none; } .sb-items { gap: 6px 14px; } }
+    .goals { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
+    .goal { background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
+    .goal .k { font-size: 12px; color: var(--muted); } .goal .v { font-size: 20px; font-weight: 650; margin: 4px 0 8px; font-variant-numeric: tabular-nums; }
+    .goal .v small { font-size: 12px; color: var(--muted); font-weight: 500; }
+    .goal .bar span { background: var(--accent); } .goal.done { border-color: rgba(52,211,153,.6); }
+    .goal .s { font-size: 11.5px; color: var(--muted); margin-top: 6px; }
     .whale-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
     @media (max-width: 960px) { .whale-grid { grid-template-columns: 1fr; } }
     .flows { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
@@ -364,6 +370,10 @@
       <div class="kpi"><div class="l">Lucro líquido <span class="muted">(depois de IA e custos)</span></div><div class="v" id="k-pnl">–</div><div class="s" id="k-pnl-s">–</div></div>
       <div class="kpi"><div class="l">Posição aberta</div><div class="v" id="k-pos">–</div><div class="s" id="k-pos-s">–</div></div>
       <div class="kpi"><div class="l">Trades · acerto</div><div class="v" id="k-tr">–</div><div class="s" id="k-tr-s">–</div></div>
+    </section>
+    <section class="panel" id="metas">
+      <h2><span>🎯 Metas de hoje <span class="tag" id="goal-tag">–</span></span><span class="note">metas para medir, nunca motivo para forçar um trade</span></h2>
+      <div class="goals" id="goals"></div>
     </section>
     <div class="two">
     <section class="panel" id="posicoes">
@@ -486,6 +496,6 @@
     </details>
   </main>
 
-  <script src="/static/paper.js?v=37"></script>
+  <script src="/static/paper.js?v=38"></script>
 </body>
 </html>

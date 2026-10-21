@@ -125,6 +125,10 @@ HL_LIVE_MARKETS = [m for m in os.getenv("HL_LIVE_MARKETS", HL_BROAD).split(",") 
 ARENA_MODELS = [m for m in os.getenv("ARENA_MODELS", "rules,trend,claude-haiku-5-5").split(",") if m]
 WHALES_ENABLED = os.getenv("WHALES_ENABLED", "1") == "1"      # live whale-trade feed (WebSocket, read-only)
 WHALE_MIN_USD = float(os.getenv("WHALE_MIN_USD", "25000"))    # whale = ≥ this and ≥ 0.02% of the coin's daily volume
+# daily goals shown to the user and logged by the bots (targets to measure against, never a reason to force a trade):
+# profit ≈ 0.5%/day is what the backtested edge supports at this size; 2 trades/day; one analysis every cycle.
+DAILY_GOAL_PCT = float(os.getenv("DAILY_GOAL_PCT", "0.005"))
+DAILY_GOAL_TRADES = int(os.getenv("DAILY_GOAL_TRADES", "2"))
 SYNC_FAIL_LIMIT = int(os.getenv("SYNC_FAIL_LIMIT", "6"))   # consecutive unreachable-exchange cycles before the kill switch
 LAB_SCORE_DAYS = float(os.getenv("LAB_SCORE_DAYS", "30"))   # Coordinator ranks bots on their last N days in the lab
 ARENA_START_USDC = _f("ARENA_START_USDC", 20.0)     # each bot gets what the real account would have

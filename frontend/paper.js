@@ -293,6 +293,7 @@ async function refresh() {
   renderTeam();
   renderThermo(a);
   renderPositions(a);
+  renderGoals(a);
   renderRadar(a);
   maybeReplay(a);
   renderFoot();
@@ -327,6 +328,26 @@ function renderPositions(a) {
       <div class="ends"><span>🛑 stop ${fmtPx(p.stop_price)}</span><span>entrada ${fmtPx(p.entry_price)} · agora ${fmtPx(now)}</span><span>🎯 ${fmtPx(p.tp_price)}</span></div>
     </div>`;
   }).join("") : `<div class="empty">Nenhuma posição aberta agora — os bots estão procurando a próxima entrada (veja o radar abaixo).</div>`);
+}
+
+// ─── daily goals: what the bots aim for today vs what they did ───
+function renderGoals(a) {
+  const g = a.goals;
+  if (!g) return;
+  const pctOf = (x, t) => `${(clamp01(t ? x / t : 0) * 100).toFixed(0)}%`;
+  const tag = document.getElementById("goal-tag");
+  tag.textContent = g.hit ? "🎯 meta de lucro batida" : KIND === "sim" ? "conta simulada" : "conta real";
+  tag.style.color = g.hit ? "var(--green)" : "";
+  const card = (done, k, v, w, s) => `<div class="goal ${done ? "done" : ""}"><div class="k">${k}</div><div class="v">${v}</div>
+    <div class="bar"><span style="width:${w}"></span></div><div class="s">${s}</div></div>`;
+  setHTML("goals", [
+    card(g.hit, "💰 Lucro do dia", `${pnl(g.profit.done_usd)} <small>de +$${g.profit.target_usd.toFixed(2)} (${(g.profit.target_pct * 100).toFixed(1)}%)</small>`,
+         pctOf(g.profit.done_usd, g.profit.target_usd), `limite de perda do dia: −$${Math.abs(g.loss_limit_usd).toFixed(2)} (kill switch)`),
+    card(g.trades.done >= g.trades.target, "🔁 Trades abertos hoje", `${g.trades.done} <small>de ${g.trades.target}</small>`,
+         pctOf(g.trades.done, g.trades.target), `${g.trades.closed} fechados · ${g.trades.wins} com lucro · só com sinal válido`),
+    card(g.analyses.done >= g.analyses.target_so_far, "🔍 Análises (ciclos) hoje", `${g.analyses.done} <small>de ${g.analyses.target_so_far} até agora</small>`,
+         pctOf(g.analyses.done, g.analyses.target_so_far), "1 ciclo a cada 5 min, 29 moedas por ciclo"),
+  ].join(""));
 }
 
 // ─── radar: every coin the bots watch, and the exact level that would trigger a buy ───

@@ -276,3 +276,12 @@ def test_bots_never_sleep_by_default(ledger):
     until = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(timespec="seconds")
     ledger.set_state("sleep", {"until": until, "reason": "old", "prices": {}})
     assert eng.run_cycle()["entries"] == 1          # a leftover sleep is ignored: they watch every cycle
+
+
+def test_daily_goals_track_entries_and_cycles(ledger):
+    from src.api.paper_routes import goals
+    eng = build(ledger, Price(1.0))
+    eng.run_cycle()
+    g = goals(eng)
+    assert g["trades"]["done"] == 1 and g["analyses"]["done"] >= 1
+    assert g["profit"]["target_usd"] > 0 and g["hit"] is False

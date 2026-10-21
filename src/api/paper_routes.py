@@ -524,6 +524,23 @@ def profit(eng) -> dict:
             "verdict": "sem dados ainda" if not (ai_all or trade_all) else ("dando lucro" if net_all > 0 else "dando prejuízo")}
 
 
+def goals(eng) -> dict:
+    """Today's goals vs what the bots actually did (local calendar day)."""
+    from src.solana import hl_live
+    today = (hl_live.daily_report(eng, 1) or [{}])[0]
+    start = today.get("equity_start") or eng.portfolio().equity
+    target_usd = round(start * cfg.DAILY_GOAL_PCT, 4)
+    now = datetime.now().astimezone()
+    cycles_target = int((now.hour * 3600 + now.minute * 60 + now.second) // cfg.LIVE_CYCLE_SEC) or 1
+    pnl = today.get("pnl_usd", 0.0) or 0.0
+    return {"profit": {"target_usd": target_usd, "target_pct": cfg.DAILY_GOAL_PCT, "done_usd": round(pnl, 4)},
+            "trades": {"target": cfg.DAILY_GOAL_TRADES, "done": today.get("entries", 0) or 0,
+                       "closed": today.get("trades", 0) or 0, "wins": today.get("wins", 0) or 0},
+            "analyses": {"target_so_far": cycles_target, "done": today.get("cycles", 0) or 0},
+            "loss_limit_usd": round(-start * cfg.LIVE_MAX_DAILY_LOSS_PCT, 2),
+            "hit": pnl >= target_usd > 0}
+
+
 def _market_temp() -> dict:
     """Market data is the same for both accounts (Hyperliquid mainnet): show the freshest scan of either one."""
     temps = [_account_engine(k).ledger.get_state("market_temp") or {} for k in ("sim", "real")]
@@ -547,6 +564,7 @@ def account(kind: str = "sim"):
                   "trades": len([t for t in trades if t["strategy"] == m.name]),
                   "pnl_usd": round(sum(t["pnl_usd"] for t in trades if t["strategy"] == m.name), 4),
                   "open": [x["symbol"] for x in led.positions() if x["strategy"] == m.name]} for m in eng.team],
+        "goals": goals(eng),
         "sleep": (led.get_state("sleep") or {}) if cfg.BOT_SELF_PAUSE else {}, "coffee_until": eng.coffee(), "market_temp": _market_temp(),
         "profit": profit(eng),
         "equity": round(p.equity, 4), "cash": round(p.cash, 4), "exposure": round(p.exposure, 4),
