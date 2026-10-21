@@ -181,7 +181,7 @@ def anthropic_llm(prompt: str, system: str = DEBATE_SYSTEM, max_searches: int = 
     # dynamic-filtering web search only on Opus/Sonnet; server-side refusal fallback not on Haiku
     dynamic_search = model.startswith(("claude-opus", "claude-sonnet"))
     tools = [{"type": "web_search_20260209" if dynamic_search else "web_search_20250305", "name": "web_search",
-              "max_uses": max_searches}]
+              "max_uses": max_searches}] if max_searches > 0 else []
     kwargs, betas = {}, []
     if model in ("claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5"):
         kwargs["fallbacks"] = "default"
@@ -214,7 +214,7 @@ class DebateAgent:
 
     def __init__(self, llm_fn=None, enabled: bool | None = None):
         self.enabled = bool(cfg.ANTHROPIC_API_KEY) if enabled is None else enabled
-        self.llm_fn = llm_fn or anthropic_llm
+        self.llm_fn = llm_fn or (lambda prompt: anthropic_llm(prompt, who="debate", max_searches=cfg.LLM_WEB_SEARCHES))
 
     def review(self, c: Candidate, sig: Signal, context: dict) -> Vote:
         if not self.enabled:
@@ -254,19 +254,20 @@ class RiskAgent:
     def __init__(self, max_pos_pct=cfg.RISK_MAX_POSITION_PCT, max_exposure_pct=cfg.RISK_MAX_EXPOSURE_PCT,
                  max_positions=cfg.RISK_MAX_POSITIONS, max_daily_loss_pct=cfg.RISK_MAX_DAILY_LOSS_PCT,
                  min_trade_usd=cfg.RISK_MIN_TRADE_USD, max_entries_per_day=cfg.RISK_MAX_ENTRIES_PER_DAY,
-                 max_position_usd: float | None = None, max_capital_usd: float | None = None):
+                 max_position_usd: float | None = None, max_capital_usd: float | None = None, leverage: float = 1.0):
         self.max_pos_pct, self.max_exposure_pct = max_pos_pct, max_exposure_pct
         self.max_positions, self.max_daily_loss_pct = max_positions, max_daily_loss_pct
         self.min_trade_usd = min_trade_usd
         self.max_entries_per_day = max_entries_per_day
         # hard USD caps (live trading): never size off more than max_capital_usd, never a bigger position
         self.max_position_usd, self.max_capital_usd = max_position_usd, max_capital_usd
+        self.leverage = leverage
 
     def daily_loss_breached(self, p: Portfolio) -> bool:
         return p.day_start_equity > 0 and (p.day_start_equity - p.equity) / p.day_start_equity >= self.max_daily_loss_pct
 
     def evaluate(self, sig: Signal, mint: str, capital_pct: float, p: Portfolio,
-                 max_pos_pct: float | None = None) -> Vote:
+                 max_pos_pct: float | None = None, entry_cap_mult: int = 1, max_usd: float | None = None) -> Vote:
         d = {"equity": round(p.equity, 2), "cash": round(p.cash, 2), "exposure": round(p.exposure, 2)}
         if p.kill_switch:
             return Vote("risk", False, "kill switch active", d)
@@ -276,21 +277,24 @@ class RiskAgent:
             return Vote("risk", False, "stop-loss and take-profit are mandatory", d)
         if mint in p.open_mints:
             return Vote("risk", False, "already holding this token", d)
-        if p.entries_today >= self.max_entries_per_day:
-            return Vote("risk", False, f"daily entry cap ({self.max_entries_per_day}) reached", d)
+        cap = self.max_entries_per_day * entry_cap_mult        # ☕ coffee doubles it for active day trading
+        if p.entries_today >= cap:
+            return Vote("risk", False, f"daily entry cap ({cap}) reached", d)
         max_pos = self.max_positions
         if not max_pos and self.max_position_usd:      # 0 = auto: one slot per max_position_usd of capital
             cap = min(p.equity, self.max_capital_usd) if self.max_capital_usd else p.equity
-            max_pos = max(1, min(6, int(cap // self.max_position_usd)))
+            max_pos = max(1, min(6, int(cap * self.leverage // self.max_position_usd)))
         d["max_positions"] = max_pos
         if len(p.open_mints) >= max_pos:
             return Vote("risk", False, f"max positions ({max_pos}) reached", d)
         eq = min(p.equity, self.max_capital_usd) if self.max_capital_usd else p.equity
-        strategy_room = eq * capital_pct - p.strategy_exposure.get(sig.strategy, 0)
-        exposure_room = eq * self.max_exposure_pct - p.exposure
-        # 1x only: notional is capped by cash, i.e. never more than the capital allocated to the market
-        size = min(eq * (max_pos_pct or self.max_pos_pct), strategy_room, exposure_room, p.cash * 0.98,
-                   self.max_position_usd or float("inf"))
+        lev = self.leverage
+        strategy_room = eq * lev * capital_pct - p.strategy_exposure.get(sig.strategy, 0)
+        exposure_room = eq * lev * self.max_exposure_pct - p.exposure
+        # margin: at 1x notional is capped by cash; with isolated leverage by equity x leverage, 3% kept for fees/slippage
+        margin_room = p.cash * 0.98 if lev == 1 else eq * lev * 0.97 - p.exposure
+        size = min(eq * (max_pos_pct or self.max_pos_pct), strategy_room, exposure_room, margin_room,
+                   self.max_position_usd or float("inf"), max_usd or float("inf"))   # max_usd: the bot's reward size
         d.update(size_usd=round(size, 2), strategy_room=round(strategy_room, 2), exposure_room=round(exposure_room, 2))
         if size < self.min_trade_usd:
             return Vote("risk", False, f"size ${size:.2f} < min ${self.min_trade_usd:.2f} "

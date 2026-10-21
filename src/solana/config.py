@@ -68,7 +68,8 @@ PAPER_STRATEGIES = [s for s in os.getenv("PAPER_STRATEGIES", "mean_reversion_atr
 
 # Optional LLM debate (veto-only). Disabled without a key.
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-DEBATE_MODEL = os.getenv("DEBATE_MODEL", "claude-opus-5-5")
+# veto-only reviewer of every rules signal: Haiku (≈ $0.001/call) — Opus with web search cost ≈ $0.10/call
+DEBATE_MODEL = os.getenv("DEBATE_MODEL", "claude-haiku-5-5")
 # JSON list of remote MCP servers the debate LLM may use for fresh context, e.g.
 # [{"url": "https://mcp.example.com/mcp", "name": "market", "authorization_token": "..."}]
 DEBATE_MCP_SERVERS = os.getenv("DEBATE_MCP_SERVERS", "")
@@ -79,7 +80,12 @@ HL_ENABLED = os.getenv("HL_ENABLED", "1") == "1"
 # crypto first (more volatility); gold/silver are opt-in with HL_INCLUDE_METALS=1
 HL_INCLUDE_METALS = os.getenv("HL_INCLUDE_METALS", "0") == "1"
 _METALS = ["xyz:GOLD", "xyz:SILVER"] if HL_INCLUDE_METALS else []
-HL_MARKETS = [m for m in os.getenv("HL_MARKETS", "BTC,ETH,SOL,HYPE,XRP").split(",") if m] + _METALS
+# broad crypto set for simulation, lab and real account: CoinMarketCap top-50 by market cap plus Hyperliquid's most
+# traded perps, each listed on Hyperliquid with ≥ 208 days of history and ≥ $1M daily volume (checked 2026-10-21).
+# The bots scan all of it every cycle and take the best setup; risk limits are per position, not per coin.
+HL_BROAD = ("BTC,ETH,SOL,HYPE,XRP,BNB,DOGE,ADA,TRX,AVAX,LINK,LTC,BCH,XLM,HBAR,DOT,SUI,NEAR,AAVE,UNI,ARB,TAO,ZEC,XMR,"
+            "WLD,ENA,ZRO,ONDO,kPEPE")
+HL_MARKETS = [m for m in os.getenv("HL_MARKETS", HL_BROAD).split(",") if m] + _METALS
 HL_ALLOW_SHORT = False  # long-only in phase 1
 
 # Per-venue risk profile: Solana tokens get a small slice, majors/metals a bigger one with wider stops.
@@ -106,22 +112,66 @@ LIVE_DB_PATH = os.getenv("LIVE_DB_PATH", f"./live_{HL_NETWORK}.db")
 LIVE_CYCLE_SEC = _i("LIVE_CYCLE_SEC", 300)
 LIVE_MAX_CAPITAL_USD = _f("LIVE_MAX_CAPITAL_USD", 20.0)        # the bots never size off more than this (raise it as the wallet grows)
 LIVE_MAX_POSITION_USD = _f("LIVE_MAX_POSITION_USD", 12.0)      # Hyperliquid minimum order is $10
+# isolated leverage for the real account, its simulation and the lab (max 3): 2x lets $18 hold up to 3 positions of
+# ~$12 at once. Every position keeps its own exchange stop and target; daily loss and kill switch are on equity.
+LIVE_LEVERAGE = min(max(_f("LIVE_LEVERAGE", 2.0), 1.0), 3.0)
 LIVE_MAX_POSITIONS = _i("LIVE_MAX_POSITIONS", 0)               # 0 = auto: capital // position size (max 6)
 LIVE_MAX_DAILY_LOSS_PCT = _f("LIVE_MAX_DAILY_LOSS_PCT", 0.10)
-LIVE_MAX_ENTRIES_PER_DAY = _i("LIVE_MAX_ENTRIES_PER_DAY", 3)
-HL_LIVE_MARKETS = [m for m in os.getenv("HL_LIVE_MARKETS", "BTC,ETH,SOL,HYPE,XRP").split(",") if m] + _METALS
+LIVE_MAX_ENTRIES_PER_DAY = _i("LIVE_MAX_ENTRIES_PER_DAY", 12)   # trade whenever there is a valid signal; the real brakes are
+#   max simultaneous positions, stops, and the 10% daily loss kill switch (coffee doubles this to 24)
+HL_LIVE_MARKETS = [m for m in os.getenv("HL_LIVE_MARKETS", HL_BROAD).split(",") if m] + _METALS
 
 # ─── Model arena: one paper bot per LLM, same markets and risk limits, separate portfolios ───
 # "rules" = deterministic baseline bot (no LLM, no API cost) that every model must beat
 # default: free rules bot + the cheap Haiku; add Sonnet/Opus/Fable when capital makes their cost worthwhile
-ARENA_MODELS = [m for m in os.getenv("ARENA_MODELS", "rules,claude-haiku-5-5").split(",") if m]
+ARENA_MODELS = [m for m in os.getenv("ARENA_MODELS", "rules,trend,trend4h,whales,copy,whales2,whales_15m,copy_15m").split(",") if m]
+TOP_TRADERS_ENABLED = os.getenv("TOP_TRADERS_ENABLED", "1") == "1"   # follow the top 10 Hyperliquid traders (read-only)
+WHALES_ENABLED = os.getenv("WHALES_ENABLED", "1") == "1"      # live whale-trade feed (WebSocket, read-only)
+WHALE_MIN_USD = float(os.getenv("WHALE_MIN_USD", "25000"))    # whale = ≥ this and ≥ 0.02% of the coin's daily volume
+# daily goal: once the account is up DAILY_GOAL_PCT on the day, the bots rest (no new entries) until tomorrow and keep
+# managing open positions — a good day is banked instead of given back. 2% is a good day for day trading at 2x;
+# an average day is lower. Goals are never a reason to force a trade.
+DAILY_GOAL_PCT = float(os.getenv("DAILY_GOAL_PCT", "0.02"))
+DAILY_GOAL_REST = os.getenv("DAILY_GOAL_REST", "1") == "1"
+DAILY_GOAL_TRADES = int(os.getenv("DAILY_GOAL_TRADES", "4"))
+SYNC_FAIL_LIMIT = int(os.getenv("SYNC_FAIL_LIMIT", "6"))   # consecutive unreachable-exchange cycles before the kill switch
+# bots allowed to spend real money without first proving themselves in the lab (validated by backtest; "trend"
+# enabled by the user on 2026-10-21). Any other bot needs LIVE_MIN_LAB_TRADES profitable lab trades.
+REAL_TRUSTED_BOTS = [m for m in os.getenv("REAL_TRUSTED_BOTS", "rules,trend").split(",") if m]
+LAB_SCORE_DAYS = float(os.getenv("LAB_SCORE_DAYS", "30"))   # Coordinator ranks bots on their last N days in the lab
 ARENA_START_USDC = _f("ARENA_START_USDC", 20.0)     # each bot gets what the real account would have
-# self-pause: a bot with nothing to do sleeps (up to BOT_MAX_SLEEP_MIN) and wakes early if price moves
+# the lab proves bots faster with more paper capital and slots: same position size, stop and target as the real
+# account (so each trade is valid evidence), but up to LAB_MAX_POSITIONS at once and no low daily entry cap
+# the user's timezone (Lisbon): daily reports, goals, messages and the dashboard all use it
+from zoneinfo import ZoneInfo
+TZ = ZoneInfo(os.getenv("KAIROS_TZ", "Europe/Lisbon"))
+TRAINING_DB_PATH = os.getenv("TRAINING_DB_PATH", "./training.db")   # training center samples (see trainer.py)
+LAB_CAPITAL_USD = _f("LAB_CAPITAL_USD", 100.0)
+LAB_MAX_POSITIONS = _i("LAB_MAX_POSITIONS", 8)
+LAB_MAX_ENTRIES_PER_DAY = _i("LAB_MAX_ENTRIES_PER_DAY", 48)
+# "treino intensivo": one slot per coin and more paper capital for 24h, so slots never limit how many lab trades happen
+TRAIN_BOOST_MAX_POSITIONS = _i("TRAIN_BOOST_MAX_POSITIONS", 29)
+TRAIN_BOOST_CAPITAL_USD = _f("TRAIN_BOOST_CAPITAL_USD", 400.0)   # fake money: 29 slots x ~$12 fit
+# green light to real money (bots not in REAL_TRUSTED_BOTS): at least GREEN_LIGHT_TRADES closed lab trades with
+# GREEN_LIGHT_WINS winners, net profit after AI cost, win rate and profit factor at least these (user's rule: 20 trades, 12 wins)
+MAX_TITULARES = _i("MAX_TITULARES", 6)          # the real account fields at most this many bots: the best ones
+GREEN_LIGHT_TRADES = _i("GREEN_LIGHT_TRADES", 20)
+GREEN_LIGHT_WINS = _i("GREEN_LIGHT_WINS", 12)
+GREEN_LIGHT_WIN_RATE = _f("GREEN_LIGHT_WIN_RATE", 0.6)
+GREEN_LIGHT_PROFIT_FACTOR = _f("GREEN_LIGHT_PROFIT_FACTOR", 1.2)
+# self-pause: a bot with nothing to do sleeps (up to BOT_MAX_SLEEP_MIN) and wakes early if price moves.
+# Off by default: the bots watch the market every cycle 24/7 (the AI pre-filter already keeps idle cycles free).
+PROTECT_PROFIT = os.getenv("PROTECT_PROFIT", "1") == "1"   # breakeven + trailing stop once a trade is halfway to target
+BOT_SELF_PAUSE = os.getenv("BOT_SELF_PAUSE", "0") == "1"
 BOT_MAX_SLEEP_MIN = _i("BOT_MAX_SLEEP_MIN", 120)
 # an AI bot may act on the REAL wallet only after this many lab trades with positive expectancy
 LIVE_MIN_LAB_TRADES = _i("LIVE_MIN_LAB_TRADES", 10)
 BOT_WAKE_MOVE_PCT = _f("BOT_WAKE_MOVE_PCT", 0.015)
-ARENA_CYCLE_SEC = _i("ARENA_CYCLE_SEC", 900)
+ARENA_CYCLE_SEC = _i("ARENA_CYCLE_SEC", 300)
+TURBO_CYCLE_SEC = _i("TURBO_CYCLE_SEC", 60)          # a bot in "turbo do dia" analyses this often
+# a bot trained with turbo closes positions sooner (lab and, once promoted, real account): more round trips per day
+TURBO_MAX_HOLD_H = _f("TURBO_MAX_HOLD_H", 2.0)
+TURBO_FAST_MAX_HOLD_H = _f("TURBO_FAST_MAX_HOLD_H", 1.0)   # 15-minute twins          # lab bots scan with the accounts (candles are shared, cheap)
 
 # ─── Simulation of the real account: same limits/markets as live, real mainnet books, fake money ───
 SHADOW_DB_PATH = os.getenv("SHADOW_DB_PATH", "./shadow.db")
@@ -130,6 +180,12 @@ SHADOW_START_USDC = _f("SHADOW_START_USDC", 20.0)
 # ─── Profitability guards: AI must earn more than it costs ───
 COSTS_DB_PATH = os.getenv("COSTS_DB_PATH", "./costs.db")
 LLM_MONTHLY_BUDGET_USD = _f("LLM_MONTHLY_BUDGET_USD", 5.0)      # hard cap on AI spend per calendar month
+# AI must pay for itself: this month it may spend AI_BASE_MONTHLY_USD (to keep learning) plus AI_PROFIT_SHARE of the
+# real account's trading profit this month, never more than LLM_MONTHLY_BUDGET_USD. Over it, only rule bots trade.
+AI_BASE_MONTHLY_USD = _f("AI_BASE_MONTHLY_USD", 1.5)
+AI_PROFIT_SHARE = _f("AI_PROFIT_SHARE", 0.25)
+# web search inflates every call (search results + $0.01/search); off unless it proves worth it
+LLM_WEB_SEARCHES = _i("LLM_WEB_SEARCHES", 0)
 LLM_PREFILTER = os.getenv("LLM_PREFILTER", "1") == "1"           # ask the AI only when there is a real setup
 LLM_BOT_MAX_NET_LOSS_USD = _f("LLM_BOT_MAX_NET_LOSS_USD", 1.0)   # pause an AI bot whose cost exceeds its gains by this
 VPS_MONTHLY_USD = _f("VPS_MONTHLY_USD", 0.0)                     # server cost, counted in net profit

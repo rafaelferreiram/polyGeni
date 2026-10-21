@@ -12,7 +12,9 @@ from tests.test_engine import Price, build
 @pytest.fixture
 def client(ledger, monkeypatch):
     monkeypatch.setattr(eng_mod, "_engine", build(ledger, Price(1.0)))
+    from src.api import auth
     from src.main import app
+    monkeypatch.setattr(auth, "is_local", lambda request: True)   # remote login is tested in test_auth.py
     return TestClient(app)
 
 
@@ -114,6 +116,9 @@ def test_account_sim_and_real_share_shape_and_controls(client, local, monkeypatc
     monkeypatch.setattr(hl_live, "_shadow", None)
     monkeypatch.setattr(hl_live, "_live", None)
     monkeypatch.setattr(hl_live, "shadow_cycle", lambda: None)
+    from src.solana import arena                   # never start/stop the real lab bots from a test
+    monkeypatch.setattr(arena, "set_running", lambda on: {"running": on, "llm_bots_need_key": False})
+    monkeypatch.setattr(arena, "run_round", lambda: {})
     for var in ("HL_API_WALLET_KEY", "HL_API_WALLET_KEY_TESTNET", "HL_API_WALLET_KEY_MAINNET"):
         monkeypatch.delenv(var, raising=False)
     sim = client.get("/api/paper/account?kind=sim").json()

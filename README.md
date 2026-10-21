@@ -1,22 +1,26 @@
-# polyGeni
+# Kairos
+
+*Kairos* is Greek for "the right moment": a team of trading bots that watches the whole crypto market 24/7 and acts
+only when the moment is right. (Repository and package name: `polyGeni`.)
 
 > ⚠️ **No real trading by default.** The Polymarket bot only places real orders with `POLY_LIVE_TRADING=1`
 > explicitly set; otherwise every order is a dry run. The Solana bot is **paper trading only**. The Hyperliquid
 > bot trades real money only with `LIVE_TRADING=1`, an API wallet key for that network **and** a click on Start in
-> the dashboard's 💰 Real account, inside hard USD caps (default $20 capital, $12 per position, 1x, long-only).
+> the dashboard's 💰 Real account, inside hard USD caps (default $20 capital, $12 per position, 2x isolated, long-only).
 
 ## Multi-agent crypto + gold/silver bot — paper, simulation and small live account
 
 Simulated money, **real market data**: Solana spot via real Jupiter quotes, and Hyperliquid perps
 (BTC, ETH, SOL, `xyz:GOLD`, `xyz:SILVER`) via the real L2 order book, taker fees and hourly funding.
-Dashboard: [http://127.0.0.1:8000/paper](http://127.0.0.1:8000/paper) (labelled PAPER everywhere).
+Dashboard: [http://127.0.0.1:8000](http://127.0.0.1:8000) (the old `/paper` link opens the same page).
 
 ### Quick start
 ```bash
 make install     # Python 3.11 venv via uv
 make demo        # dummy account: real quotes, forced trades on both venues, ledger self-check, UI on :8001
-make run         # 24/7 paper loop + dashboard on http://127.0.0.1:8000/paper
+make run         # 24/7 loop + dashboard on http://127.0.0.1:8000
 make test        # offline pytest suite
+make service     # run 24/7 on this Mac as a launchd agent (see "Running 24/7" below)
 make backtest    # walk-forward reports in reports/
 ```
 
@@ -59,6 +63,11 @@ Same engine and agents; only the broker is real (`HyperliquidLiveBroker`, offici
   the kill switch. One ledger per network (`live_testnet.db`, `live_mainnet.db`) so test money never mixes with real money. "Fechar tudo" flattens and disarms; testnet has a "test order" button.
 
 ### One wallet, a team of bots
+The team (named after Palmeiras players): **São Marcos** (`rules`, buys dips in an uptrend), **Endrick** (`trend`,
+24h-breakout day trades), **Gabriel Jesus** (`trend4h`, trend following on 4h candles), **Evair** (`whales`, buys when
+whales are strong net buyers in an uptrend), **Veiga** (`copy`, copies the top 10 Hyperliquid traders at our size)
+and **Valdivia** (Claude Haiku AI). São Marcos and Endrick trade real money;
+the others must first show ≥ 10 profitable lab trades.
 - **Team:** `ARENA_MODELS` (default `rules`, Fable 5.1, Opus 5.5, Opus 5, Sonnet 5.5, Haiku 5.5). Each bot runs in the
   **lab** with its own $20 paper wallet and the real account's exact limits — that is how each model is measured.
 - **Shared wallet:** in "Equipa IA" mode every bot proposes for the same wallet (simulation or real); the
@@ -67,7 +76,85 @@ Same engine and agents; only the broker is real (`HyperliquidLiveBroker`, offici
   candle (one call feeds both). Positions scale with capital (`LIVE_MAX_POSITIONS=0` = capital ÷ position size).
 - **Self-pause:** a bot with nothing to do sleeps (LLM suggests `next_check_min`, or idle-streak back-off up to
   `BOT_MAX_SLEEP_MIN`) and wakes early when price moves `BOT_WAKE_MOVE_PCT` or a position needs watching.
-- Markets: crypto first (BTC, ETH, SOL, HYPE, XRP); gold/silver with `HL_INCLUDE_METALS=1`.
+- **Leverage** `LIVE_LEVERAGE` (default 2x isolated, max 3x): with $18 the team can hold up to 3 positions of ~$12 at
+  once instead of one. Each keeps its own stop and target on the exchange; daily loss (10%) and the kill switch work on
+  equity, so the worst day is still capped.
+- **Manual buy** (dashboard "🛒 Compra manual", `POST /api/paper/account/manual-buy`): the user's own buy, $10–12, put
+  through the same Risk limits with an exchange stop (2 ATR) and target (3 ATR) and recorded in the ledger — buying
+  directly on Hyperliquid instead would look like an untracked position and trip the kill switch.
+- **Top traders** (`src/solana/toptraders.py`, `GET /api/paper/toptraders`): the 10 most profitable consistent traders
+  of the public Hyperliquid leaderboard (profitable month/week/all-time, ROI 5–300%, account ≥ $100k, no market
+  makers), their positions polled every 2 min and every open/close detected. Veiga buys a coin when ≥ 2 of them are
+  long, one just entered and the coin is in an uptrend; the AI bot sees their consensus. A trend-pullback bot was also
+  tested for the 7th slot and lost in every variant, so it was not added.
+- **News** (`src/solana/news.py`, `GET /api/paper/news`): CoinDesk, Cointelegraph, Decrypt and The Block RSS every 5 min,
+  tagged with the coins they mention; shown on the dashboard and given to the AI bot (headlines of the last 12h for the
+  coin). X.com is not used: its API has no free read access.
+- **Charts**: 1h candles with EMA50/EMA200, the open position's entry/stop/target and the bots' buy levels
+  (`GET /api/paper/candles`); equity curve vs holding BTC (`GET /api/paper/account/equity`). Click a radar row to chart it.
+- **AI turbo** (`POST /api/paper/arena/boost`, dashboard "🚀 Turbo da IA"): run the AI bot with Sonnet, Opus or
+  Fable for N cycles (1 cycle = 5 min), then it returns to Haiku. It re-decides every market of the current candle with
+  the stronger model; cost still counts against the bot's reward and the profit-linked AI allowance.
+- **Training center** (`src/solana/trainer.py`, `training.db`, `GET /api/paper/training`): one virtual trade per coin per
+  closed 1h candle with the full context the bots saw (indicators, setups, whales, top traders, news, breadth); 24h
+  later the outcome of a long and a short with the bots' stop (2 ATR) / target (3 ATR) is recorded. Seeded from the
+  candle history on first run (~4,800 samples). Lessons (hit rate per situation) are given to the AI bot. Separate from
+  the lab, which keeps proving each bot with its real rules.
+- **Shorts, lab only** (`ShortFade`, bot **Estêvão**): sells an overshooting rally (RSI > 70 above the upper band) in a
+  downtrend, stop 2 ATR, target 3 ATR, 12h. Paper shorts are held as longs on the mirror price `2*entry - price`
+  (exact short P&L, funding sign flipped). Backtest: about break-even (every other short variant lost over 208 days), so
+  it is measured live in the lab only; it is excluded from the real/simulation team, can never get a green light, and
+  the live broker refuses any short instrument. Removed from the team at the user's request (enable with `short` in
+  `ARENA_MODELS`).
+- **15-minute bots** (`whales_15m`, `copy_15m`: "Evair/Veiga 15m"): the same rules on 15m candles, positions closed
+  within 6h (1h with turbo) — quick trades. They need the same green light as every bot to reach real money, and on the
+  real/simulation account they decide on 15m candles too. (Gabriel Jesus 15m was retired; no 15m AI twin: 4x the AI cost.)
+- **Open positions**: click one for its details (bought at, held for, invested/now, P&L $ and %, stop/target, why it
+  was bought) and to sell it now at market (`POST /api/paper/account/close`; the exchange stop/target are cancelled).
+- **Lab → real money (green light)**: the lab runs every bot with $100 of paper capital, up to 8 positions and 48
+  entries a day, but the real account's trade size, leverage and stops, so evidence piles up faster without changing what
+  a trade is. A bot outside `REAL_TRUSTED_BOTS` reaches real money when it has ≥ 20 closed lab trades with ≥ 12 winners, win rate ≥ 60%, profit
+  factor ≥ 1.2 and net profit after its AI cost (`GREEN_LIGHT_*`). "Treino intensivo" (`POST /api/paper/arena/train-boost`)
+  gives a bot one lab slot per coin (29), $400 of paper capital and no daily cap for 24h — same entry rules.
+- **⚡ Turbo do dia** (`POST /api/paper/arena/turbo`, tap a reserve bot's card): until Lisbon midnight the bot analyses the
+  market every minute (`TURBO_CYCLE_SEC`), with every lab slot, no daily cap and, for the AI bot, every coin. From then on
+  it uses fast exits — positions close within 2h (15m twins 1h; `TURBO_MAX_HOLD_H`), also on the real account once
+  promoted — aiming at 10+ lab trades a day. Entry rules, size, stops and targets don't change.
+- **Valdivia (AI bot) retired** for cost; **Dudu** (`whales2`) takes the slot: an identical clone of Evair, at the user's
+  request (on the real account one position per coin still applies). Re-enable the AI bot with `claude-haiku-5-5` in `ARENA_MODELS`.
+- **At most 6 titulares** (`MAX_TITULARES`): when more bots qualify for real money, only the best 6 (reward points,
+  then lab profit) trade it. Gabriel Jesus 15m was retired (15-minute breakouts lost to fees). The turbo does not switch
+  on the AI bot's paid every-coin scan; that stays a separate choice.
+- **🏆 Ranking**: the bots compete in the lab (same rules, same paper money) by net profit after AI cost or by winning
+  trades; filter titulares / reserva / todos.
+- **One trade per signal**: after a position on a coin exits, the same candle's signal can't buy it again (its target is
+  stale — it once bought above its own take-profit and "took profit" at a loss). The AI bot is now also consulted on breakouts,
+  strong whale buying and top-trader entries (still free HOLD when nothing is set up).
+- **Ready to add money?** (`GET /api/paper/account/confidence`): 7 objective checks on the real account — 3 profitable
+  days in a row, 10+ trades, win rate ≥ 50%, profit factor ≥ 1.3, AI < 25% of trading profit, net profit > 0, no kill
+  switch in 3 days.
+- **Rewards** (`arena.reward`): each bot earns points = net profit of the last 30 days in the lab after its own AI cost
+  (1 point = 1 cent). Points decide the Coordinator's priority and the position size (a bot with a losing record trades
+  the $10 minimum until it recovers), and the AI bot sees its points and recent trades in every prompt.
+- **Daily goal** `DAILY_GOAL_PCT` (default 2%): once an account is up 2% on the day (open positions included) its
+  bots rest — no new entries until tomorrow, open positions still run to their stop/target (`DAILY_GOAL_REST=1`).
+  Lab bots never rest (they keep measuring). The goal never loosens entry rules.
+- **Thermometer** on the dashboard: market temperature from the bots' own scan (how many of the 29 coins are in an
+  uptrend, average RSI and 24h move, coins close to a buy) and our return vs simply holding BTC.
+- **Connections** panel (`GET /api/paper/health`, cached 60s): Hyperliquid data and real account (API wallet
+  authorized, balance), Anthropic (key + models), Arbitrum and Solana RPC, Jupiter, DexScreener, CoinAPI (optional, no
+  credits). CoinMarketCap and TradingView are MCP connectors used by Claude in the morning/evening routine.
+- **Lucro real** has a toggle to show profit with or without the AI cost.
+- **☕ Coffee** (button next to the bots, `POST /api/paper/account/coffee`): keeps both wallets (simulation and real) and the whole team awake
+  (no self-pause, a scan every cycle) for 4 hours and doubles the daily entry cap (12 → 24) for day trading. Entry rules and stops do **not** loosen: in the backtest, accepting shallower
+  dips (Bollinger k 1.0–1.5, RSI < 40–45, shorter targets) tripled the trades and turned +2.5% into −4% to −19%.
+- Markets: the whole liquid crypto market, not one coin — 29 perps (`HL_BROAD`): CoinMarketCap top-50 by market cap
+  plus Hyperliquid's most traded, each with ≥ 208 days of history and ≥ $1M daily volume on Hyperliquid (BTC, ETH, SOL,
+  HYPE, XRP, BNB, DOGE, ADA, TRX, AVAX, LINK, LTC, BCH, XLM, HBAR, DOT, SUI, NEAR, AAVE, UNI, ARB, TAO, ZEC, XMR, WLD, ENA,
+  ZRO, ONDO, kPEPE) for simulation, lab and real account. Every cycle all of them are scanned and ranked (uptrend first, then the most
+  oversold), so the single position slot goes to the best setup of the moment. Override with `HL_MARKETS` /
+  `HL_LIVE_MARKETS`; gold/silver with `HL_INCLUDE_METALS=1`. Per-coin backtest (208 days, fixed rules): the original 5
+  coins +$2.43 over 54 trades, the 19 new ones −$3.69 over 159 — the wider set is being proven live, watch the lab.
 
 ### Decision mode and model arena
 - **Regras | LLM** switch: in LLM mode an LLM (`llm_trader.py`) decides BUY/HOLD per market and SELL/HOLD for open
@@ -129,6 +216,14 @@ docker-compose publishes `127.0.0.1:8000` only (inside Docker set `PAPER_TRUSTED
   wallet to its public address; withdrawals only to an allow-listed address with daily limits; real swaps via
   Jupiter only with `LIVE_TRADING=1` **after** 4–8 weeks of 24/7 paper trading that beats hold SOL after costs.
 
+### Running 24/7 on a Mac (`scripts/kairos_service.sh`)
+`make service` installs a launchd user agent (`~/Library/LaunchAgents/com.kairos.bots.plist`): it starts at login,
+restarts the server within ~15 s if it crashes, and wraps it in `caffeinate -i -s` so the Mac does not idle-sleep.
+Logs go to `~/Library/Logs/kairos.log`; `scripts/kairos_service.sh status|restart|logs|uninstall`.
+Limits: closing the lid or shutting down still stops the bots (open positions stay protected by their exchange
+stop/target orders); for true 24/7 use a small cloud server. The agent runs from this checkout's folder — re-run
+`make service` if the project moves.
+
 ### Daily report and morning/evening routine
 - **Daily report:** dashboard table "Relatório diário" (`GET /api/paper/report/daily?kind=real|sim`) — trades, wins,
   losses, P&L after fees and funding, AI cost, net; a markdown copy is written nightly at 23:55 to `reports/daily/`.
@@ -141,7 +236,10 @@ docker-compose publishes `127.0.0.1:8000` only (inside Docker set `PAPER_TRUSTED
 ### Profitability guards — the AI must earn more than it costs
 - **Real cost per call** (`costs.py`, `costs.db`): priced from the usage each API response returns (tokens,
   cache, web searches at $10/1000) with the published per-model rates.
-- **Monthly budget** `LLM_MONTHLY_BUDGET_USD` (default $5): once spent, no AI call is made; the rules bot keeps going.
+- **AI pays for itself**: this month AI may spend `AI_BASE_MONTHLY_USD` ($1.50, to keep learning) + `AI_PROFIT_SHARE`
+  (25%) of the real account's trading profit this month, never more than `LLM_MONTHLY_BUDGET_USD` ($5). Over it, AI
+  calls stop and the free rule bots keep trading. Web search is off (`LLM_WEB_SEARCHES=0`), coins already held are not
+  re-analysed, and the debate reviews each signal once per candle.
 - **Pre-filter** `LLM_PREFILTER=1`: the AI is only asked when there is a dip inside an uptrend; otherwise HOLD for $0.
 - **Auto-pause**: an AI bot whose cost exceeds its lab gains by `LLM_BOT_MAX_NET_LOSS_USD` stops; AI bots reach the
   real wallet only when profitable *after* their AI cost.
@@ -165,6 +263,21 @@ LLM bots now receive the same indicators (RSI, ATR%, EMA50/200, band, funding, t
 ATR stops), the round-trip cost and the lesson "no dip-buying in downtrends"; AI bots trade the real wallet only
 after `LIVE_MIN_LAB_TRADES` lab trades with positive expectancy. Still below buy-and-hold in absolute return over
 a bull window — better risk-adjusted, not yet "beats the market".
+
+### Which strategy, and when (29 coins, 208 days, 1h, fees + funding, per-coin, 2026-10-21)
+| Strategy | 1st half | 2nd half | Total |
+|---|---:|---:|---:|
+| Mean reversion (buy dips in uptrend) | +$2.61 / 101 trades | −$4.70 / 157 | −$2.08 |
+| Trend following (breakout) | −$9.77 / 387 | +$12.40 / 721 | +$2.63 |
+| Strong trend only (EMA50 +1%/day) | −$8.36 / 244 | +$24.34 / 435 | +$15.98 |
+| Both combined | −$1.80 / 473 | +$9.90 / 853 | +$8.10 |
+
+No strategy wins in both halves: mean reversion works in calm markets, trend following in strong trends. So both run
+as free lab bots (`rules` = dips, `trend` = strong trend) and the Coordinator gives each market to the bot with the best
+**last 30 days** in the lab (`LAB_SCORE_DAYS`); both rule bots trade real money (`REAL_TRUSTED_BOTS=rules,trend`, trend enabled by the user on 2026-10-21); AI bots reach real money only after ≥ 10 profitable lab trades.
+Arbitrage is not used: cross-exchange gaps on liquid coins are smaller than two taker fees, and funding/basis trades
+need shorts and capital on two venues — not worth it on $20. CoinAPI (`COINAPI_KEY`) is configured but the account has
+no credits yet; CoinMarketCap context is used by the morning/evening routine.
 
 ### Backtest (walk-forward, out-of-sample Jun→Oct 2026, net of costs)
 Params (incl. a SMA200 regime filter on/off) are chosen in-sample on the previous fold and traded on the next.
@@ -254,17 +367,8 @@ Orders are placed via the official `py-clob-client` SDK using L2 API credentials
 
 ## Dashboard
 
-Open `http://localhost:8000` after starting the server.
-
-| Section | What it shows |
-|---|---|
-| **Header** | Balance, bot status, Start/Stop/Scan buttons |
-| **Portfolio row** | Balance, Total P&L, Realized P&L, Unrealized P&L, Win Rate, Open Positions |
-| **Live Opportunities** | Current scan results ranked by edge, with reasoning |
-| **Open Positions** | All active bets with unrealized P&L |
-| **Trade History** | All past trades with status and P&L |
-
-The dashboard auto-refreshes every 30 seconds.
+There is one dashboard, Kairos, at `http://localhost:8000` (see the dashboard section at the top). The legacy
+Polymarket bot has no UI of its own any more; it is controlled through its REST API (`/api/...`, below).
 
 ---
 
@@ -383,9 +487,9 @@ polyGeni/
 │   └── api/
 │       └── routes.py           # FastAPI REST endpoints
 └── frontend/
-    ├── index.html              # Dashboard UI
-    ├── style.css               # Dark theme styles
-    └── app.js                  # Dashboard logic
+    ├── paper.html              # Kairos dashboard (served at /)
+    ├── paper.js                # Dashboard logic
+    └── style.css               # Base styles
 ```
 
 ---
@@ -414,3 +518,20 @@ polyGeni/
 - The $10 → $20 goal requires finding 1-2 high-confidence trades — quality over quantity
 - Bitcoin markets tend to have the strongest signal from the log-normal model
 - Sports opportunities require an active H2H game scheduled (not season-long futures)
+
+## Remote access (phone, anywhere)
+
+- `scripts/kairos_tunnel.sh install` runs a Cloudflare quick tunnel to `127.0.0.1:8000` 24/7 (launchd `com.kairos.tunnel`);
+  `scripts/kairos_tunnel.sh url` prints its address. The Vercel project `kairos-bots` (https://kairos-bots.vercel.app) is a
+  single `vercel.json` rewrite to that address. The quick-tunnel address changes when cloudflared restarts (e.g. reboot):
+  add `VERCEL_TOKEN` to `.env` and run `scripts/kairos_tunnel.sh sync` to point Vercel at the new one.
+- From outside this Mac every page needs a login (`KAIROS_LOGIN_USER`, default `root`; `KAIROS_LOGIN_HASH` = pbkdf2 of the
+  password, see `src/api/auth.py`), sessions last 7 days, 5 wrong passwords lock login for 15 minutes, and the session is
+  read-only: buying, selling, Start/Stop and the kill switch only work on the Mac.
+- Dashboard has **Lite** (balance, profit, positions, team, vital signs, closed trades) and **Pro** (everything); phones start in Lite.
+
+## Exits
+
+Stop 2 ATR, target 3 ATR and a max holding time per bot. Once a trade is halfway to its target the stop moves to breakeven
+(+0.3% for fees) and then trails 1 ATR below the price (`PROTECT_PROFIT=1`), so winners are held but never turn into losers.
+On the real account the exchange stop stays at the original level as a backstop; the raised stop is enforced by the bot.

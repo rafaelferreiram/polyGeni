@@ -30,6 +30,20 @@ def _ts(iso: str) -> datetime:
     return datetime.fromisoformat(iso)
 
 
+def protected_stop(pos: dict, price: float) -> float | None:
+    """Hold winners, never let them turn into losers: once the price is halfway to the target the stop moves to
+    breakeven (entry + 0.3% for fees), and from there it trails 1 ATR (target distance / 3) below the price.
+    Returns the new, higher stop, or None. Only ever raises the stop. The exchange SL stays as the backstop."""
+    stop, tp, qty = pos.get("stop_price"), pos.get("tp_price"), pos.get("qty") or 0
+    if not (stop and tp and qty) or tp <= stop:
+        return None
+    entry = pos["cost_usd"] / qty
+    if price < entry + (tp - entry) / 2:
+        return None
+    new = max(entry * 1.003, price - (tp - entry) / 3)
+    return new if new > stop * 1.0005 else None
+
+
 class PaperEngine:
     def __init__(self, ledger: Ledger, scout, safety: SafetyAgent, strategies: list,
                  debate: DebateAgent, risk: RiskAgent, executor: ExecutorAgent,
@@ -112,6 +126,10 @@ class PaperEngine:
     def _agent(self, name: str, **kw):
         agents = self.ledger.get_state("agents", {})
         a = agents.setdefault(name, {"approved": 0, "vetoed": 0})
+        if kw.get("last_reason"):
+            from src.solana import logbuf
+            quiet = "no signal" in kw["last_reason"] or kw["last_reason"].endswith(": passed")
+            logbuf.add(logbuf.label(self.ledger.path), "DEBUG" if quiet else "INFO", f"{name}: {kw['last_reason']}")
         # live view: which agent is acting right now and on what
         self.ledger.set_state("live", {"agent": name, "ts": now_iso(), "detail": kw.get("last_reason", ""),
                                        "cycle": self.cycle, "running": True})
@@ -173,12 +191,17 @@ class PaperEngine:
             self.ledger.set_mark(pos["mint"], price, value)
             held_h = (now - _ts(pos["opened_at"])).total_seconds() / 3600
             reason = None
+            if cfg.PROTECT_PROFIT and (new := protected_stop(pos, price)):
+                self.ledger.set_stop(pos["mint"], new)
+                self.ledger.log_decision("hold", cycle=self.cycle, mint=pos["mint"], symbol=pos["symbol"],
+                                         strategy=pos["strategy"], reason=f"lucro protegido: stop sobe para {new:.6g}")
+                pos = {**pos, "stop_price": new}
             if pos["stop_price"] and price <= pos["stop_price"]:
                 reason = f"stop-loss hit ({price:.6g} <= {pos['stop_price']:.6g})"
             elif pos["tp_price"] and price >= pos["tp_price"]:
                 reason = f"take-profit hit ({price:.6g} >= {pos['tp_price']:.6g})"
-            elif held_h >= self.max_hold_h:
-                reason = f"max holding time {self.max_hold_h:.0f}h reached"
+            elif held_h >= (limit := _max_hold(pos["strategy"], self.max_hold_h)):
+                reason = f"max holding time {limit:.0f}h reached"
             elif self.decision_mode() == "llm" and self.team and pos.get("pool_address"):
                 # the bot that opened the position manages its exit
                 owner = next((d for d in self.team if d.name == pos["strategy"]), self.llm)
@@ -214,11 +237,22 @@ class PaperEngine:
         self.ledger.set_state("cycle", cycle)
         self.ledger.set_state("heartbeat", {"ts": now_iso(), "cycle": cycle})
         stats = {"cycle": cycle, "candidates": 0, "safe": 0, "signals": 0, "entries": 0, "vetoes": 0}
+        from src.solana import logbuf
+        logbuf.add(logbuf.label(self.ledger.path), "INFO", f"── ciclo #{cycle} começou ──")
         try:
+            sync_ok = True
             try:
                 problems = self.executor.sync()        # live venues: exchange is the source of truth
+                self.ledger.set_state("sync_failures", 0)
             except Exception as e:
-                problems = [f"venue sync failed: {e}"]
+                # a network error / rate limit is not a mismatch: skip new entries this cycle (exchange state unknown;
+                # open positions keep their exchange stops) and only stop the bots if the exchange stays unreachable
+                sync_ok, problems = False, []
+                fails = self.ledger.get_state("sync_failures", 0) + 1
+                self.ledger.set_state("sync_failures", fails)
+                self.ledger.log_decision("error", cycle=cycle, reason=f"exchange unreachable ({fails}x): {str(e)[:160]}")
+                if fails >= cfg.SYNC_FAIL_LIMIT:
+                    problems = [f"exchange unreachable for {fails} cycles in a row: {str(e)[:120]}"]
             for msg in problems:
                 self.ledger.log_decision("reconcile", cycle=cycle, reason=msg)
             if problems and not self.kill_switch().get("active"):
@@ -242,11 +276,17 @@ class PaperEngine:
                                       f"(${p.day_start_equity:.2f} → ${p.equity:.2f})")
             if self.kill_switch().get("active"):
                 stats["skipped"] = "kill switch active"
-            elif self._sleeping(stats):
+            elif not sync_ok:
+                stats["skipped"] = "exchange unreachable this cycle"
+            elif self.rests_on_goal and cfg.DAILY_GOAL_REST and self._goal_hit(p):
+                stats["skipped"] = (f"meta do dia batida (+{(p.equity / p.day_start_equity - 1) * 100:.1f}%) — "
+                                    "descansando até amanhã; posições abertas seguem protegidas")
+            elif cfg.BOT_SELF_PAUSE and not self.coffee() and self._sleeping(stats):
                 pass
             else:
                 self._entries(stats)
-                self._maybe_sleep(stats)
+                if cfg.BOT_SELF_PAUSE and not self.coffee():
+                    self._maybe_sleep(stats)
         except Exception as e:
             logger.exception("cycle failed")
             self.ledger.log_decision("error", cycle=cycle, reason=f"cycle error: {e}")
@@ -269,6 +309,74 @@ class PaperEngine:
             logger.info(f"[paper] cycle {cycle}: {stats}")
         return stats
 
+    def manual_exit(self, mint: str) -> dict:
+        """The user closes an open position from the dashboard (market sell; on the real account the exchange's
+        stop/target orders are cancelled by the broker). Recorded like any exit."""
+        if not self._busy.acquire(timeout=120):             # never race a running cycle
+            raise ValueError("os bots estão no meio de um ciclo — tente de novo em instantes")
+        try:
+            pos = next((p for p in self.ledger.positions() if p["mint"] == mint), None)
+            if pos is None:
+                raise ValueError("essa posição já não está aberta")
+            reason = "fechada manualmente pelo painel"
+            fill = self.executor.close(f"exit-{pos['entry_order_id']}", pos, reason)
+            pnl = fill["usd_gross"] - fill["fee_usd"] - pos["cost_usd"]
+            self.ledger.log_decision("exit", cycle=self.cycle, mint=pos["mint"], symbol=pos["symbol"], strategy=pos["strategy"],
+                                     order_id=fill["order_id"], reason=reason, signals={"pnl_usd": round(pnl, 4)})
+            self.ledger.delete_position(pos["mint"])
+            self.reconcile()
+        finally:
+            self._busy.release()
+        return {"symbol": pos["symbol"], "usd": round(fill["usd_gross"], 4), "price": fill["price"], "pnl_usd": round(pnl, 4)}
+
+    def manual_entry(self, symbol: str, usd: float) -> dict:
+        """A buy the user clicks on the dashboard: same risk limits, exchange stop (2 ATR) / target (3 ATR) and ledger
+        as the bots' trades, so the exchange and the books never disagree (a buy made outside would trip the kill switch)."""
+        from src.solana.strategies import Signal, _atr_stops
+        if self.kill_switch().get("active"):
+            raise ValueError("kill switch ativo — rearme primeiro")
+        c = next((x for s in self.scouts for x in s.candidates() if x.symbol == symbol), None)
+        if c is None:
+            raise ValueError(f"{symbol} não está entre os mercados dos bots")
+        candles = self._candles(c)[:-1]
+        stop, tp, a = _atr_stops(candles, 2.0, 3.0)
+        sig = Signal("manual", c.price_usd, stop, tp, f"compra manual pelo painel (até ${usd:.2f})", {"atr": a})
+        if not self._busy.acquire(timeout=120):             # never race a running cycle
+            raise ValueError("os bots estão no meio de um ciclo — tente de novo em instantes")
+        try:
+            risk = self.risk.evaluate(sig, c.mint, 1.0, self.portfolio(), self.profiles.get(c.venue, {}).get("max_pos_pct"),
+                                      max_usd=usd)
+            if not risk.approve:
+                raise ValueError(f"o Risk recusou: {risk.reason}")
+            order_id = f"manual-{int(time.time())}-{c.mint[:12]}-buy"
+            fill = self.executor.open(order_id, c, sig, risk.detail["size_usd"], risk.detail["fingerprint"])
+            self.reconcile()
+            self.ledger.log_decision("entry", cycle=self.cycle, mint=c.mint, symbol=c.symbol, strategy="manual",
+                                     order_id=order_id, reason=f"{sig.reason}; size ${fill['usd_gross']:.2f} @ {fill['price']:.6g}")
+        finally:
+            self._busy.release()
+        return {"symbol": c.symbol, "usd": round(fill["usd_gross"], 2), "price": fill["price"],
+                "stop": sig.stop_price, "tp": sig.tp_price}
+
+    rests_on_goal = True        # lab bots set False: they keep trading to keep measuring
+    size_policy = None          # strategy name -> max position USD (the bots' reward/penalty), set for team wallets
+
+    def _goal_hit(self, p) -> bool:
+        return p.day_start_equity > 0 and (p.equity - p.day_start_equity) / p.day_start_equity >= cfg.DAILY_GOAL_PCT
+
+    # ─── coffee: the user keeps the bots awake (no self-pause) for a while; entry rules are unchanged ───
+    def coffee(self) -> str | None:
+        until = self.ledger.get_state("coffee_until")
+        return until if until and datetime.now(timezone.utc) < _ts(until) else None
+
+    def give_coffee(self, hours: float) -> str:
+        until = (datetime.now(timezone.utc) + timedelta(hours=hours)).isoformat(timespec="seconds")
+        self.ledger.set_state("coffee_until", until)
+        self.ledger.set_state("sleep", {})
+        self.ledger.set_state("idle_streak", 0)
+        self.ledger.log_decision("coffee", cycle=self.cycle, reason=f"☕ café: acordados e atentos até {_ts(until).astimezone(cfg.TZ).strftime('%H:%M')}")
+        return until
+
     # ─── self-pause: nothing to do → sleep; price moves or open positions → wake ───
     def _sleeping(self, stats: dict) -> bool:
         sleep = self.ledger.get_state("sleep") or {}
@@ -285,10 +393,10 @@ class PaperEngine:
             ref = (sleep.get("prices") or {}).get(mint)
             if ref and px and abs(px / ref - 1) >= cfg.BOT_WAKE_MOVE_PCT:
                 self.ledger.set_state("sleep", {})
-                self.ledger.log_decision("wake", cycle=self.cycle, mint=mint, reason=f"acordei: preço mexeu {px / ref - 1:+.1%}")
+                self.ledger.log_decision("wake", cycle=self.cycle, mint=mint, reason=f"acordei: o preço mexeu {px / ref - 1:+.1%}")
                 return False
         stats["sleeping_until"] = sleep["until"]
-        self._agent("scout", last_reason=f"a dormir até {_ts(sleep['until']).astimezone().strftime('%H:%M')} — {sleep.get('reason', '')}"[:200])
+        self._agent("scout", last_reason=f"dormindo até {_ts(sleep['until']).astimezone(cfg.TZ).strftime('%H:%M')} — {sleep.get('reason', '')}"[:200])
         return True
 
     def _maybe_sleep(self, stats: dict):
@@ -312,7 +420,7 @@ class PaperEngine:
             until = datetime.now(timezone.utc) + timedelta(minutes=minutes)
             self.ledger.set_state("sleep", {"until": until.isoformat(timespec="seconds"), "reason": reason,
                                             "prices": getattr(self, "_last_prices", {})})
-            self.ledger.log_decision("sleep", cycle=self.cycle, reason=f"a dormir {minutes:.0f} min: {reason}")
+            self.ledger.log_decision("sleep", cycle=self.cycle, reason=f"dormindo {minutes:.0f} min: {reason}")
             stats["sleeping_until"] = until.isoformat(timespec="seconds")
 
     def _entries(self, stats: dict):
@@ -328,6 +436,7 @@ class PaperEngine:
                                            "price": c.price_usd} for c in candidates])
         self._agent("scout", last_reason=f"{len(candidates)} candidates", approved=len(candidates))
         paused = set(self.paused())
+        ready = []
         for c in candidates:
             if c.mint in paused or c.venue in paused:
                 continue
@@ -358,12 +467,28 @@ class PaperEngine:
                 self.ledger.log_decision("error", cycle=self.cycle, mint=c.mint, symbol=c.symbol,
                                          reason=f"candles unavailable: {e}")
                 continue
+            ready.append((c, candles, safety, profile))
+        # best opportunity first: with one slot, the deepest dip inside an uptrend gets it, not the first coin listed
+        ready.sort(key=lambda r: _setup_rank(r[1]))
+        mt = _market_temp(ready)
+        self.ledger.set_state("market_temp", mt)
+        breadth = {k: mt.get(k) for k in ("n", "uptrend", "avg_rsi", "avg_ch24")}   # whole-market context for the AI
+        from src.solana import trainer
+        trainer.set_breadth(breadth)
+        held = {x["mint"] for x in self.ledger.positions()}
+        for c, candles, safety, profile in ready:
+            if c.mint in held:          # already holding it: its stop/target and exit review handle it — no AI tokens
+                continue
             for strat in self._ordered(c):
                 if hasattr(strat, "decide"):
                     if not strat.enabled:
                         self._agent(strat.name, last_reason="sem ANTHROPIC_API_KEY — este bot não decide", vetoed=1)
                         continue
-                    sig = strat.decide(candles, {**c.summary(), "symbol": c.symbol, "venue": c.venue})
+                    from src.solana import news, toptraders, whales
+                    sig = strat.decide(candles, {**c.summary(), "symbol": c.symbol, "venue": c.venue,
+                                                 "whale_flow": whales.summary(c.symbol), "market_breadth": breadth,
+                                                 "news_12h": news.for_llm(c.symbol),
+                                                 "top_traders": toptraders.consensus(c.symbol)})
                     d = strat.last.get(c.symbol, {})
                     msg = f"{c.symbol}: {d.get('action', 'HOLD')} — {d.get('reason', '')}"[:200]
                     self._agent(strat.name, last_reason=msg, approved=int(sig is not None))
@@ -375,6 +500,12 @@ class PaperEngine:
                     sig.tp_pct *= profile["stop_mult"]
                 if sig is None:
                     self._agent(strat.name, last_reason=f"{c.symbol}: no signal")
+                    continue
+                # one trade per signal: after an exit, the same candle's signal (and its now-stale target) is spent
+                # shortcut: kept in memory, a restart may allow one repeat of the latest signal
+                entered = self.__dict__.setdefault("_entered", set())
+                if (c.mint, strat.name, candles[-1]["t"]) in entered:
+                    self._agent(strat.name, last_reason=f"{c.symbol}: sinal já usado neste candle")
                     continue
                 stats["signals"] += 1
                 self._agent(strat.name, last_reason=f"{c.symbol}: {sig.reason}", approved=1)
@@ -389,14 +520,18 @@ class PaperEngine:
                     research_vote = self.research.vote(brief)
                     self._agent("research", last_reason=f"{c.symbol}: {research_vote.reason}",
                                 approved=int(research_vote.approve), vetoed=int(not research_vote.approve))
+                key = (c.mint, strat.name, candles[-1]["t"])     # one review per signal per candle, not every 5 min
+                debated = self.__dict__.setdefault("_debated", {})
                 debate = (Vote("debate", True, "skipped: the LLM already made this decision")
-                          if strat.name.startswith("llm") else
-                          self.debate.review(c, sig, {"closes_24h": closes, "safety": safety.detail,
-                                                      "research_brief": brief}))
+                          if strat.name.startswith("llm") else debated.get(key) or
+                          debated.setdefault(key, self.debate.review(c, sig, {"closes_24h": closes, "safety": safety.detail,
+                                                                                    "research_brief": brief})))
                 self._agent("debate", last_reason=f"{c.symbol}: {debate.reason}",
                             approved=int(debate.approve), vetoed=int(not debate.approve))
                 p = self.portfolio()
-                risk = self.risk.evaluate(sig, c.mint, strat.capital_pct, p, profile.get("max_pos_pct"))
+                risk = self.risk.evaluate(sig, c.mint, strat.capital_pct, p, profile.get("max_pos_pct"),
+                                          entry_cap_mult=2 if self.coffee() else 1,
+                                          max_usd=self.size_policy(strat.name) if self.size_policy else None)
                 self._agent("risk", last_reason=f"{c.symbol}: {risk.reason}",
                             approved=int(risk.approve), vetoed=int(not risk.approve))
                 chain = [v for v in (safety, strat_vote, research_vote, debate, risk) if v is not None]
@@ -417,6 +552,7 @@ class PaperEngine:
                     self.ledger.log_decision("error", cycle=self.cycle, mint=c.mint, symbol=c.symbol, strategy=strat.name,
                                              signals=signals, votes=votes, reason=f"executor refused/failed: {e}")
                     continue
+                entered.add((c.mint, strat.name, candles[-1]["t"]))
                 self.reconcile()
                 stats["entries"] += 1
                 self._agent("executor", last_reason=f"bought {c.symbol} ${fill['usd_gross']:.2f}", approved=1)
@@ -430,6 +566,62 @@ def bench_prices() -> dict:
     """Benchmark prices for buy-and-hold comparisons (Hyperliquid mids: one public call)."""
     mids = hl.info({"type": "allMids"})
     return {"SOL": float(mids["SOL"]), "BTC": float(mids["BTC"])}
+
+
+def _max_hold(strategy: str, default: float) -> float:
+    """Day-trade bots close their positions sooner (e.g. trend: 24h); others use the engine default."""
+    from src.solana import arena
+    from src.solana.strategies import RULE_BOTS
+    hold = getattr(RULE_BOTS.get(strategy), "max_hold_h", None) or default
+    fast = arena.fast_exit_hold(strategy)
+    return min(hold, fast) if fast else hold
+
+
+def _market_temp(ready: list) -> dict:
+    """Market thermometer from the candles the bots already fetched: trend breadth, RSI, 24h moves, near-signal coins."""
+    from statistics import mean, pstdev
+    from src.solana.strategies import MeanReversionATR, TrendStrong, ema, rsi
+    rows = []
+    for c, candles, *_ in ready:
+        closes = [k["close"] for k in candles]
+        if len(closes) < 30:
+            continue
+        px = closes[-1]
+        trend = ema(closes[-600:], 200) if len(closes) >= 200 else None
+        e50 = ema(closes[-150:], 50)
+        slope = e50 / ema(closes[-174:-24], 50) - 1 if len(closes) >= 174 else 0
+        lower = mean(closes[-20:]) - 2 * pstdev(closes[-20:])          # dip bot buys below this (with RSI < 30)
+        high24 = max(k.get("high", k["close"]) for k in candles[-25:-1])  # trend bot buys above this
+        up = bool(trend and px > trend)
+        strong = bool(up and e50 > trend and slope >= TrendStrong.min_slope)
+        ready_now = "quedas" if MeanReversionATR().signal(candles) else "tendência" if TrendStrong().signal(candles) else None
+        dip, brk = lower / px - 1, high24 / px - 1
+        status = ("pronto" if ready_now else "sem tendência" if not up
+                  else "perto" if dip > -0.015 or (strong and brk < 0.01) else "aguardando")
+        rows.append({"symbol": c.symbol, "price": px, "up": up, "strong": strong, "rsi": round(rsi(closes), 1),
+                     "ch24": round((px / closes[-25] - 1) * 100, 2), "dip_at": lower, "dip_pct": round(dip * 100, 2),
+                     "break_at": high24, "break_pct": round(brk * 100, 2), "status": status, "ready_by": ready_now})
+    if not rows:
+        return {}
+    by = sorted(rows, key=lambda r: r["ch24"])
+    return {"ts": now_iso(), "n": len(rows), "uptrend": sum(r["up"] for r in rows),
+            "avg_rsi": round(sum(r["rsi"] for r in rows) / len(rows), 1),
+            "avg_ch24": round(sum(r["ch24"] for r in rows) / len(rows), 2),
+            "near": [r["symbol"] for r in rows if r["up"] and r["rsi"] < 40],
+            "best": [[r["symbol"], r["ch24"]] for r in by[-3:][::-1]], "worst": [[r["symbol"], r["ch24"]] for r in by[:3]],
+            # the radar: closest to a buy first
+            "watch": sorted(rows, key=lambda r: (["pronto", "perto", "aguardando", "sem tendência"].index(r["status"]),
+                                                 min(-r["dip_pct"], r["break_pct"] if r["strong"] else 99)))}
+
+
+def _setup_rank(candles: list[dict]) -> tuple:
+    """Sort key: markets in an uptrend first, then the most oversold (lowest RSI). Cheap, no extra API calls."""
+    from src.solana.strategies import ema, rsi
+    closes = [k["close"] for k in candles]
+    if len(closes) < 15:
+        return (1, 100.0)
+    trend = ema(closes[-600:], 200) if len(closes) >= 200 else None
+    return (0 if trend and closes[-1] > trend else 1, rsi(closes))
 
 
 def _votes(*votes: Vote) -> dict:

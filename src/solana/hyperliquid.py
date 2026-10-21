@@ -8,6 +8,7 @@ walking the real L2 book, taker fee per market, hourly funding accrued on open p
 Verified against docs + live API 2026-10-21.
 """
 import json
+import threading
 import time
 from datetime import datetime
 
@@ -30,10 +31,17 @@ def instrument_id(coin: str) -> str:
     return f"hl:{coin}"
 
 
+SHORT = "~short"     # paper-only: a short is held as a long on the mirror price 2*entry - price (exact short P&L)
+
+
+def is_short(instrument: str) -> bool:
+    return instrument.endswith(SHORT)
+
+
 def coin_of(instrument: str) -> str:
     if not instrument.startswith("hl:"):
         raise ValueError(f"not a Hyperliquid instrument: {instrument}")
-    return instrument[3:]
+    return instrument[3:].removesuffix(SHORT)
 
 
 def info(body: dict, url: str | None = None):
@@ -63,11 +71,15 @@ def asset_ctxs(dex: str = "", url: str | None = None) -> dict[str, dict]:
     return out
 
 
+class UnknownMarket(RuntimeError):
+    """The coin is not listed on this network (not a network error)."""
+
+
 def asset_ctx(coin: str, url: str | None = None) -> dict:
     dex, full = split_coin(coin)
     ctx = asset_ctxs(dex, url).get(full)
     if ctx is None:
-        raise RuntimeError(f"unknown Hyperliquid market {full}")
+        raise UnknownMarket(f"unknown Hyperliquid market {full}")
     return ctx
 
 
@@ -82,10 +94,29 @@ def taker_fee_bps(ctx: dict) -> float:
     return BASE_TAKER_BPS * mult
 
 
+_candle_cache: dict[tuple, tuple[int, list[dict]]] = {}
+INTERVAL_S = {"1h": 3600, "15m": 900}          # live, cached intervals (1h for every bot, 15m for the lab's 15m twins)
+_candle_lock = threading.Lock()
+
+
 def candles(coin: str, interval: str = "1h", start_ms: int | None = None, end_ms: int | None = None,
             url: str | None = None) -> list[dict]:
+    # Live use (default window): every engine (real, simulation, lab bots) asks for the same 29 coins each cycle.
+    # Closed 1h candles only change once an hour, so one fetch per coin per hour is shared by all of them —
+    # without this, ~150 heavy candleSnapshot calls per round exceed Hyperliquid's 1200 weight/min and return 429.
+    step = INTERVAL_S.get(interval, 3600)
+    if start_ms is None and end_ms is None and interval in INTERVAL_S:
+        with _candle_lock:            # one fetch even when several engines miss at once (e.g. right after a restart)
+            bucket = int(time.time()) // step
+            key = (coin, url) if interval == "1h" else (coin, url, interval)
+            hit = _candle_cache.get(key)
+            if hit and hit[0] == bucket:
+                return hit[1]
+            rows = candles(coin, interval, end_ms=int(time.time() * 1000), url=url)
+            _candle_cache[key] = (bucket, rows)
+            return rows
     end_ms = end_ms or int(time.time() * 1000)
-    start_ms = start_ms or end_ms - 400 * 3600 * 1000      # ≥ 200 closed bars for EMA200
+    start_ms = start_ms or end_ms - 400 * step * 1000        # 400 bars: ≥ 200 closed bars for EMA200
     rows = info({"type": "candleSnapshot", "req": {"coin": split_coin(coin)[1], "interval": interval,
                                                   "startTime": start_ms, "endTime": end_ms}}, url)
     return [dict(t=r["t"] // 1000, open=float(r["o"]), high=float(r["h"]), low=float(r["l"]),
@@ -132,9 +163,10 @@ class HyperliquidPaperBroker(Broker):
 
     def __init__(self, ledger: Ledger, book_fn=l2_book, ctx_fn=asset_ctx, leverage: float = 1.0,
                  now_fn=time.time):
-        if leverage != 1.0:
-            raise LeverageError("phase 1 paper trading is 1x only (notional == margin)")
+        if not 1.0 <= leverage <= 3.0:
+            raise LeverageError("paper leverage must be between 1x and 3x")
         self.ledger, self.book_fn, self.ctx_fn, self.now_fn = ledger, book_fn, ctx_fn, now_fn
+        self.leverage = leverage
 
     def buy(self, order_id, instrument, symbol, usd, decimals=0, *, strategy, stop_price, tp_price, meta=None):
         if (existing := self.ledger.get_fill(order_id)):
@@ -142,12 +174,16 @@ class HyperliquidPaperBroker(Broker):
         coin = coin_of(instrument)
         ctx = self.ctx_fn(coin)
         fee = usd * taker_fee_bps(ctx) / 1e4
-        if usd + fee > self.ledger.cash() + 1e-9:
-            raise LeverageError(f"notional ${usd:.2f} + fee exceeds free cash ${self.ledger.cash():.2f} (1x only)")
+        # isolated margin: open notional may reach (equity at cost) x leverage; at 1x that is just the free cash
+        open_cost = sum(p["cost_usd"] for p in self.ledger.positions_from_fills().values())
+        room = (self.ledger.cash() + open_cost) * self.leverage - open_cost
+        if usd + fee > room + 1e-9:
+            raise LeverageError(f"notional ${usd:.2f} + fee exceeds buying power ${room:.2f} at {self.leverage:g}x")
         book = self.book_fn(coin)
         mid = (book["bids"][0][0] + book["asks"][0][0]) / 2
-        qty, _ = walk(book["asks"], usd=usd)
-        vwap = usd / qty
+        # long: lift the asks. short (lab only): hit the bids; the mirror price starts at the entry, so vwap = entry
+        qty, got = walk(book["bids"] if is_short(instrument) else book["asks"], usd=usd)
+        vwap = got / qty
         fill, _ = self.ledger.append_fill(dict(
             order_id=order_id, ts=now_iso(), venue=self.venue, side="buy", mint=instrument, symbol=symbol,
             strategy=strategy, qty=qty, decimals=0, usd_gross=usd, fee_usd=fee, price=vwap, quote_price=mid,
@@ -157,10 +193,22 @@ class HyperliquidPaperBroker(Broker):
         ))
         return fill
 
+    def _entry(self, instrument) -> float:
+        """The short's fill price (vwap, before fees) — positions' entry_price includes the fee."""
+        pos = next(p for p in self.ledger.positions_from_fills().values() if p["mint"] == instrument)
+        return self.ledger.get_fill(pos["entry_order_id"])["price"]
+
+    def _close_value(self, instrument, qty, book) -> float:
+        """USD received closing qty: a long sells on the bids; a short buys back on the asks and is worth
+        qty * (2*entry - buyback price) — i.e. it gains exactly what the price fell."""
+        if not is_short(instrument):
+            return walk(book["bids"], qty=qty)[1]
+        _, cost = walk(book["asks"], qty=qty)
+        return qty * (2 * self._entry(instrument)) - cost
+
     def quote_sell_value(self, instrument, qty, decimals=0):
         book = self.book_fn(coin_of(instrument))
-        _, usd = walk(book["bids"], qty=qty)
-        return usd, book
+        return self._close_value(instrument, qty, book), book
 
     def sell(self, order_id, instrument, symbol, qty, decimals=0, *, strategy, meta=None):
         if (existing := self.ledger.get_fill(order_id)):
@@ -168,7 +216,7 @@ class HyperliquidPaperBroker(Broker):
         coin = coin_of(instrument)
         book = self.book_fn(coin)
         mid = (book["bids"][0][0] + book["asks"][0][0]) / 2
-        _, usd = walk(book["bids"], qty=qty)
+        usd = self._close_value(instrument, qty, book)
         vwap = usd / qty
         fill, _ = self.ledger.append_fill(dict(
             order_id=order_id, ts=now_iso(), venue=self.venue, side="sell", mint=instrument, symbol=symbol,
@@ -191,9 +239,23 @@ class HyperliquidPaperBroker(Broker):
                 continue
             ctx = self.ctx_fn(coin_of(p["mint"]))
             notional = p["qty"] * float(ctx["markPx"])
-            total += self.ledger.add_funding(self.venue, p["mint"], p["entry_order_id"], float(ctx["funding"]),
-                                             hours, notional)
+            rate = float(ctx["funding"]) * (-1 if is_short(p["mint"]) else 1)     # positive funding pays shorts
+            total += self.ledger.add_funding(self.venue, p["mint"], p["entry_order_id"], rate, hours, notional)
         return total
+
+
+class ShortScout:
+    """Lab-only: the same markets offered as short instruments (hl:BTC~short)."""
+
+    def __init__(self, inner=None):
+        self.inner = inner or HyperliquidScout()
+
+    def candidates(self) -> list[Candidate]:
+        out = []
+        for c in self.inner.candidates():
+            c.mint = c.mint + SHORT
+            out.append(c)
+        return out
 
 
 class HyperliquidScout:
@@ -208,7 +270,7 @@ class HyperliquidScout:
         for coin in self.markets:
             try:
                 ctx = self.ctx_fn(coin)
-            except RuntimeError:          # market not listed on this network (e.g. XRP on testnet)
+            except UnknownMarket:         # not listed on this network (e.g. XRP on testnet); network errors propagate
                 continue
             mark = float(ctx["markPx"])
             out.append(Candidate(

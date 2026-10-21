@@ -207,6 +207,170 @@ class TrendFollow:
                       {"ema_fast": f, "ema_slow": s, "atr": a, "prior_high": prior_high})
 
 
+class TrendStrong(TrendFollow):
+    """Day-trade trend following: a 24h breakout in a strong trend (50h EMA up > min_slope in 24h, price above its
+    level of 3 days ago), target 3 ATR, stop 2 ATR, and the position is closed after max_hold_h (24h) at the latest.
+    Per-coin backtest on 29 coins, 208 days (2026-10-21): target 3 ATR + 24h exit + 3-day filter beat the old
+    4 ATR / 72h version in both halves (+$23.9 vs +$2.2 and +$45.7 vs +$42.6 per $20 positions; win rate 49% vs 36–42%);
+    24h also beat 12h, 36h and 48h, so it is not a lucky parameter."""
+    min_slope: float = 0.01
+    name: str = "trend"
+    max_hold_h: float = 24
+
+    def __init__(self, *a, **kw):
+        super().__init__(*a, **kw)
+        if "tp_atr" not in kw:
+            self.tp_atr = 3.0
+
+    def signal(self, candles: list[dict]) -> Signal | None:
+        closes = [c["close"] for c in candles]
+        if (len(closes) < self.slow + 25 or ema(closes[-150:], self.fast) / ema(closes[-174:-24], self.fast) - 1 < self.min_slope
+                or closes[-1] <= closes[-73]):
+            return None
+        return super().signal(candles)
+
+
+def resample(candles: list[dict], hours: int = 4) -> list[dict]:
+    """1h candles -> N-hour candles (aligned to UTC multiples of N hours; a partial first bucket is dropped)."""
+    out, cur = [], None
+    for c in candles:
+        bucket = c["t"] // (hours * 3600)
+        if cur is None or cur["b"] != bucket:
+            if cur and cur["n"] == hours:
+                out.append({k: cur[k] for k in ("t", "open", "high", "low", "close", "volume")})
+            cur = {"b": bucket, "n": 0, "t": bucket * hours * 3600, "open": c["open"], "high": c["high"], "low": c["low"],
+                   "close": c["close"], "volume": 0.0}
+        cur.update(high=max(cur["high"], c["high"]), low=min(cur["low"], c["low"]), close=c["close"],
+                   volume=cur["volume"] + c.get("volume", 0), n=cur["n"] + 1)
+    if cur and cur["n"] == hours:
+        out.append({k: cur[k] for k in ("t", "open", "high", "low", "close", "volume")})
+    return out
+
+
+class Trend4h:
+    """Bigger swings: trend following on 4h candles built from the 1h feed (EMA20 > EMA50, 24h breakout, stop 2 ATR,
+    target 3 ATR of the 4h bars, closed within 48h). Lab bot until it proves itself; an earlier 4h study showed ~7x
+    the profit per trade of 1h with far fewer trades."""
+    name = "trend4h"
+    capital_pct = 1.0
+    max_hold_h = 48
+
+    def signal(self, candles: list[dict]) -> Signal | None:
+        bars = resample(candles, 4)
+        sig = TrendFollow(fast=20, slow=50, breakout=6, stop_atr=2.0, tp_atr=3.0).signal(bars)
+        if sig:
+            sig.strategy = self.name
+            sig.reason = "4h: " + sig.reason.replace("24h breakout", "6-bar (24h) breakout")
+        return sig
+
+
+class WhaleFollow:
+    """Follows the money: in an uptrend (price above EMA200 and EMA50), buy when whales were clearly net buyers in
+    the last hour (≥ 2x the coin's whale size, pressure 'comprando'). Stop 2 ATR, target 3 ATR, closed within 24h.
+    No history exists to backtest whale flow, so this bot lives in the lab until it has a record."""
+    name = "whales"
+    capital_pct = 1.0
+    max_hold_h = 24
+    enabled = True
+
+    def __init__(self):
+        self.last: dict[str, dict] = {}
+
+    def signal(self, candles):                       # needs the whale context: only via decide()
+        return None
+
+    def decide(self, candles: list[dict], context: dict) -> Signal | None:
+        market, wf = context.get("symbol", "?"), context.get("whale_flow") or {}
+        h = wf.get("1h") or {}
+        closes = [c["close"] for c in candles]
+        if len(closes) < 210:
+            return None
+        up = closes[-1] > ema(closes[-600:], 200) and closes[-1] > ema(closes[-150:], 50)
+        strong = wf.get("pressure") == "comprando" and h.get("net_usd", 0) >= 2 * wf.get("threshold_usd", 1e12)
+        self.last[market] = {"action": "BUY" if up and strong else "HOLD", "model": self.name, "t": candles[-1]["t"],
+                             "reason": (f"baleias compraram ${h.get('net_usd', 0):,.0f} líquidos em 1h numa alta" if up and strong
+                                        else "sem compra forte de baleias numa alta")}
+        if not (up and strong) or _crowded(candles, 0.0001):
+            return None
+        stop, tp, a = _atr_stops(candles, 2.0, 3.0)
+        return Signal(self.name, closes[-1], stop, tp, self.last[market]["reason"], {"atr": a, "whale_net_1h": h.get("net_usd")})
+
+
+class WhaleFollowClone(WhaleFollow):
+    """'Dudu': an identical clone of Evair (same rules), at the user's request — two bots on the same signal show how
+    much of a record is luck. On the real account one position per coin still applies (no doubled bet)."""
+    name = "whales2"
+
+
+class CopyTop(WhaleFollow):
+    """Copies the best traders of Hyperliquid, at our own (small, proportional) size: buy a coin when at least 2 of
+    the top 10 are long, at least one of them entered in the last hour, more of them are long than short, and the coin
+    is in an uptrend. Stop 2 ATR, target 3 ATR, closed within 24h. Lab bot until it proves itself."""
+    name = "copy"
+
+    def decide(self, candles: list[dict], context: dict) -> Signal | None:
+        market, t = context.get("symbol", "?"), context.get("top_traders") or {}
+        closes = [c["close"] for c in candles]
+        if len(closes) < 210:
+            return None
+        up = closes[-1] > ema(closes[-600:], 200)
+        crowd = t.get("long", 0) >= 2 and t.get("new_longs_1h", 0) >= 1 and t.get("long", 0) > t.get("short", 0)
+        self.last[market] = {"action": "BUY" if up and crowd else "HOLD", "model": self.name, "t": candles[-1]["t"],
+                             "reason": (f"{t.get('long')} dos top {t.get('of')} traders comprados, {t.get('new_longs_1h')} entraram na última hora"
+                                        if up and crowd else f"top traders: {t.get('long', 0)} comprados, {t.get('new_longs_1h', 0)} novas entradas")}
+        if not (up and crowd) or _crowded(candles, 0.0001):
+            return None
+        stop, tp, a = _atr_stops(candles, 2.0, 3.0)
+        return Signal(self.name, closes[-1], stop, tp, self.last[market]["reason"], {"atr": a, "top_longs": t.get("long")})
+
+
+class ShortFade:
+    """Lab-only short: in a downtrend (price below EMA200), sell a rally that overshoots (above the upper Bollinger
+    band with RSI > 70); stop 2 ATR above, target 3 ATR below, closed within 12h. Per-coin backtest on 29 coins,
+    208 days (2026-10-21): about break-even (+$6.9 then −$0.02 per $20 positions) — every other short variant lost,
+    because crypto drifted up — so it only trades paper money in the lab, where it is measured live."""
+    name = "short"
+    capital_pct = 1.0
+    max_hold_h = 12
+
+    def signal(self, candles: list[dict]) -> Signal | None:
+        closes = [c["close"] for c in candles]
+        if len(closes) < 230:
+            return None
+        window = closes[-20:]
+        upper = mean(window) + 2 * pstdev(window)
+        r = rsi(closes)
+        if not (closes[-1] < ema(closes[-600:], 200) and closes[-1] > upper and r > 70):
+            return None
+        stop, tp, a = _atr_stops(candles, 2.0, 3.0)
+        # the engine treats a short as a long on the mirror price, so stop/target stay "below/above" the entry
+        return Signal(self.name, closes[-1], stop, tp, f"short: alta exagerada numa baixa (RSI {r:.0f}, acima da banda {upper:.6g})",
+                      {"rsi": r, "atr": a, "upper_band": upper, "side": "short"})
+
+
+def fast(cls, label: str, hold_h: float = 6):
+    """A 15-minute twin of a rule bot for the lab: same rules counted in 15m bars (so EMAs, breakouts and ATR stops
+    are 4x shorter), positions closed within hold_h. Same green light as every bot to reach real money."""
+    def init(self, *a, **kw):
+        cls.__init__(self, *a, **kw)
+        self.name, self.max_hold_h = label, hold_h          # dataclass parents set their own name on the instance
+    return type(f"{cls.__name__}15m", (cls,), {"__init__": init, "name": label, "max_hold_h": hold_h, "timeframe": "15m"})
+
+
+Trend4h15 = fast(type("Trend15", (TrendFollow,), {"__init__": lambda s: TrendFollow.__init__(s, fast=20, slow=50, breakout=6, stop_atr=2.0, tp_atr=3.0)}),
+                 "trend4h_15m")
+WhaleFollow15 = fast(WhaleFollow, "whales_15m")
+CopyTop15 = fast(CopyTop, "copy_15m")
+
+
+# deterministic bots (no LLM, no API cost): model name -> strategy
+RULE_BOTS = {"rules": MeanReversionATR, "trend": TrendStrong, "trend4h": Trend4h, "whales": WhaleFollow, "whales2": WhaleFollowClone, "copy": CopyTop,
+             "short": ShortFade, "trend4h_15m": Trend4h15, "whales_15m": WhaleFollow15, "copy_15m": CopyTop15}
+SHORT_BOTS = {"short"}          # lab only: the real account (and its simulation) never short
+FAST_BOTS = {"trend4h_15m", "whales_15m", "copy_15m"}      # 15-minute twins: quick trades, they decide on 15m candles
+LAB_ONLY_BOTS = SHORT_BOTS
+
+
 def features(candles: list[dict]) -> dict:
     """Indicators handed to the LLM bots so they reason on the same facts as the rules (no raw-candle guessing)."""
     if len(candles) < 30:

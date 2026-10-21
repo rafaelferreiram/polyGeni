@@ -56,12 +56,17 @@ def test_sell_walks_bids_and_charges_fee(ledger):
     assert t["venue"] == "hyperliquid"
 
 
-def test_rejects_leverage_above_1x(ledger):
+def test_leverage_is_capped_and_sets_buying_power(ledger):
     with pytest.raises(hl.LeverageError):
-        hl.HyperliquidPaperBroker(ledger, leverage=2.0)
+        hl.HyperliquidPaperBroker(ledger, leverage=4.0)
     with pytest.raises(hl.LeverageError):      # $100 cash cannot carry a $150 notional at 1x
         broker(ledger).buy("o1", "hl:BTC", "BTC", 150.0, strategy="m", stop_price=90, tp_price=120)
     assert ledger.fills() == []
+    b2 = broker(ledger)
+    b2.leverage = 2.0                          # 2x isolated: $150 fits in $200 of buying power, another $60 does not
+    b2.buy("o2", "hl:BTC", "BTC", 150.0, strategy="m", stop_price=90, tp_price=120)
+    with pytest.raises(hl.LeverageError):
+        b2.buy("o3", "hl:xyz:GOLD", "xyz:GOLD", 60.0, strategy="m", stop_price=90, tp_price=120)
 
 
 def test_refuses_orders_deeper_than_book(ledger):
@@ -90,3 +95,32 @@ def test_scout_lists_fixed_markets():
     cs = scout.candidates()
     assert [c.mint for c in cs] == ["hl:BTC", "hl:xyz:GOLD"]
     assert all(c.venue == "hyperliquid" and c.price_usd == 100.5 for c in cs)
+
+
+def test_live_candles_are_fetched_once_per_hour_and_shared(monkeypatch):
+    # a coin no other test uses: background scan threads from API tests may be fetching real coins meanwhile
+    calls = []
+    real_info = hl.info
+    monkeypatch.setattr(hl, "info", lambda body, url=None: (calls.append(body) or
+                        [{"t": 3_600_000, "o": "1", "h": "1", "l": "1", "c": "1", "v": "1"}])
+                        if body.get("req", {}).get("coin") == "TESTCOIN" else real_info(body, url))
+    hl._candle_cache.pop(("TESTCOIN", None), None)
+    a, b = hl.candles("TESTCOIN"), hl.candles("TESTCOIN")   # e.g. the real account, then the simulation
+    assert a == b and len(calls) == 1
+    hl.candles("TESTCOIN", "1h", start_ms=0, end_ms=10)     # explicit windows (backtests) are never cached
+    assert len(calls) == 2
+
+
+def test_paper_short_gains_when_the_price_falls(ledger):
+    book = {"b": BOOK}
+    b = hl.HyperliquidPaperBroker(ledger, book_fn=lambda coin: book["b"], ctx_fn=lambda coin: CTX[coin],
+                                  now_fn=lambda: datetime.now(timezone.utc).timestamp())
+    fill = b.buy("s1", "hl:BTC~short", "BTC", 50.0, strategy="short", stop_price=102, tp_price=97)
+    assert fill["price"] == 100.0 and abs(fill["qty"] - 0.5) < 1e-12          # sold on the bid at 100
+    book["b"] = {"bids": [(89.0, 10.0)], "asks": [(90.0, 10.0)]}              # price fell 10%
+    value, _ = b.quote_sell_value("hl:BTC~short", 0.5)
+    assert abs(value - (0.5 * 200 - 0.5 * 90)) < 1e-9                         # 55: +$5 before fees
+    b.sell("s2", "hl:BTC~short", "BTC", 0.5, strategy="short")
+    t = ledger.closed_trades()[0]
+    assert t["pnl_usd"] > 4.9 and t["symbol"] == "BTC"
+    assert hl.coin_of("hl:BTC~short") == "BTC" and hl.is_short("hl:BTC~short") and not hl.is_short("hl:BTC")

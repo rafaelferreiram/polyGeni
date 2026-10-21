@@ -80,7 +80,7 @@ def test_real_wallet_only_trusts_bots_with_lab_evidence(tmp_path, monkeypatch):
     from src.solana.llm_trader import TeamMember
     bots, _ = make_bots(tmp_path, {"claude-opus-5": "{}", "claude-haiku-5-5": "{}"})
     monkeypatch.setattr(arena, "_bots", bots)
-    monkeypatch.setattr(cfg, "LIVE_MIN_LAB_TRADES", 2)
+    monkeypatch.setattr(cfg, "GREEN_LIGHT_WINS", 2); monkeypatch.setattr(cfg, "GREEN_LIGHT_TRADES", 2)
     led = bots["claude-opus-5"].ledger
     for i, px in enumerate((1.1, 1.2)):                      # two winning lab trades for opus, none for haiku
         led.append_fill(dict(order_id=f"b{i}", ts=f"2026-10-0{i + 1}T00:00:00+00:00", venue="hyperliquid", side="buy", mint="hl:BTC",
@@ -89,3 +89,153 @@ def test_real_wallet_only_trusts_bots_with_lab_evidence(tmp_path, monkeypatch):
                              symbol="BTC", strategy="x", qty=10, decimals=0, usd_gross=10 * px, fee_usd=0, price=px, quote_price=px))
     team = [TeamMember("rules"), TeamMember("claude-opus-5"), TeamMember("claude-haiku-5-5")]
     assert [m.model for m in arena.eligible_for_real(team)] == ["rules", "claude-opus-5"]
+    monkeypatch.setattr(cfg, "MAX_TITULARES", 1)          # only the best plays: opus has the lab wins
+    assert [m.model for m in arena.eligible_for_real(team)] == ["claude-opus-5"]
+    monkeypatch.setattr(cfg, "MAX_TITULARES", 6)
+    # trusted rule bots trade real money from day one; untrusted ones need lab evidence
+    assert "trend" in [m.model for m in arena.eligible_for_real([TeamMember("trend")])]
+    monkeypatch.setattr(cfg, "REAL_TRUSTED_BOTS", ["rules"])
+    assert "trend" not in [m.model for m in arena.eligible_for_real([TeamMember("trend")])]
+    # the Coordinator follows RECENT results: those 2026-10-0x trades are older than a 1-day window
+    monkeypatch.setattr(cfg, "LAB_SCORE_DAYS", 1)
+    assert arena.score("claude-opus-5", "BTC", 1) == (0.0, 0) and arena.score("claude-opus-5", "BTC")[1] == 2
+
+
+def test_trend_strong_needs_a_rising_trend():
+    from src.solana.strategies import TrendStrong
+    flat = [dict(t=i, open=100, high=100.5, low=99.5, close=100.0, volume=1) for i in range(300)]
+    flat[-1] = dict(t=299, open=100, high=102, low=100, close=102.0, volume=1)          # breakout without a trend
+    assert TrendStrong().signal(flat) is None
+    up = [dict(t=i, open=100 * 1.002 ** i, high=100 * 1.002 ** i * 1.002, low=100 * 1.002 ** i * 0.998,
+               close=100 * 1.002 ** i, volume=1) for i in range(300)]
+    up[-1] = dict(up[-1], close=up[-1]["close"] * 1.01, high=up[-1]["close"] * 1.012)  # fresh breakout in a strong trend
+    assert TrendStrong().signal(up) is not None
+
+
+def test_reward_points_priority_and_size_penalty(tmp_path, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    bots, _ = make_bots(tmp_path, {"claude-opus-5": "{}", "claude-haiku-5-5": "{}"})
+    monkeypatch.setattr(arena, "_bots", bots)
+    def trades(model, prices):
+        led = bots[model].ledger
+        for i, px in enumerate(prices):
+            ts = (datetime.now(timezone.utc) - timedelta(hours=10 - i)).isoformat(timespec="seconds")
+            led.append_fill(dict(order_id=f"{model}b{i}", ts=ts, venue="hyperliquid", side="buy", mint="hl:BTC", symbol="BTC",
+                                 strategy="x", qty=10, decimals=0, usd_gross=10, fee_usd=0, price=1, quote_price=1))
+            led.append_fill(dict(order_id=f"{model}s{i}", ts=ts, venue="hyperliquid", side="sell", mint="hl:BTC", symbol="BTC",
+                                 strategy="x", qty=10, decimals=0, usd_gross=10 * px, fee_usd=0, price=px, quote_price=px))
+    trades("claude-opus-5", (1.1, 1.1, 1.1))      # 3 wins: +$3
+    trades("claude-haiku-5-5", (0.9, 0.9, 0.9))   # 3 losses: −$3
+    win, lose = arena.reward("claude-opus-5"), arena.reward("claude-haiku-5-5")
+    assert win["points"] > 0 and win["tier"] == "positivo" and win["streak"] == 3 and win["size_usd"] == cfg.LIVE_MAX_POSITION_USD
+    assert lose["points"] < 0 and lose["tier"] == "em observação" and lose["size_usd"] == 10
+    assert arena.size_for("llm:claude-haiku-5-5") == 10 and arena.size_for("unknown") is None
+    from src.solana.llm_trader import TeamMember
+    order = [m.model for m in arena.rank("ETH", [TeamMember("claude-haiku-5-5"), TeamMember("claude-opus-5")])]
+    assert order == ["claude-opus-5", "claude-haiku-5-5"]          # the winner gets priority
+    assert arena.track_record("claude-haiku-5-5")["recent_trades"][0]["pnl_pct"] < 0
+
+
+def test_model_boost_runs_n_cycles_then_returns_to_default(tmp_path, monkeypatch):
+    bots, _ = make_bots(tmp_path, {"claude-haiku-5-5": "{}"})
+    monkeypatch.setattr(arena, "_bots", bots)
+    eng = bots["claude-haiku-5-5"]
+    arena.boost("claude-haiku-5-5", "claude-sonnet-5-5", 2)
+    models = []
+    for _ in range(3):                                   # one lab round each
+        arena._apply_boost("claude-haiku-5-5", eng)
+        models.append(eng.llm.model)
+    assert models == ["claude-sonnet-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"]
+    assert eng.ledger.get_state("boost") == {}
+    with pytest.raises(ValueError):
+        arena.boost("claude-haiku-5-5", "gpt-5", 1)
+
+
+def test_green_light_needs_trades_profit_win_rate_and_profit_factor(tmp_path, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    bots, _ = make_bots(tmp_path, {"claude-haiku-5-5": "{}"})
+    monkeypatch.setattr(arena, "_bots", bots)
+    monkeypatch.setattr(cfg, "GREEN_LIGHT_WINS", 3); monkeypatch.setattr(cfg, "GREEN_LIGHT_TRADES", 3)
+    led = bots["claude-haiku-5-5"].ledger
+    def trade(i, px):
+        ts = (datetime.now(timezone.utc) - timedelta(hours=20 - i)).isoformat(timespec="seconds")
+        led.append_fill(dict(order_id=f"b{i}", ts=ts, venue="hyperliquid", side="buy", mint="hl:BTC", symbol="BTC",
+                             strategy="x", qty=10, decimals=0, usd_gross=10, fee_usd=0, price=1, quote_price=1))
+        led.append_fill(dict(order_id=f"s{i}", ts=ts, venue="hyperliquid", side="sell", mint="hl:BTC", symbol="BTC",
+                             strategy="x", qty=10, decimals=0, usd_gross=10 * px, fee_usd=0, price=px, quote_price=px))
+    for i, px in enumerate((1.1, 0.95, 1.1)):
+        trade(i, px)
+    g = arena.green_light("claude-haiku-5-5")
+    assert not g["ok"] and g["missing"] == ["vitórias"] and g["win_rate"] == 0.667 and g["profit_factor"] == 4.0
+    trade(3, 1.05)
+    assert arena.green_light("claude-haiku-5-5")["ok"]
+    assert arena.green_light("trend") == {"ok": True, "trusted": True}
+
+
+def test_ai_is_asked_only_when_a_setup_exists():
+    from src.solana.llm_trader import _worth_asking
+    flat = [{"t": 3600 * i, "open": 100, "high": 100.1, "low": 99.9, "close": 100, "volume": 1} for i in range(300)]
+    up = {"uptrend": True, "rsi14": 60, "below_lower_band": False}
+    assert not _worth_asking(up, flat, {})
+    assert _worth_asking({**up, "rsi14": 35}, flat, {})                                          # dip in uptrend
+    assert _worth_asking(up, flat, {"whale_flow": {"pressure": "comprando"}})                     # whales buying
+    assert _worth_asking({"uptrend": False}, flat, {"top_traders": {"long": 3, "new_longs_1h": 1}})  # top traders entering
+
+
+def test_training_boost_doubles_lab_slots_then_expires(tmp_path, monkeypatch):
+    bots, _ = make_bots(tmp_path, {"claude-haiku-5-5": "{}"})
+    monkeypatch.setattr(arena, "_bots", bots)
+    eng = bots["claude-haiku-5-5"]
+    arena.boost_training("claude-haiku-5-5", 24)
+    assert eng.risk.max_positions == cfg.TRAIN_BOOST_MAX_POSITIONS and eng.risk.max_entries_per_day > 1000
+    eng.ledger.set_state("train_boost_until", "2000-01-01T00:00:00+00:00")
+    arena._apply_training_boost(eng)
+    assert eng.risk.max_positions == cfg.LAB_MAX_POSITIONS
+
+
+def test_ai_full_scan_turns_off_the_prefilter_for_a_while(tmp_path, monkeypatch):
+    bots, _ = make_bots(tmp_path, {"claude-haiku-5-5": "{}"})
+    monkeypatch.setattr(arena, "_bots", bots)
+    eng = bots["claude-haiku-5-5"]
+    assert not eng.llm.full_scan
+    arena.ai_full_scan("claude-haiku-5-5", 24)
+    assert eng.llm.full_scan
+    eng.ledger.set_state("ai_full_scan_until", "2000-01-01T00:00:00+00:00")
+    arena._apply_training_boost(eng)
+    assert not eng.llm.full_scan
+
+
+def test_short_bot_is_lab_only():
+    from src.solana import hl_live
+    from src.solana.strategies import SHORT_BOTS
+    assert "short" in SHORT_BOTS and all(m.model not in SHORT_BOTS for m in hl_live.team())
+    g = arena.green_light("short")
+    assert not g["ok"] and "conta real não faz short" in g["missing"]
+
+
+def test_fifteen_minute_twins_can_earn_real_money_and_are_named_for_their_exits():
+    from src.solana import hl_live
+    from src.solana.engine import _max_hold
+    from src.solana.strategies import FAST_BOTS, RULE_BOTS
+    for m in FAST_BOTS:
+        s = RULE_BOTS[m]()
+        assert s.name == m and s.max_hold_h == 6 and _max_hold(m, 72) == 6
+        g = arena.green_light(m)
+        assert "versão de 15 min: só laboratório" not in g.get("missing", [])     # same green light as everyone
+    assert {"whales_15m", "copy_15m"} <= {t.model for t in hl_live.team()}
+
+
+def test_turbo_runs_the_bot_every_minute_until_midnight(tmp_path, monkeypatch):
+    from apscheduler.schedulers.background import BackgroundScheduler
+    bots, _ = make_bots(tmp_path, {"claude-haiku-5-5": "{}"})
+    monkeypatch.setattr(arena, "_bots", bots)
+    sch = BackgroundScheduler()                     # not started: only checks what gets scheduled
+    monkeypatch.setattr(arena, "paper_scheduler", lambda: sch)
+    r = arena.turbo("claude-haiku-5-5")
+    job = sch.get_job("turbo_claude-haiku-5-5")
+    assert job and job.trigger.interval.total_seconds() == cfg.TURBO_CYCLE_SEC
+    eng = bots["claude-haiku-5-5"]
+    assert eng.ledger.get_state("train_boost_until") >= r["until"][:13]
+    assert r["until"].endswith(":00:00+00:00")      # Lisbon midnight
+    from src.solana.engine import _max_hold
+    assert _max_hold("claude-haiku-5-5", 48) == cfg.TURBO_MAX_HOLD_H and arena.fast_exit_hold("rules") is None

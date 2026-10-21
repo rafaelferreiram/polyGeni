@@ -456,6 +456,58 @@ class LiveModel(BaseModel):
     model: str
 
 
+class Boost(BaseModel):
+    bot: str = "claude-haiku-5-5"
+    model: str
+    cycles: int = 3
+
+
+class TrainBoost(BaseModel):
+    bot: str
+    hours: float = 24
+
+
+@router.post("/arena/train-boost", dependencies=LOCAL)
+def arena_train_boost(req: TrainBoost):
+    from src.solana import arena
+    try:
+        return arena.boost_training(req.bot, req.hours)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+class Turbo(BaseModel):
+    bot: str
+
+
+@router.post("/arena/turbo", dependencies=LOCAL)
+def arena_turbo(req: Turbo):
+    from src.solana import arena
+    try:
+        return arena.turbo(req.bot)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.post("/arena/ai-full-scan", dependencies=LOCAL)
+def arena_ai_full_scan(req: TrainBoost):
+    from src.solana import arena
+    try:
+        return arena.ai_full_scan(req.bot, req.hours)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.post("/arena/boost", dependencies=LOCAL)
+def arena_boost(req: Boost):
+    """Give an AI bot a stronger model (Sonnet, Opus, Fable…) for N cycles; it then returns to its default."""
+    from src.solana import arena
+    try:
+        return arena.boost(req.bot, req.model, req.cycles)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
 @router.post("/live/model", dependencies=LOCAL)
 def live_model(req: LiveModel):
     from src.solana import hl_live
@@ -519,9 +571,34 @@ def profit(eng) -> dict:
     return {"trading_30d": round(trade_30, 4), "ai_30d": round(ai_30, 4), "server_30d": round(vps_30, 4),
             "net_30d": round(net_30, 4), "trading_all": round(trade_all, 4), "ai_all": round(ai_all, 4),
             "server_all": round(vps_all, 4), "net_all": round(net_all, 4),
-            "ai_month": round(b.month_spent(), 4), "ai_budget": cfg.LLM_MONTHLY_BUDGET_USD, "ai_calls_30d": b.calls(30),
+            "ai_month": round(b.month_spent(), 4), "ai_budget": round(costs.allowance(), 4), "ai_hard_cap": cfg.LLM_MONTHLY_BUDGET_USD,
+            "ai_base": cfg.AI_BASE_MONTHLY_USD, "ai_share": cfg.AI_PROFIT_SHARE, "ai_calls_30d": b.calls(30),
             "prefilter": cfg.LLM_PREFILTER,
-            "verdict": "sem dados ainda" if not (ai_all or trade_all) else ("a dar lucro" if net_all > 0 else "a dar prejuízo")}
+            "verdict": "sem dados ainda" if not (ai_all or trade_all) else ("dando lucro" if net_all > 0 else "dando prejuízo")}
+
+
+def goals(eng) -> dict:
+    """Today's goals vs what the bots actually did (local calendar day)."""
+    from src.solana import hl_live
+    today = (hl_live.daily_report(eng, 1) or [{}])[0]
+    start = today.get("equity_start") or eng.portfolio().equity
+    target_usd = round(start * cfg.DAILY_GOAL_PCT, 4)
+    now = datetime.now(cfg.TZ)
+    cycles_target = int((now.hour * 3600 + now.minute * 60 + now.second) // cfg.LIVE_CYCLE_SEC) or 1
+    pnl = today.get("pnl_usd", 0.0) or 0.0
+    return {"profit": {"target_usd": target_usd, "target_pct": cfg.DAILY_GOAL_PCT, "done_usd": round(pnl, 4)},
+            "trades": {"target": cfg.DAILY_GOAL_TRADES, "done": today.get("entries", 0) or 0,
+                       "closed": today.get("trades", 0) or 0, "wins": today.get("wins", 0) or 0},
+            "analyses": {"target_so_far": cycles_target, "done": today.get("cycles", 0) or 0},
+            "loss_limit_usd": round(-start * cfg.LIVE_MAX_DAILY_LOSS_PCT, 2),
+            "hit": eng._goal_hit(eng.portfolio()), "rest": cfg.DAILY_GOAL_REST,
+            "day_gain_usd": round((p := eng.portfolio()).equity - p.day_start_equity, 4)}   # deposits are not gains
+
+
+def _market_temp() -> dict:
+    """Market data is the same for both accounts (Hyperliquid mainnet): show the freshest scan of either one."""
+    temps = [_account_engine(k).ledger.get_state("market_temp") or {} for k in ("sim", "real")]
+    return max(temps, key=lambda t: t.get("ts") or "")
 
 
 @router.get("/account")
@@ -534,16 +611,21 @@ def account(kind: str = "sim"):
     out = {
         "kind": kind, "money": "fake" if kind == "sim" else "real", "network": "mainnet" if kind == "sim" else hl_live.network(),
         "running": led.get_state("running", False) if kind == "sim" else hl_live.is_armed(),
-        "scanning": eng.scanning(), "decision_mode": eng.decision_mode(), "model": "equipa" if len(eng.team) > 1 else (eng.llm.model if eng.llm else None),
+        "scanning": eng.scanning(), "decision_mode": eng.decision_mode(), "model": "equipe" if len(eng.team) > 1 else (eng.llm.model if eng.llm else None),
         "llm_available": bool(cfg.ANTHROPIC_API_KEY),
         "team": [{"name": m.name, "model": m.model, "enabled": m.enabled,
                   "last": next((dict(v, market=k) for k, v in sorted(m.last.items(), key=lambda kv: -(kv[1].get("t") or 0))), None),
                   "trades": len([t for t in trades if t["strategy"] == m.name]),
                   "pnl_usd": round(sum(t["pnl_usd"] for t in trades if t["strategy"] == m.name), 4),
                   "open": [x["symbol"] for x in led.positions() if x["strategy"] == m.name]} for m in eng.team],
-        "sleep": led.get_state("sleep") or {},
+        "goals": goals(eng),
+        "sleep": (led.get_state("sleep") or {}) if cfg.BOT_SELF_PAUSE else {}, "coffee_until": eng.coffee(), "market_temp": _market_temp(),
         "profit": profit(eng),
         "equity": round(p.equity, 4), "cash": round(p.cash, 4), "exposure": round(p.exposure, 4),
+        # what is still free: equity minus the margin the open positions hold (notional / leverage)
+        "available": round(p.equity - p.exposure / cfg.LIVE_LEVERAGE, 4),
+        "margin_used": round(p.exposure / cfg.LIVE_LEVERAGE, 4),
+        "buying_power": round(max(0.0, min(p.equity, cfg.LIVE_MAX_CAPITAL_USD) * cfg.LIVE_LEVERAGE * 0.97 - p.exposure), 4),
         "pnl_usd": round(p.equity - led.contributed(), 4), "contributed": led.contributed(),
         "performance": performance(led.equity_history(100_000)),
         "positions": led.positions(), "trades": trades[:100],
@@ -553,14 +635,17 @@ def account(kind: str = "sim"):
         "kill_switch": eng.kill_switch(), "live": led.get_state("live", {}), "agents": led.get_state("agents", {}),
         "limits": {"max_capital_usd": cfg.LIVE_MAX_CAPITAL_USD, "max_position_usd": cfg.LIVE_MAX_POSITION_USD,
                    "max_positions": cfg.LIVE_MAX_POSITIONS, "max_daily_loss_pct": cfg.LIVE_MAX_DAILY_LOSS_PCT,
-                   "markets": cfg.HL_LIVE_MARKETS},
+                   "leverage": cfg.LIVE_LEVERAGE,
+                   "markets": cfg.HL_MARKETS if kind == "sim" else cfg.HL_LIVE_MARKETS},
     }
     if kind == "real":
         st = hl_live.config_status()
         out["config"] = st
         if not st["problems"]:
             try:
-                out["exchange_balance"] = hl_live._broker(eng).account_value()
+                br = hl_live._broker(eng)
+                out["exchange_balance"] = br.account_value()
+                out["exchange"] = br.balances()          # collateral / margin used / available, from the exchange
             except Exception as e:
                 out["exchange_error"] = str(e)[:200]
     return out
@@ -612,7 +697,7 @@ def account_scan(req: Kind):
     from src.solana import hl_live
     running = hl_live.is_armed() if req.kind == "real" else hl_live.get_shadow_engine().ledger.get_state("running", False)
     if not running:
-        raise HTTPException(400, "carregue em Start primeiro")
+        raise HTTPException(400, "clique em Start primeiro")
     # a manual scan wakes the wallet and the whole team (self-pause is only for unattended running)
     from src.solana import arena
     for eng in [_account_engine(req.kind), *arena.bots().values()]:
@@ -620,6 +705,87 @@ def account_scan(req: Kind):
         eng.ledger.set_state("idle_streak", 0)          # back-off restarts short after a manual look
     threading.Thread(target=arena.run_round, daemon=True).start()
     return {"started": _scan_in_background(req.kind)}
+
+
+class Coffee(BaseModel):
+    kind: str = "sim"
+    hours: float = 4
+
+
+@router.post("/account/coffee", dependencies=LOCAL)
+def account_coffee(req: Coffee):
+    """☕ Keep both wallets (simulation and real) and the whole team awake (no self-pause) for a few hours and scan now.
+    Entry rules stay the same: looser dips lost money in the backtest, so coffee buys attention, not risk."""
+    from src.solana import arena, hl_live
+    hours = max(0.5, min(req.hours, 12))
+    # one cup for the whole house: simulation and real share the team, so both stay awake together
+    for eng in [_account_engine("sim"), _account_engine("real"), *arena.bots().values()]:
+        until = eng.give_coffee(hours)
+    threading.Thread(target=arena.run_round, daemon=True).start()
+    running = {"sim": _account_engine("sim").ledger.get_state("running", False), "real": hl_live.is_armed()}
+    return {"coffee_until": until, "hours": hours, "accounts": ["sim", "real"],
+            "scan_started": {k: _scan_in_background(k) for k, on in running.items() if on}}
+
+
+@router.post("/account/kill-switch/reset", dependencies=LOCAL)
+def account_kill_reset(req: Kind):
+    """Re-arm after a kill switch (the user's explicit click on the dashboard banner)."""
+    eng = _account_engine(req.kind)
+    eng.reset_kill_switch("dashboard")
+    eng.ledger.set_state("sync_failures", 0)
+    return eng.kill_switch()
+
+
+class ManualBuy(BaseModel):
+    kind: str = "sim"
+    coin: str
+    usd: float = 10.0
+
+
+@router.post("/account/manual-buy", dependencies=LOCAL)
+def account_manual_buy(req: ManualBuy):
+    """The user's own buy from the dashboard (never called by the bots): stop/target on the exchange, same limits."""
+    from src.solana import hl_live
+    if req.kind == "real" and not hl_live.is_armed():
+        raise HTTPException(400, "a conta real está desligada — clique em Start primeiro")
+    if not 10 <= req.usd <= cfg.LIVE_MAX_POSITION_USD:
+        raise HTTPException(400, f"valor entre $10 (mínimo da Hyperliquid) e ${cfg.LIVE_MAX_POSITION_USD:.0f}")
+    try:
+        return _account_engine(req.kind).manual_entry(req.coin, req.usd)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+class ClosePos(BaseModel):
+    kind: str = "sim"
+    mint: str
+
+
+@router.post("/account/close", dependencies=LOCAL)
+def account_close(req: ClosePos):
+    """The user's own sell of one open position (market order), from the dashboard."""
+    from src.solana import hl_live
+    if req.kind == "real" and not hl_live.is_armed():
+        raise HTTPException(400, "a conta real está desligada — clique em Start primeiro")
+    try:
+        return _account_engine(req.kind).manual_exit(req.mint)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.get("/account/position")
+def account_position(kind: str, mint: str):
+    """Everything about one open position: when, how much, how it is doing, why it was opened."""
+    eng = _account_engine(kind)
+    pos = next((p for p in eng.ledger.positions() if p["mint"] == mint), None)
+    if pos is None:
+        raise HTTPException(404, "posição não encontrada")
+    entry = next((d for d in eng.ledger.decisions(500, kind="entry") if d.get("order_id") == pos["entry_order_id"]
+                  or (d["mint"] == mint and d["ts"] >= pos["opened_at"][:19])), None)
+    value = pos.get("mark_value") or pos["cost_usd"]
+    return {**pos, "value": value, "pnl_usd": round(value - pos["cost_usd"], 4), "pnl_pct": round(value / pos["cost_usd"] - 1, 5),
+            "held_h": round((datetime.now(timezone.utc) - datetime.fromisoformat(pos["opened_at"])).total_seconds() / 3600, 2),
+            "entry_reason": entry["reason"] if entry else None, "funding_usd": round(eng.ledger.funding_paid(pos["entry_order_id"]), 5)}
 
 
 class AccountMode(BaseModel):
@@ -636,6 +802,180 @@ def account_mode(req: AccountMode):
     except ValueError as e:
         raise HTTPException(400, str(e))
     return {"mode": req.mode}
+
+
+@router.get("/logs")
+def logs(after: int = 0, limit: int = 400):
+    """Live log of every bot (agents, decisions, cycles, warnings), newest last; poll with after=<last seq>."""
+    from src.solana import logbuf
+    rows = logbuf.since(after, min(limit, 1000))
+    return {"lines": rows, "last": rows[-1]["seq"] if rows else after}
+
+
+def trade_stats(trades: list[dict]) -> dict:
+    """History analysis of closed round trips (P&L already net of fees and funding)."""
+    from datetime import datetime as dt
+    if not trades:
+        return {"trades": 0}
+    wins, losses = [t for t in trades if t["pnl_usd"] > 0], [t for t in trades if t["pnl_usd"] <= 0]
+    gross_win, gross_loss = sum(t["pnl_usd"] for t in wins), -sum(t["pnl_usd"] for t in losses)
+    hold = [(dt.fromisoformat(t["exit_ts"]) - dt.fromisoformat(t["entry_ts"])).total_seconds() / 3600 for t in trades]
+
+    def group(key):
+        g = {}
+        for t in trades:
+            k = key(t)
+            r = g.setdefault(k, {"trades": 0, "wins": 0, "pnl_usd": 0.0})
+            r["trades"] += 1
+            r["wins"] += t["pnl_usd"] > 0
+            r["pnl_usd"] = round(r["pnl_usd"] + t["pnl_usd"], 4)
+        return dict(sorted(g.items(), key=lambda kv: -kv[1]["pnl_usd"]))
+    return {"trades": len(trades), "wins": len(wins), "losses": len(losses), "win_rate": round(len(wins) / len(trades), 3),
+            "pnl_usd": round(sum(t["pnl_usd"] for t in trades), 4), "avg_win": round(gross_win / len(wins), 4) if wins else None,
+            "avg_loss": round(-gross_loss / len(losses), 4) if losses else None,
+            "profit_factor": round(gross_win / gross_loss, 2) if gross_loss else None,
+            "expectancy": round(sum(t["pnl_usd"] for t in trades) / len(trades), 4),
+            "fees_usd": round(sum(t["fees_usd"] + (t["funding_usd"] or 0) for t in trades), 4),
+            "avg_hold_h": round(sum(hold) / len(hold), 1),
+            "best": max(trades, key=lambda t: t["pnl_usd"]), "worst": min(trades, key=lambda t: t["pnl_usd"]),
+            "by_bot": group(lambda t: t["strategy"]), "by_coin": group(lambda t: t["symbol"]),
+            "by_exit": group(lambda t: "alvo" if "take-profit" in (t["reason"] or "") else "stop" if "stop" in (t["reason"] or "")
+                             else "tempo" if "holding time" in (t["reason"] or "") else "IA/outro")}
+
+
+def confidence(eng) -> dict:
+    """Is the system proven enough to add money? Objective checks over the real record (the user's rule: a few days
+    in a row of wins, bots behaving, AI cost under control, positive trades)."""
+    from src.solana import hl_live
+    days = hl_live.daily_report(eng, 14)                         # newest first, net = trades − AI that day
+    streak = 0
+    for d in days:
+        if d["trades"] == 0 and d["net_usd"] == 0:
+            continue                                              # a quiet day neither breaks nor builds the streak
+        if d["net_usd"] <= 0:
+            break
+        streak += 1
+    st = trade_stats(eng.ledger.closed_trades())
+    P = profit(eng)
+    trading, ai = P["trading_all"], P["ai_all"]
+    kills = [d for d in eng.ledger.decisions(500, kind="kill_switch")
+             if d["ts"] >= (datetime.now(timezone.utc) - timedelta(days=3)).isoformat() and "reset" not in d["reason"]]
+    checks = [
+        {"name": "3 dias seguidos com lucro líquido", "ok": streak >= 3, "value": f"{streak} dia(s)"},
+        {"name": "10+ trades fechados na conta real", "ok": st.get("trades", 0) >= 10, "value": f"{st.get('trades', 0)} trades"},
+        {"name": "Acerto ≥ 50%", "ok": (st.get("win_rate") or 0) >= 0.5, "value": f"{(st.get('win_rate') or 0) * 100:.0f}%"},
+        {"name": "Fator de lucro ≥ 1,3", "ok": (st.get("profit_factor") or 0) >= 1.3, "value": str(st.get("profit_factor") or "–")},
+        {"name": "IA custa < 25% do lucro dos trades", "ok": trading > 0 and ai < 0.25 * trading, "value": f"IA ${ai:.2f} / trades ${trading:.2f}"},
+        {"name": "Lucro líquido total positivo", "ok": P["net_all"] > 0, "value": f"${P['net_all']:+.2f}"},
+        {"name": "Sem kill switch nos últimos 3 dias", "ok": not kills and not eng.kill_switch().get("active"), "value": f"{len(kills)} vez(es)"},
+    ]
+    passed = sum(c["ok"] for c in checks)
+    return {"checks": checks, "passed": passed, "total": len(checks), "ready": passed == len(checks)}
+
+
+@router.get("/account/confidence")
+def account_confidence(kind: str = "real"):
+    return confidence(_account_engine(kind))
+
+
+@router.get("/account/stats")
+def account_stats(kind: str = "sim"):
+    return trade_stats(_account_engine(kind).ledger.closed_trades())
+
+
+@router.get("/account/transactions")
+def account_transactions(kind: str = "sim", limit: int = 100):
+    """Every money movement of the account, newest first: buys, sells, deposits, withdrawals."""
+    led = _account_engine(kind).ledger
+    rows = [{"ts": f["ts"], "type": "compra" if f["side"] == "buy" else "venda", "symbol": f["symbol"], "bot": f["strategy"],
+             "usd": round(f["usd_gross"], 4), "price": f["price"], "qty": f["qty"], "fee_usd": round(f["fee_usd"] or 0, 5)}
+            for f in led.fills(limit)]
+    rows += [{"ts": m["ts"], "type": "depósito" if m["kind"] == "deposit" else "saque", "symbol": "USDC", "bot": None,
+              "usd": m["amount_usd"], "price": None, "qty": None, "fee_usd": 0, "note": m["note"]} for m in led.cash_movements(limit)]
+    return {"rows": sorted(rows, key=lambda r: r["ts"], reverse=True)[:limit]}
+
+
+@router.get("/funding")
+def funding_info():
+    """Where to send money: the account's own address (public), its Arbitrum wallet balances and the safe steps."""
+    from src.solana import market_data as md
+    addr = cfg.HL_ACCOUNT_ADDRESS
+    out = {"address": addr, "network": "Arbitrum One", "token": "USDC", "min_deposit_usd": 5,
+           "hyperliquid_app": "https://app.hyperliquid.xyz/portfolio"}
+    try:
+        w = md.evm_wallet_balances(addr)
+        out.update(arbitrum_usdc=w.get("arbitrum_usdc"), arbitrum_eth=w.get("arbitrum_eth"))
+        from src.solana import hl_live         # unified account: the real total lives in the spot clearinghouse
+        out["hyperliquid"] = hl_live._broker(hl_live.get_live_engine()).account_value()
+    except Exception as e:
+        out["error"] = str(e)[:120]
+    return out
+
+
+@router.get("/news")
+def news_feed(coin: str | None = None, hours: float = 24):
+    """Crypto news (CoinDesk, Cointelegraph, Decrypt, The Block) tagged with the coins they mention."""
+    from src.solana import news
+    return {"status": news.status(), "items": news.latest(coin, min(hours, 72), 60)}
+
+
+@router.get("/training")
+def training():
+    """Training center: how many virtual trades were recorded/resolved and what they teach, per situation."""
+    from src.solana import trainer
+    return {**trainer.stats(), "lessons": trainer.lessons()}
+
+
+@router.get("/news/trending")
+def news_trending(hours: float = 12):
+    from src.solana import news
+    return news.trending(min(hours, 48))
+
+
+@router.get("/candles")
+def candles(coin: str):
+    """1h candles of a market the bots watch (shared hourly cache — no extra exchange load)."""
+    from src.solana import hyperliquid as hl
+    if coin not in cfg.HL_MARKETS and coin not in cfg.HL_LIVE_MARKETS:
+        raise HTTPException(400, "unknown market")
+    return {"coin": coin, "candles": hl.candles(coin)[-240:]}
+
+
+@router.get("/account/equity")
+def account_equity(kind: str = "sim", points: int = 400):
+    """Equity over time and BTC price, for the 'us vs holding BTC' chart (thinned to `points`)."""
+    rows = _account_engine(kind).ledger.equity_history(100_000)
+    step = max(1, len(rows) // max(points, 1))
+    return {"rows": [{"ts": r["ts"], "equity": r["equity"], "contributed": r["contributed"], "btc": r["btc_price"]}
+                     for r in rows[::step]]}
+
+
+@router.get("/toptraders")
+def top_traders():
+    """The top 10 Hyperliquid traders, their positions, recent moves and their consensus on our coins."""
+    from src.solana import toptraders
+    return toptraders.board(cfg.HL_LIVE_MARKETS)
+
+
+@router.get("/whales")
+def whales_board():
+    """Whale flow per coin (last 1h / 4h) and the latest whale trades, from the live Hyperliquid trades feed."""
+    from src.solana import whales
+    ours = cfg.HL_LIVE_MARKETS
+    market = [(c, whales.summary(c)) for c in whales.watching() if c not in ours]
+    market = sorted([m for m in market if m[1]["1h"]["n"]], key=lambda m: -(m[1]["1h"]["buy_usd"] + m[1]["1h"]["sell_usd"]))
+    return {"status": {**whales.status(), "watching": len(whales.watching())},
+            "coins": {c: whales.summary(c) for c in ours},                 # the coins our bots trade
+            "market": [{"coin": c, **s} for c, s in market[:12]],          # whales elsewhere in crypto (not traded yet)
+            "recent": whales.recent(20), "wallets": whales.top_wallets(8)}
+
+
+@router.get("/health")
+def health():
+    """Is every third party (exchange, data, AI, RPCs) reachable? Cached 60s, read-only calls."""
+    from src.solana import health as h
+    rows = h.check_all()
+    return {"ok": all(r["ok"] is not False for r in rows), "checks": rows}
 
 
 @router.get("/report/daily")

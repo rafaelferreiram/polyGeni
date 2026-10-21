@@ -53,8 +53,11 @@ class CostBook:
                                usage.get("input_tokens", 0), usage.get("output_tokens", 0), usage.get("searches", 0), usd))
         return usd
 
-    def total(self, days: float | None = None, model: str | None = None) -> float:
+    def total(self, days: float | None = None, model: str | None = None, who: str | None = None) -> float:
         sql, args = "SELECT COALESCE(SUM(usd),0) FROM costs WHERE 1=1", []
+        if who:
+            sql += " AND who = ?"
+            args.append(who)
         if days is not None:
             sql += " AND ts >= ?"
             args.append((datetime.now(timezone.utc) - timedelta(days=days)).isoformat(timespec="seconds"))
@@ -92,7 +95,23 @@ def book() -> CostBook:
     return _book
 
 
+def real_profit_month() -> float:
+    """Trading P&L of the real account since the 1st of this month (closed trades, fees and funding included)."""
+    try:
+        from src.solana import hl_live
+        start = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
+        return sum(t["pnl_usd"] for t in hl_live.get_live_engine().ledger.closed_trades() if t["exit_ts"] >= start)
+    except Exception:
+        return 0.0
+
+
+def allowance() -> float:
+    """What AI may spend this month: a small base to keep learning + a share of what trading earned, capped."""
+    return min(cfg.LLM_MONTHLY_BUDGET_USD, cfg.AI_BASE_MONTHLY_USD + cfg.AI_PROFIT_SHARE * max(0.0, real_profit_month()))
+
+
 def check_budget():
-    spent = book().month_spent()
-    if spent >= cfg.LLM_MONTHLY_BUDGET_USD:
-        raise BudgetExceeded(f"orçamento de IA do mês esgotado (${spent:.2f} de ${cfg.LLM_MONTHLY_BUDGET_USD:.2f})")
+    spent, cap = book().month_spent(), allowance()
+    if spent >= cap:
+        raise BudgetExceeded(f"IA pausada: gastou ${spent:.2f} de ${cap:.2f} permitidos este mês "
+                             f"(base ${cfg.AI_BASE_MONTHLY_USD:.2f} + {cfg.AI_PROFIT_SHARE:.0%} do lucro real)")

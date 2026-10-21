@@ -4,7 +4,8 @@ Hyperliquid LIVE execution — testnet first. Same agents and engine as paper; o
 Safety model (all enforced here, not in the UI):
 - Two keys: an API ("agent") wallet in .env (it can trade but cannot withdraw) AND an explicit arm action.
   Mainnet additionally requires LIVE_TRADING=1.
-- 1x isolated, long-only; hard USD caps on capital and position size; Hyperliquid's $10 minimum respected.
+- isolated leverage LIVE_LEVERAGE (default 2x, max 3x), long-only; hard USD caps on capital and position size;
+  Hyperliquid's $10 minimum respected.
 - Every entry gets reduce-only stop-loss and take-profit trigger orders ON THE EXCHANGE. If protection cannot be
   placed, the position is closed immediately.
 - Client order ids derived from our order_id make submissions idempotent across crashes/retries.
@@ -84,6 +85,21 @@ def _floor_sz(sz: float, sz_decimals: int) -> float:
     return math.floor(sz * f + 1e-9) / f      # epsilon: 0.00015 * 1e5 is 14.999999… in floating point
 
 
+def _order_size(usd: float, mid: float, sz_decimals: int, max_over: float = 0.2) -> float:
+    """Coin size for a USD order on the exchange's lot grid. Expensive coins with coarse lots (ZEC ≈ $1,300 trades
+    in 0.01 = $13) can floor to below the $10 minimum: then take one lot more if it costs at most max_over (20%)
+    above what Risk approved; otherwise refuse."""
+    f = 10 ** sz_decimals
+    sz = _floor_sz(usd / mid, sz_decimals)
+    if sz * mid >= MIN_ORDER_USD:
+        return sz
+    up = math.ceil(usd / mid * f - 1e-9) / f
+    if MIN_ORDER_USD <= up * mid <= usd * (1 + max_over):
+        return up
+    raise RuntimeError(f"${usd:.2f} cannot be sized on {mid:.6g} with lot {1 / f:g}: the nearest lot is "
+                       f"${up * mid:.2f} (Hyperliquid minimum ${MIN_ORDER_USD:.0f})")
+
+
 def _parse_fill(resp) -> tuple[float, float, int]:
     """(filled_size, avg_px, oid) from an IOC order response, or raise with the exchange's message."""
     if not resp or resp.get("status") != "ok":
@@ -161,6 +177,18 @@ class HyperliquidLiveBroker(Broker):
             return cash + upnl
         return sum(float(info.user_state(self.address, dex)["marginSummary"]["accountValue"]) for dex in ("", "xyz"))
 
+    def balances(self) -> dict:
+        """Collateral split as the exchange sees it: total, held as margin by open positions, and free to use."""
+        _, info = self._connect()
+        stable = ("USDC", "USDT0", "USDH", "USDE")
+        if self.abstraction() in ("unifiedAccount", "portfolioMargin"):
+            bal = [b for b in info.spot_user_state(self.address).get("balances", []) if b["coin"] in stable]
+            total, hold = sum(float(b["total"]) for b in bal), sum(float(b["hold"]) for b in bal)
+            return {"collateral": round(total, 4), "margin_used": round(hold, 4), "available": round(total - hold, 4)}
+        s = info.user_state(self.address)
+        return {"collateral": float(s["marginSummary"]["accountValue"]), "margin_used": float(s["marginSummary"]["totalMarginUsed"]),
+                "available": float(s.get("withdrawable") or 0)}
+
     def exchange_positions(self) -> dict[str, float]:
         _, info = self._connect()
         out = {}
@@ -183,6 +211,8 @@ class HyperliquidLiveBroker(Broker):
         return oids
 
     def buy(self, order_id, instrument, symbol, usd, decimals=0, *, strategy, stop_price, tp_price, meta=None):
+        if hl.is_short(instrument):        # hard stop: shorts exist only in the paper lab
+            raise RuntimeError("short orders are not allowed on the real account")
         if (existing := self.ledger.get_fill(order_id)):
             return existing
         ex, info = self._connect()
@@ -193,12 +223,10 @@ class HyperliquidLiveBroker(Broker):
             raise RuntimeError(f"order {order_id} already exists on the exchange but not in the ledger — reconcile manually")
         szd = self._sz_decimals(coin)
         mid = self._mid(coin)
-        sz = _floor_sz(usd / mid, szd)
-        if sz * mid < MIN_ORDER_USD:
-            raise RuntimeError(f"${sz * mid:.2f} is below Hyperliquid's ${MIN_ORDER_USD:.0f} minimum order")
-        lev = ex.update_leverage(1, coin, is_cross=False)       # 1x isolated, every time
+        sz = _order_size(usd, mid, szd)
+        lev = ex.update_leverage(int(cfg.LIVE_LEVERAGE), coin, is_cross=False)       # isolated, every time
         if not lev or lev.get("status") != "ok":
-            raise RuntimeError(f"could not set 1x isolated leverage: {lev}")
+            raise RuntimeError(f"could not set {int(cfg.LIVE_LEVERAGE)}x isolated leverage: {lev}")
         filled, avg, oid = _parse_fill(ex.market_open(coin, True, sz, slippage=self.slippage, cloid=cloid))
         try:
             prot = self._protect(coin, filled, stop_price, tp_price, szd)
@@ -301,9 +329,41 @@ class HyperliquidLiveBroker(Broker):
                 total += self.ledger.add_funding(self.venue, p["mint"], p["entry_order_id"], rate, 1.0, paid / rate)
         return total
 
+    def record_transfers(self) -> list[dict]:
+        """Deposits, withdrawals and transfers made outside the bot (e.g. adding funds) become cash movements in the
+        ledger, so they count as contributions — not profit — and never look like an unexplained balance drift."""
+        since = self.ledger.get_state("transfers_since")
+        if since is None:              # first run: everything before is already in the opening balance
+            self.ledger.set_state("transfers_since", int(time.time() * 1000))
+            return []
+        _, info = self._connect()
+        rows = info.post("/info", {"type": "userNonFundingLedgerUpdates", "user": self.address, "startTime": since + 1}) or []
+        me, done = self.address.lower(), []
+        for r in sorted(rows, key=lambda x: x["time"]):
+            d = r.get("delta", {})
+            amount = float(d.get("usdc") or d.get("usdcValue") or d.get("amount") or 0)
+            src, dst = str(d.get("user", "")).lower(), str(d.get("destination", "")).lower()
+            if d.get("type") == "deposit" or (dst == me and src != me):
+                kind = "deposit"
+            elif d.get("type") == "withdraw" or (src == me and dst and dst != me):
+                kind = "withdraw"
+            else:
+                continue                       # spot <-> perp moves inside the same account
+            if amount > 0:
+                self.ledger.move_cash(kind, amount, f"{d.get('type')} on Hyperliquid ({r.get('hash', '')[:12]})", check=False)
+                self.ledger.log_decision("funds", reason=f"{'💵 depósito' if kind == 'deposit' else '🏧 saque'} de ${amount:.2f} registado")
+                done.append({"kind": kind, "usd": amount, "time": r["time"]})
+        if rows:
+            self.ledger.set_state("transfers_since", max(r["time"] for r in rows))
+        return done
+
     def sync(self) -> list[str]:
         """Exchange is the truth: record native exits, flag untracked positions and equity drift."""
         problems = []
+        try:
+            self.record_transfers()
+        except Exception as e:           # never let the transfer log break the safety sync
+            logger.warning(f"transfer history: {e}")
         ex_pos = self.exchange_positions()
         mine = {p["mint"]: p for p in self.ledger.positions() if p.get("venue") == self.venue}
         for mint, p in mine.items():
@@ -329,11 +389,16 @@ class HyperliquidLiveBroker(Broker):
 
 # ─── live engine & controls ──────────────────────────────────────────────────
 
-def _risk() -> RiskAgent:
-    return RiskAgent(max_pos_pct=1.0, max_exposure_pct=1.0, max_positions=cfg.LIVE_MAX_POSITIONS,
+def _risk(lab: bool = False) -> RiskAgent:
+    """Real-account limits. lab=True: same position size, leverage, stops and daily-loss rule, but more slots and
+    capital so the lab collects evidence faster."""
+    return RiskAgent(max_pos_pct=1.0, max_exposure_pct=1.0,
+                     max_positions=cfg.LAB_MAX_POSITIONS if lab else cfg.LIVE_MAX_POSITIONS,
                      max_daily_loss_pct=cfg.LIVE_MAX_DAILY_LOSS_PCT, min_trade_usd=MIN_ORDER_USD,
-                     max_entries_per_day=cfg.LIVE_MAX_ENTRIES_PER_DAY,
-                     max_position_usd=cfg.LIVE_MAX_POSITION_USD, max_capital_usd=cfg.LIVE_MAX_CAPITAL_USD)
+                     max_entries_per_day=cfg.LAB_MAX_ENTRIES_PER_DAY if lab else cfg.LIVE_MAX_ENTRIES_PER_DAY,
+                     max_position_usd=cfg.LIVE_MAX_POSITION_USD,
+                     max_capital_usd=cfg.LAB_CAPITAL_USD if lab else cfg.LIVE_MAX_CAPITAL_USD,
+                     leverage=cfg.LIVE_LEVERAGE)
 
 
 class _NoSafety:
@@ -358,6 +423,8 @@ def get_live_engine() -> PaperEngine:
             profiles={hl.VENUE: {"max_pos_pct": 1.0, "stop_mult": cfg.MARKET_PROFILES.get(hl.VENUE, {}).get("stop_mult", 1.5)}},
             llm=team(), coordinator=_coordinate_real,
         )
+        from src.solana import arena
+        _live.size_policy = arena.size_for
     return _live
 
 
@@ -365,7 +432,9 @@ def team() -> list:
     """All bots propose for the one shared wallet; LLM bots reuse their lab decision for the same candle."""
     from src.solana import arena
     from src.solana.llm_trader import TeamMember
-    return [TeamMember(m, lab_lookup=arena.lab_decider) for m in cfg.ARENA_MODELS]
+    from src.solana.strategies import LAB_ONLY_BOTS
+    # lab-only bots (shorts, 15-minute twins) never propose for the real account or its simulation
+    return [TeamMember(m, lab_lookup=arena.lab_decider) for m in cfg.ARENA_MODELS if m not in LAB_ONLY_BOTS]
 
 
 def _coordinate(market, members):
@@ -383,18 +452,21 @@ _shadow: PaperEngine | None = None
 
 
 def get_shadow_engine() -> PaperEngine:
-    """'What would the real account do?': identical limits, markets and decision mode, but fills are simulated
-    on real Hyperliquid MAINNET order books with fake money (SHADOW_START_USDC)."""
+    """'What would the real account do?': identical limits and decision mode, but fills are simulated on real
+    Hyperliquid MAINNET order books with fake money (SHADOW_START_USDC). It scans HL_MARKETS (the same
+    broad set as the real account by default)."""
     global _shadow
     if _shadow is None:
         ledger = Ledger(cfg.SHADOW_DB_PATH, cfg.SHADOW_START_USDC)
         from src.solana.engine import bench_prices
         _shadow = PaperEngine(
-            ledger, [hl.HyperliquidScout(cfg.HL_LIVE_MARKETS)], _NoSafety(), default_strategies(), DebateAgent(),
-            _risk(), ExecutorAgent(hl.HyperliquidPaperBroker(ledger)), candles_fn={hl.VENUE: hl.candles},
+            ledger, [hl.HyperliquidScout(cfg.HL_MARKETS)], _NoSafety(), default_strategies(), DebateAgent(),
+            _risk(), ExecutorAgent(hl.HyperliquidPaperBroker(ledger, leverage=cfg.LIVE_LEVERAGE)), candles_fn={hl.VENUE: hl.candles},
             profiles={hl.VENUE: {"max_pos_pct": 1.0, "stop_mult": cfg.MARKET_PROFILES.get(hl.VENUE, {}).get("stop_mult", 1.5)}},
             llm=team(), coordinator=_coordinate, bench_fn=bench_prices,
         )
+        from src.solana import arena
+        _shadow.size_policy = arena.size_for
         if ledger.get_state("running") is None:
             ledger.set_state("running", True)
     return _shadow
@@ -416,7 +488,7 @@ def shadow_status() -> dict:
     p = eng.portfolio()
     trades = led.closed_trades()
     return {"mode": "PAPER", "running": led.get_state("running", False), "scanning": eng.scanning(),
-            "decision_mode": eng.decision_mode(), "model": "equipa",
+            "decision_mode": eng.decision_mode(), "model": "equipe",
             "start_usdc": cfg.SHADOW_START_USDC, "equity": round(p.equity, 4), "cash": round(p.cash, 4),
             "exposure": round(p.exposure, 4), "pnl_usd": round(p.equity - led.contributed(), 4),
             "performance": performance(led.equity_history(100_000)), "positions": led.positions(),
@@ -433,12 +505,22 @@ def schedule():
     """Register the live job (a no-op while disarmed); safe to call more than once."""
     from src.solana import engine as paper_engine
     sch = paper_engine.scheduler()
-    if sch.get_job("live_cycle") is None:
-        sch.add_job(live_cycle, "interval", seconds=cfg.LIVE_CYCLE_SEC, id="live_cycle", max_instances=1, coalesce=True)
+    from datetime import datetime, timedelta
+    if sch.get_job("live_cycle") is None:   # first run right after a (re)start, not 5 min later
+        sch.add_job(live_cycle, "interval", seconds=cfg.LIVE_CYCLE_SEC, id="live_cycle", max_instances=1, coalesce=True,
+                    next_run_time=datetime.now() + timedelta(seconds=20))
+    if sch.get_job("training") is None:      # training center: one sample per coin per closed candle, outcomes later
+        from src.solana import trainer
+
+        def training_job():
+            if not trainer.stats()["samples"]:
+                trainer.backfill()
+            trainer.run_once()
+        sch.add_job(training_job, "interval", seconds=300, id="training", max_instances=1, coalesce=True,
+                    next_run_time=datetime.now() + timedelta(seconds=60))
     if sch.get_job("daily_report") is None:
         sch.add_job(write_daily_reports, "cron", hour=23, minute=55, id="daily_report", coalesce=True)
     if sch.get_job("shadow_cycle") is None:
-        from datetime import datetime
         sch.add_job(shadow_cycle, "interval", seconds=cfg.LIVE_CYCLE_SEC, id="shadow_cycle", max_instances=1,
                     coalesce=True, next_run_time=datetime.now())
 
@@ -468,6 +550,7 @@ def arm() -> dict:
     drift = value - (eng.ledger.cash() + sum(p["cost_usd"] for p in eng.ledger.positions()))
     if abs(drift) > 0.01:
         eng.ledger.move_cash("deposit" if drift > 0 else "withdraw", abs(drift), f"sync with {network()} account")
+    eng.ledger.set_state("transfers_since", int(time.time() * 1000))   # later deposits/withdrawals are tracked
     eng.ledger.set_state("armed", {"armed": True, "ts": now_iso(), "network": network()})
     eng.ledger.log_decision("arm", cycle=eng.cycle, reason=f"live trading armed on {network()} (balance ${value:.2f})")
     return {"armed": True, "network": network(), "balance": value}
@@ -529,7 +612,7 @@ def test_order(coin: str = "BTC") -> dict:
     stats = one.run_cycle()
     pos = [p for p in eng.ledger.positions() if p["mint"] == hl.instrument_id(coin)]
     return {"cycle": stats, "position": pos[0] if pos else None,
-            "note": "A posição tem stop-loss e take-profit de ±2% na exchange. Use 'Fechar tudo' para a fechar já."}
+            "note": "A posição tem stop-loss e take-profit de ±2% na exchange. Use 'Fechar tudo' para fechá-la agora."}
 
 
 def status() -> dict:
@@ -560,7 +643,7 @@ def daily_report(eng, days: int = 14) -> list[dict]:
     trades = led.closed_trades()
     hist = led.equity_history(100_000)
     decs = led.decisions(5000)
-    tz = datetime.now().astimezone().tzinfo
+    tz = cfg.TZ                                  # the user's calendar day (Lisbon)
     local = lambda iso: datetime.fromisoformat(iso).astimezone(tz).date()
     today = datetime.now(tz).date()
     rows = []

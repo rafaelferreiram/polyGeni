@@ -204,10 +204,11 @@ class Ledger:
         return rows[0]["ts"] if rows else None
 
     # ─── paper deposits / withdrawals (simulated money only) ───
-    def move_cash(self, kind: str, amount_usd: float, note: str = "") -> dict:
+    def move_cash(self, kind: str, amount_usd: float, note: str = "", check: bool = True) -> dict:
+        """check=False records what already happened on a real exchange (it is the truth, not a request)."""
         if amount_usd <= 0:
             raise ValueError("amount must be positive")
-        if kind == "withdraw" and amount_usd > self.cash() + 1e-9:
+        if check and kind == "withdraw" and amount_usd > self.cash() + 1e-9:
             raise ValueError(f"insufficient paper cash (${self.cash():.2f})")
         self._x("INSERT INTO cash_movements (ts,kind,amount_usd,note) VALUES (?,?,?,?)",
                 (now_iso(), kind, amount_usd, note))
@@ -297,6 +298,9 @@ class Ledger:
     def set_mark(self, mint: str, price: float, value: float):
         self._x("UPDATE positions SET mark_price=?, mark_value=? WHERE mint=?", (price, value, mint))
 
+    def set_stop(self, mint: str, stop: float):
+        self._x("UPDATE positions SET stop_price=? WHERE mint=?", (stop, mint))
+
     def delete_position(self, mint: str):
         self._x("DELETE FROM positions WHERE mint=?", (mint,))
 
@@ -308,6 +312,13 @@ class Ledger:
             "VALUES (?,?,?,?,?,?,?,?,?,?)",
             (now_iso(), cycle, kind, mint, symbol, strategy, json.dumps(signals or {}, default=str),
              json.dumps(votes or {}, default=str), reason, order_id))
+        from src.solana import logbuf, notify
+        source = logbuf.label(self.path)
+        logbuf.add(source, logbuf.DECISION_LEVEL.get(kind, "INFO"),
+                   f"{kind}{f' {symbol}' if symbol else ''}{f' [{strategy}]' if strategy else ''}: {reason}")
+        if kind in ("entry", "exit") and symbol:
+            trade = next((t for t in self.closed_trades() if t["symbol"] == symbol), None) if kind == "exit" else None
+            notify.trade_event(source, kind, symbol, strategy, reason, trade)
         return cur.lastrowid
 
     def decisions(self, limit: int = 100, kind: str | None = None) -> list[dict]:

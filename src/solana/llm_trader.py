@@ -16,14 +16,24 @@ from src.solana.strategies import Signal
 logger = logging.getLogger("solana.llm_trader")
 
 TRADER_SYSTEM = (
-    "You are the trading decision agent of a small, risk-averse 1x long-only crypto bot on Hyperliquid. For the "
+    "You are the trading decision agent of a small, risk-averse long-only crypto bot on Hyperliquid (isolated low leverage, size set by the risk engine). For the "
     "market given, decide whether to open a LONG now (BUY) or do nothing (HOLD). You get precomputed indicators "
-    "(RSI, ATR%, EMA50/EMA200 trend, Bollinger dip, funding, the rules engine's own signal, suggested ATR stops) "
+    "(RSI, ATR%, EMA50/EMA200 trend, Bollinger dip, funding, the rules engine's own signal, suggested ATR stops), "
+    "whale_flow (aggressive orders above the coin's whale size in the last 1h/4h: buy vs sell USD; heavy whale selling "
+    "into a dip is a reason for caution, whale buying supports the entry), market_breadth (how many of the tracked "
+    "coins are in an uptrend, average RSI and 24h move: a broad sell-off makes single-coin dips riskier), news_12h "
+    "(recent headlines about the coin: hacks, delistings, lawsuits or unlocks are reasons to HOLD; ignore generic noise), "
+    "top_traders (how many of Hyperliquid's 10 most profitable traders are long/short this coin and how many just "
+    "entered: agreement from them supports an entry, them closing longs is a warning) "
     "and the round-trip cost. Evidence from our walk-forward tests: buying dips in a downtrend (price below "
     "EMA200) lost money; dips inside an uptrend with ATR-sized stops made money. So: BUY only in an uptrend, "
     "only when the expected move to target is at least 3x the round-trip cost, and prefer the suggested ATR "
     "stop/target. When in doubt, HOLD — not trading is a valid and often optimal decision. Use web search only "
     "for very recent, material news. A separate risk engine sets the size and can refuse your trade. "
+    "You are rewarded on net profit after your own AI cost (your_track_record): profitable trades raise your points, "
+    "priority and position size; losing trades and paid analyses lower them — so learn from your recent trades and "
+    "only BUY setups you expect to pay. lessons_from_training gives the real past hit rate of situations like this "
+    "one (thousands of virtual trades with the same stop/target): weigh it heavily — it is the best evidence you have. "
     'Reply with ONLY JSON: {"action": "BUY"|"HOLD", "stop_pct": number, "tp_pct": number, '
     '"confidence": number 0-1, "reason": string, "next_check_min": number}. stop_pct/tp_pct are fractions '
     "(0.03 = 3%). next_check_min: if HOLD, how many minutes until this market is worth looking at again "
@@ -54,6 +64,17 @@ def _candles_brief(candles: list[dict], n: int = 48) -> list[list]:
              round(c["volume"], 2)] for c in candles[-n:]]
 
 
+def _worth_asking(f: dict, candles: list[dict], ctx: dict) -> bool:
+    """Ask the AI only when a setup exists: a dip in an uptrend, a 1h/4h breakout in a strong trend, whales buying
+    hard in an uptrend, or the top traders just going long. Anything else is HOLD for free."""
+    from src.solana.strategies import Trend4h, TrendStrong
+    dip = f.get("uptrend") and (f.get("below_lower_band") or (f.get("rsi14") or 100) < 40)
+    wf, tt = ctx.get("whale_flow") or {}, ctx.get("top_traders") or {}
+    whales = f.get("uptrend") and wf.get("pressure") == "comprando"
+    top = tt.get("new_longs_1h", 0) >= 1 and tt.get("long", 0) >= 2
+    return bool(dip or whales or top or TrendStrong().signal(candles) or Trend4h().signal(candles))
+
+
 class LLMDecider:
     """Drop-in strategy: the engine calls decide(candles, context) instead of signal(candles)."""
     capital_pct = 1.0
@@ -63,10 +84,12 @@ class LLMDecider:
         self.model = model or cfg.DEBATE_MODEL
         self.router = router            # market -> model chosen by the coordinator (None = always self.model)
         self.name = "llm"
-        self.llm_fn = llm_fn or (lambda prompt, system: anthropic_llm(prompt, system=system, max_searches=2,
+        self.llm_fn = llm_fn or (lambda prompt, system: anthropic_llm(prompt, system=system, max_searches=cfg.LLM_WEB_SEARCHES,
                                                                        model=self.model, who=self.name))
         self.entry_system, self.exit_system = entry_system, exit_system
         self._seen: dict[tuple, object] = {}     # (kind, market) -> last candle t already decided on
+        self.record_fn = None                     # -> this bot's reward points and recent trades (set by the lab)
+        self.full_scan = False                    # training: analyse every coin every candle (no pre-filter)
         self.last: dict[str, dict] = {}          # market -> last decision, for the UI
 
     @property
@@ -91,14 +114,19 @@ class LLMDecider:
             self.model = self.router(market) or self.model
         from src.solana.strategies import features
         f = features(candles)
-        if cfg.LLM_PREFILTER and not (f.get("uptrend") and (f.get("below_lower_band") or (f.get("rsi14") or 100) < 40)):
-            # no dip inside an uptrend: nothing worth paying an AI call for
+        if cfg.LLM_PREFILTER and not self.full_scan and not _worth_asking(f, candles, context):
+            # no dip, breakout, whale buying or top-trader entry: nothing worth paying an AI call for
             self.last[market] = {"action": "HOLD", "reason": "sem oportunidade — IA não foi chamada (custo $0)",
                                  "model": self.model, "t": candles[-1]["t"], "free": True}
             return None
         try:
             from src.solana.strategies import features
-            out = _json(self.llm_fn(json.dumps({"market": context, "indicators": features(candles),
+            record = self.record_fn() if self.record_fn else None
+            from src.solana import trainer
+            lessons = trainer.lessons_for(trainer.tags_for(f, candles, {**context, "breadth": context.get("market_breadth"),
+                                                                         "news": context.get("news_12h")}))
+            out = _json(self.llm_fn(json.dumps({"market": context, "indicators": features(candles), "your_track_record": record,
+                                                "lessons_from_training": lessons,
                                                 "round_trip_cost_pct": context.get("round_trip_cost_pct", 0.13),
                                                 "candles_1h_tohlcv": _candles_brief(candles, 24)},
                                                default=str), self.entry_system))
@@ -148,11 +176,11 @@ class TeamMember:
     capital_pct = 1.0
 
     def __init__(self, model: str, lab_lookup=None, llm_fn=None):
-        from src.solana.strategies import MeanReversionATR
+        from src.solana.strategies import RULE_BOTS
         self.model = model
-        self.name = "rules" if model == "rules" else f"llm:{model}"
-        self._rules = MeanReversionATR() if model == "rules" else None
-        self._llm = None if model == "rules" else LLMDecider(model=model, llm_fn=llm_fn)
+        self.name = model if model in RULE_BOTS else f"llm:{model}"
+        self._rules = RULE_BOTS[model]() if model in RULE_BOTS else None
+        self._llm = None if model in RULE_BOTS else LLMDecider(model=model, llm_fn=llm_fn)
         self.lab_lookup = lab_lookup          # model -> lab bot's LLMDecider (or None)
         self.last: dict[str, dict] = {}
 
@@ -165,9 +193,13 @@ class TeamMember:
         if not candles:
             return None
         if self._rules:
-            sig = self._rules.signal(candles)
+            from src.solana.strategies import FAST_BOTS
+            if self.model in FAST_BOTS and context.get("venue") == "hyperliquid":   # 15-minute bots read 15m candles
+                from src.solana import hyperliquid as hl
+                candles = hl.candles(market, "15m")[:-1]
+            sig = self._rules.decide(candles, context) if hasattr(self._rules, "decide") else self._rules.signal(candles)
             self.last[market] = {"action": "BUY" if sig else "HOLD", "reason": sig.reason if sig else "sem sinal",
-                                 "model": "rules", "t": candles[-1]["t"]}
+                                 "model": self.model, "t": candles[-1]["t"]}
             if sig:
                 sig.strategy = self.name
             return sig

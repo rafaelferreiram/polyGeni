@@ -107,7 +107,7 @@ def buy(br, order_id="o1", usd=12.0, coin="BTC"):
 def test_buy_is_1x_isolated_rounded_and_protected_on_exchange(live):
     ledger, info, ex, br = live
     fill = buy(br)
-    assert ("leverage", "BTC", 1, False) in ex.calls                       # 1x isolated
+    assert ("leverage", "BTC", int(cfg.LIVE_LEVERAGE), False) in ex.calls   # isolated, LIVE_LEVERAGE
     open_call = next(c for c in ex.calls if c[0] == "open")
     assert open_call[2] == 0.00015                                         # 12/80000 floored to 5 decimals
     triggers = [c for c in ex.calls if c[0] == "trigger"]
@@ -232,7 +232,8 @@ def test_real_account_simulation_mirrors_live_limits(tmp_path, monkeypatch):
     monkeypatch.setattr(eng, "run_cycle", lambda: {"ok": True})
     hl_live.shadow_cycle()
     assert eng.decision_mode() == "llm"                                    # mirrors the real account
-    assert [m.model for m in eng.team] == cfg.ARENA_MODELS                 # same team as the real wallet
+    from src.solana.strategies import LAB_ONLY_BOTS
+    assert [m.model for m in eng.team] == [m for m in cfg.ARENA_MODELS if m not in LAB_ONLY_BOTS]   # same team as the real wallet (no shorts)
 
 
 def test_unified_account_equity_comes_from_spot(live):
@@ -259,3 +260,32 @@ def test_daily_report_counts_wins_losses_and_net(live, tmp_path, monkeypatch):
     assert today["trades"] == 2 and today["wins"] == 1 and today["losses"] == 1 and today["win_rate"] == 0.5
     assert today["ai_cost_usd"] == pytest.approx(0.01) and today["net_usd"] == pytest.approx(today["pnl_usd"] - 0.01)
     assert today["best"]["pnl_usd"] > 0 > today["worst"]["pnl_usd"]
+
+
+def test_order_size_rounds_up_one_lot_for_expensive_coins():
+    assert hl_live._order_size(12, 1300, 2) == 0.01                 # ZEC: floor 0.00 → one lot of $13 (≤ +20%)
+    assert hl_live._order_size(12, 83000, 5) == 0.00014              # BTC: normal floor
+    with pytest.raises(RuntimeError):
+        hl_live._order_size(12, 9000, 0)                             # one lot = $9,000 → refused
+
+
+def test_external_deposits_and_withdrawals_become_cash_movements(live):
+    ledger, info, ex, br = live
+    me = ADDR.lower()
+    updates = [{"time": 2_000, "hash": "0xa", "delta": {"type": "deposit", "usdc": "25.0"}},
+               {"time": 3_000, "hash": "0xb", "delta": {"type": "send", "user": "0xfriend", "destination": me, "amount": "5", "usdcValue": "5"}},
+               {"time": 4_000, "hash": "0xc", "delta": {"type": "accountClassTransfer", "usdc": "3", "toPerp": True}},
+               {"time": 5_000, "hash": "0xd", "delta": {"type": "withdraw", "usdc": "10", "fee": "1"}}]
+    info.post = lambda path, body: [u for u in updates if u["time"] >= body["startTime"]]
+    assert br.record_transfers() == []                        # first run only sets the starting point
+    ledger.set_state("transfers_since", 1_000)
+    done = br.record_transfers()
+    assert [(d["kind"], d["usd"]) for d in done] == [("deposit", 25.0), ("deposit", 5.0), ("withdraw", 10.0)]
+    assert ledger.contributed() == 20 + 25 + 5 - 10
+    assert br.record_transfers() == []                        # nothing twice
+
+
+def test_real_account_refuses_short_orders(live):
+    ledger, info, ex, br = live
+    with pytest.raises(RuntimeError, match="short"):
+        br.buy("x", "hl:BTC~short", "BTC", 12, strategy="short", stop_price=1, tp_price=2)
