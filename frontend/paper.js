@@ -697,7 +697,7 @@ function trainButton(model, r) {
 }
 function trainBoost(model, btn) {
   run(btn, "Ativando…", () => api("/arena/train-boost", "POST", { bot: model, hours: 24 }),
-      `🚀 ${look(model).label} em treino intensivo por 24h: o dobro de vagas no laboratório, mesmas regras`);
+      `🚀 ${look(model).label} em treino intensivo por 24h: 29 vagas e $200 simulados, mesmas regras`);
 }
 
 // ─── advanced (old Solana paper + readiness) ───

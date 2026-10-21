@@ -149,7 +149,9 @@ TRAINING_DB_PATH = os.getenv("TRAINING_DB_PATH", "./training.db")   # training c
 LAB_CAPITAL_USD = _f("LAB_CAPITAL_USD", 100.0)
 LAB_MAX_POSITIONS = _i("LAB_MAX_POSITIONS", 8)
 LAB_MAX_ENTRIES_PER_DAY = _i("LAB_MAX_ENTRIES_PER_DAY", 48)
-TRAIN_BOOST_MAX_POSITIONS = _i("TRAIN_BOOST_MAX_POSITIONS", 16)   # "treino intensivo": double the lab slots for 24h
+# "treino intensivo": one slot per coin and more paper capital for 24h, so slots never limit how many lab trades happen
+TRAIN_BOOST_MAX_POSITIONS = _i("TRAIN_BOOST_MAX_POSITIONS", 29)
+TRAIN_BOOST_CAPITAL_USD = _f("TRAIN_BOOST_CAPITAL_USD", 200.0)
 # green light to real money (bots not in REAL_TRUSTED_BOTS): at least GREEN_LIGHT_WINS winning lab trades, net profit
 # after their AI cost, win rate and profit factor at least these (the user's rule: 10 wins with good accuracy)
 GREEN_LIGHT_WINS = _i("GREEN_LIGHT_WINS", 10)

@@ -143,6 +143,8 @@ def boost_training(model: str, hours: float = 24) -> dict:
         raise ValueError(f"bot {model} não existe")
     until = (datetime.now(timezone.utc) + timedelta(hours=min(max(hours, 1), 72))).isoformat(timespec="seconds")
     eng.ledger.set_state("train_boost_until", until)
+    if eng.ledger.contributed() < cfg.TRAIN_BOOST_CAPITAL_USD:      # paper top-up, a contribution — never profit
+        eng.ledger.move_cash("deposit", cfg.TRAIN_BOOST_CAPITAL_USD - eng.ledger.contributed(), "treino intensivo")
     local = datetime.fromisoformat(until).astimezone(cfg.TZ).strftime("%d/%m %H:%M")
     eng.ledger.log_decision("boost", reason=f"🚀 treino intensivo até {local} (Lisboa): {cfg.TRAIN_BOOST_MAX_POSITIONS} vagas, sem limite diário")
     _apply_training_boost(eng)
@@ -154,6 +156,7 @@ def _apply_training_boost(eng):
     on = bool(until) and datetime.now(timezone.utc).isoformat() < until
     eng.risk.max_positions = cfg.TRAIN_BOOST_MAX_POSITIONS if on else cfg.LAB_MAX_POSITIONS
     eng.risk.max_entries_per_day = 10_000 if on else cfg.LAB_MAX_ENTRIES_PER_DAY
+    eng.risk.max_capital_usd = max(cfg.TRAIN_BOOST_CAPITAL_USD, cfg.LAB_CAPITAL_USD) if on else cfg.LAB_CAPITAL_USD
 
 
 def eligible_for_real(members: list) -> list:
