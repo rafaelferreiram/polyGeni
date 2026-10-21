@@ -308,9 +308,13 @@ class Ledger:
             "VALUES (?,?,?,?,?,?,?,?,?,?)",
             (now_iso(), cycle, kind, mint, symbol, strategy, json.dumps(signals or {}, default=str),
              json.dumps(votes or {}, default=str), reason, order_id))
-        from src.solana import logbuf
-        logbuf.add(logbuf.label(self.path), logbuf.DECISION_LEVEL.get(kind, "INFO"),
+        from src.solana import logbuf, notify
+        source = logbuf.label(self.path)
+        logbuf.add(source, logbuf.DECISION_LEVEL.get(kind, "INFO"),
                    f"{kind}{f' {symbol}' if symbol else ''}{f' [{strategy}]' if strategy else ''}: {reason}")
+        if kind in ("entry", "exit") and symbol:
+            trade = next((t for t in self.closed_trades() if t["symbol"] == symbol), None) if kind == "exit" else None
+            notify.trade_event(source, kind, symbol, strategy, reason, trade)
         return cur.lastrowid
 
     def decisions(self, limit: int = 100, kind: str | None = None) -> list[dict]:

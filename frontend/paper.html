@@ -256,7 +256,11 @@
              padding: 12px 16px; border-radius: 12px; background: #2a1214; border: 1px solid #4a1d21; color: #fecaca; font-size: 13.5px; }
     .alert[hidden] { display: none; }
     .alert button { background: var(--red); color: #1a0505; border: 0; font-weight: 700; }
-    section.panel, section.kpis { scroll-margin-top: 80px; }
+    section.panel, section.kpis, .band { scroll-margin-top: 80px; }
+    .band { margin: 10px 2px -4px; font-size: 13px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--accent);
+            display: flex; align-items: center; gap: 10px; }
+    .band::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+    .two > .panel { min-width: 0; }
     @media (max-width: 600px) { .statusbar { padding: 8px 12px; } .sb-nav { display: none; } .sb-items { gap: 6px 14px; } }
     .whale-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
     @media (max-width: 960px) { .whale-grid { grid-template-columns: 1fr; } }
@@ -345,7 +349,7 @@
     </div>
   </header>
   <div class="statusbar"><div class="sb-items" id="statusbar-items"></div>
-    <nav class="sb-nav" aria-label="Secções"><a href="#lucro">Lucro</a><a href="#posicoes">Posições</a><a href="#radar">Radar</a><a href="#baleias">Baleias</a><a href="#team">Bots</a><a href="#logs">Logs</a><a href="#conexoes">Conexões</a></nav></div>
+    <nav class="sb-nav" aria-label="Seções"><a href="#g-visao">Visão geral</a><a href="#posicoes">Posições</a><a href="#radar">Radar</a><a href="#baleias">Baleias</a><a href="#team">Bots</a><a href="#logs">Logs</a><a href="#g-hist">Histórico</a><a href="#g-sist">Sistema</a></nav></div>
   <div class="alert" id="alert" hidden><span>🛑 <span id="alert-text"></span></span><button onclick="killReset(this)">Rearmar</button></div>
   <div class="scanbar" id="scanbar" hidden><span class="spin"></span><span id="scan-text">Analisando o mercado…</span></div>
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
@@ -353,6 +357,32 @@
   <main>
     <div class="setup" id="setup" hidden></div>
 
+    <h3 class="band" id="g-visao">Visão geral</h3>
+    <section class="kpis">
+      <div class="kpi"><div class="l" id="k-eq-l">Saldo</div><div class="v" id="k-eq">–</div><div class="s" id="k-eq-s">–</div></div>
+      <div class="kpi"><div class="l">Lucro líquido <span class="muted">(depois de IA e custos)</span></div><div class="v" id="k-pnl">–</div><div class="s" id="k-pnl-s">–</div></div>
+      <div class="kpi"><div class="l">Posição aberta</div><div class="v" id="k-pos">–</div><div class="s" id="k-pos-s">–</div></div>
+      <div class="kpi"><div class="l">Trades · acerto</div><div class="v" id="k-tr">–</div><div class="s" id="k-tr-s">–</div></div>
+    </section>
+    <div class="two">
+    <section class="panel" id="posicoes">
+      <h2><span>Posições abertas <span class="tag" id="pos-tag">–</span></span><span class="note" id="pos-head"></span></h2>
+      <div class="positions" id="positions"></div>
+    </section>
+    <section class="panel" id="termometro">
+      <h2><span>Termômetro <span class="tag">mercado × nossos bots</span></span></h2>
+      <div class="thermos">
+        <div class="thermo"><div class="th-head"><span>🌡️ Mercado agora</span><b id="t-mkt-lbl">–</b></div>
+          <div class="gauge cold-hot"><span class="needle" id="t-mkt-n"></span></div>
+          <div class="gl"><span>frio</span><span>morno</span><span>quente</span></div>
+          <div class="th-facts" id="t-mkt-facts"></div></div>
+        <div class="thermo"><div class="th-head"><span>🤖 Nossos bots vs mercado</span><b id="t-bot-lbl">–</b></div>
+          <div class="gauge bad-good"><span class="needle" id="t-bot-n"></span></div>
+          <div class="gl"><span>abaixo</span><span>empatado</span><span>acima</span></div>
+          <div class="th-facts" id="t-bot-facts"></div></div>
+      </div>
+    </section>
+    </div>
     <section class="panel" id="lucro">
       <h2><span>Lucro real <span class="tag" id="verdict">–</span></span>
         <span class="ctrls"><label class="switch"><input type="checkbox" id="ai-toggle" checked onchange="toggleAI(this.checked)"><span></span>incluir custo da IA</label><span class="note" id="budget-note"></span></span></h2>
@@ -368,32 +398,7 @@
       <div class="budget"><div class="bar"><span id="budget-bar"></span></div></div>
     </section>
 
-    <section class="kpis">
-      <div class="kpi"><div class="l" id="k-eq-l">Saldo</div><div class="v" id="k-eq">–</div><div class="s" id="k-eq-s">–</div></div>
-      <div class="kpi"><div class="l">Lucro líquido <span class="muted">(depois de IA e custos)</span></div><div class="v" id="k-pnl">–</div><div class="s" id="k-pnl-s">–</div></div>
-      <div class="kpi"><div class="l">Posição aberta</div><div class="v" id="k-pos">–</div><div class="s" id="k-pos-s">–</div></div>
-      <div class="kpi"><div class="l">Trades · acerto</div><div class="v" id="k-tr">–</div><div class="s" id="k-tr-s">–</div></div>
-    </section>
-
-    <section class="panel" id="termometro">
-      <h2><span>Termômetro <span class="tag">mercado × nossos bots</span></span></h2>
-      <div class="thermos">
-        <div class="thermo"><div class="th-head"><span>🌡️ Mercado agora</span><b id="t-mkt-lbl">–</b></div>
-          <div class="gauge cold-hot"><span class="needle" id="t-mkt-n"></span></div>
-          <div class="gl"><span>frio</span><span>morno</span><span>quente</span></div>
-          <div class="th-facts" id="t-mkt-facts"></div></div>
-        <div class="thermo"><div class="th-head"><span>🤖 Nossos bots vs mercado</span><b id="t-bot-lbl">–</b></div>
-          <div class="gauge bad-good"><span class="needle" id="t-bot-n"></span></div>
-          <div class="gl"><span>abaixo</span><span>empatado</span><span>acima</span></div>
-          <div class="th-facts" id="t-bot-facts"></div></div>
-      </div>
-    </section>
-
-    <section class="panel" id="posicoes">
-      <h2><span>Posições abertas <span class="tag" id="pos-tag">–</span></span><span class="note" id="pos-head"></span></h2>
-      <div class="positions" id="positions"></div>
-    </section>
-
+    <h3 class="band" id="g-oport">Oportunidades</h3>
     <section class="panel" id="radar">
       <h2><span>Radar de oportunidades <span class="tag">o que os bots estão vigiando</span></span>
         <span class="ctrls"><span class="note" id="radar-head"></span><button id="radar-all" onclick="radarAll = !radarAll; renderRadar(acc)">Ver todas</button></span></h2>
@@ -401,7 +406,6 @@
       <div class="legend"><span>📐 <b>Quedas</b> compra se o preço cair abaixo da linha <i>e</i> o RSI ficar abaixo de 30</span><span>📈 <b>Tendência</b> compra se romper a máxima de 24h numa tendência forte</span><span>🧠 <b>IA</b> só é consultada quando há uma queda numa alta</span></div>
       <div class="legend"><span>✅ <b>pronto</b> = há sinal agora → o Coordenador escolhe o bot, o Risk confere vagas e limites, o Executor compra com stop e alvo → aparece em <b>Posições abertas</b></span><span>👀 <b>perto</b> = a menos de ~1,5% da linha de compra</span><span>⏳ <b>aguardando</b> = em alta, mas longe da linha</span><span>⬇ <b>sem tendência</b> = em baixa: os bots não compram</span></div>
     </section>
-
     <section class="panel" id="baleias">
       <h2><span>🐋 Baleias <span class="tag" id="whale-tag">–</span></span><span class="note" id="whale-head"></span></h2>
       <div class="whale-grid">
@@ -412,13 +416,25 @@
       <div class="legend"><span>🐋 baleia = ordem a mercado ≥ $25 mil e ≥ 0,02% do volume diário da moeda</span><span>🟢 comprando / 🔴 vendendo = mais de 30% de diferença entre compras e vendas</span><span>🧠 o bot de IA recebe este fluxo antes de decidir</span></div>
     </section>
 
+    <h3 class="band" id="g-bots">Bots ao vivo</h3>
     <section class="panel" id="team">
       <h2><span>Equipe de bots</span>
         <span class="ctrls"><span class="note" id="team-head"></span><button id="btn-coffee" onclick="giveCoffee(this)" title="4 horas de modo day trade nas contas simulada e real: até 6 compras por dia em vez de 3 (as regras de compra e os stops não mudam)">☕ Café</button><button id="btn-scan" onclick="scanNow(this)">🔍 Analisar agora</button></span></h2>
       <div class="team" id="team-grid"></div>
       <div class="legend"><span>🧭 O Coordenador usa o bot que mais lucrou nos últimos 30 dias</span><span>🛡️ Bot novo só usa dinheiro real depois de provar lucro</span><span>👆 Passe o mouse num bot para ver detalhes</span></div>
     </section>
-
+    <section class="panel" id="logs">
+      <h2><span>Logs ao vivo <span class="live-chip" id="log-live">ao vivo</span></span>
+        <span class="ctrls">
+          <div class="seg" id="log-src" role="group" aria-label="Filtrar logs">
+            <button data-s="" class="on" onclick="logFilter(this)">Todos</button><button data-s="real" onclick="logFilter(this)">Real</button>
+            <button data-s="sim" onclick="logFilter(this)">Simulação</button><button data-s="lab" onclick="logFilter(this)">Laboratório</button>
+          </div>
+          <label class="switch"><input type="checkbox" id="log-debug" checked onchange="renderLogs(true)"><span></span>detalhado</label>
+          <button id="log-pause" onclick="logPaused = !logPaused; this.textContent = logPaused ? '▶ Retomar' : '⏸ Pausar'">⏸ Pausar</button>
+        </span></h2>
+      <div class="term" id="term" role="log" aria-live="off"></div>
+    </section>
     <section class="panel">
       <h2><span>Como uma decisão é feita <span class="tag" id="room-tag">–</span></span><span class="note" id="room-head"></span></h2>
       <div class="room">
@@ -427,26 +443,14 @@
       </div>
     </section>
 
+    <h3 class="band" id="g-hist">Histórico</h3>
+    <section class="panel"><h2><span>Trades fechados</span><span class="tag" id="trades-total"></span></h2><div class="tbl"><table id="trades"></table></div></section>
     <section class="panel" id="relatorio">
       <h2><span>Relatório diário <span class="tag" id="rep-tag">–</span></span><span class="note">salvo também em reports/daily/ às 23:55</span></h2>
       <div class="tbl"><table id="daily"></table></div>
     </section>
 
-    <section class="panel" id="logs">
-      <h2><span>Logs ao vivo <span class="live-chip" id="log-live">ao vivo</span></span>
-        <span class="ctrls">
-          <div class="seg" id="log-src" role="group" aria-label="Filtrar logs">
-            <button data-s="" class="on" onclick="logFilter(this)">Todos</button><button data-s="real" onclick="logFilter(this)">Real</button>
-            <button data-s="sim" onclick="logFilter(this)">Simulação</button><button data-s="lab" onclick="logFilter(this)">Laboratório</button>
-          </div>
-          <label class="switch"><input type="checkbox" id="log-debug" onchange="renderLogs(true)"><span></span>detalhado</label>
-          <button id="log-pause" onclick="logPaused = !logPaused; this.textContent = logPaused ? '▶ Retomar' : '⏸ Pausar'">⏸ Pausar</button>
-        </span></h2>
-      <div class="term" id="term" role="log" aria-live="off"></div>
-    </section>
-
-    <section class="panel"><h2><span>Trades fechados</span><span class="tag" id="trades-total"></span></h2><div class="tbl"><table id="trades"></table></div></section>
-
+    <h3 class="band" id="g-sist">Sistema</h3>
     <div class="two">
       <section class="panel" id="carteiras">
         <h2>Carteiras <span class="tag">só leitura</span></h2>
@@ -463,12 +467,10 @@
         <div class="tbl"><table id="arena-table"></table></div>
       </section>
     </div>
-
     <section class="panel" id="conexoes">
       <h2><span>Conexões <span class="tag" id="conn-tag">–</span></span><span class="note">verificado a cada minuto</span></h2>
       <div class="conns" id="conns"></div>
     </section>
-
     <details class="more"><summary>Avançado</summary>
       <div class="wallet-row">
         <button class="btn-danger" id="btn-flat" onclick="flatten(this)">Fechar todas as posições reais</button>
@@ -482,6 +484,6 @@
     </details>
   </main>
 
-  <script src="/static/paper.js?v=35"></script>
+  <script src="/static/paper.js?v=36"></script>
 </body>
 </html>
