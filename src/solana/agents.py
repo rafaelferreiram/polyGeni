@@ -169,7 +169,7 @@ DEBATE_SYSTEM = (
 )
 
 
-def anthropic_llm(prompt: str, system: str = DEBATE_SYSTEM, max_searches: int = 3) -> str:
+def anthropic_llm(prompt: str, system: str = DEBATE_SYSTEM, max_searches: int = 3, model: str | None = None) -> str:
     """Claude via the official SDK with server-side web search (+ optional remote MCP servers)."""
     import anthropic
 
@@ -182,7 +182,7 @@ def anthropic_llm(prompt: str, system: str = DEBATE_SYSTEM, max_searches: int = 
         betas.append("mcp-client-2025-11-20")
     client = anthropic.Anthropic(api_key=cfg.ANTHROPIC_API_KEY, timeout=120)
     resp = client.beta.messages.create(
-        model=cfg.DEBATE_MODEL, max_tokens=4000, system=system, betas=betas,
+        model=model or cfg.DEBATE_MODEL, max_tokens=4000, system=system, betas=betas,
         fallbacks="default", output_config={"effort": "low"}, tools=tools,
         messages=[{"role": "user", "content": prompt}], **kwargs,
     )
@@ -236,11 +236,14 @@ class RiskAgent:
 
     def __init__(self, max_pos_pct=cfg.RISK_MAX_POSITION_PCT, max_exposure_pct=cfg.RISK_MAX_EXPOSURE_PCT,
                  max_positions=cfg.RISK_MAX_POSITIONS, max_daily_loss_pct=cfg.RISK_MAX_DAILY_LOSS_PCT,
-                 min_trade_usd=cfg.RISK_MIN_TRADE_USD, max_entries_per_day=cfg.RISK_MAX_ENTRIES_PER_DAY):
+                 min_trade_usd=cfg.RISK_MIN_TRADE_USD, max_entries_per_day=cfg.RISK_MAX_ENTRIES_PER_DAY,
+                 max_position_usd: float | None = None, max_capital_usd: float | None = None):
         self.max_pos_pct, self.max_exposure_pct = max_pos_pct, max_exposure_pct
         self.max_positions, self.max_daily_loss_pct = max_positions, max_daily_loss_pct
         self.min_trade_usd = min_trade_usd
         self.max_entries_per_day = max_entries_per_day
+        # hard USD caps (live trading): never size off more than max_capital_usd, never a bigger position
+        self.max_position_usd, self.max_capital_usd = max_position_usd, max_capital_usd
 
     def daily_loss_breached(self, p: Portfolio) -> bool:
         return p.day_start_equity > 0 and (p.day_start_equity - p.equity) / p.day_start_equity >= self.max_daily_loss_pct
@@ -260,10 +263,12 @@ class RiskAgent:
             return Vote("risk", False, f"daily entry cap ({self.max_entries_per_day}) reached", d)
         if len(p.open_mints) >= self.max_positions:
             return Vote("risk", False, f"max positions ({self.max_positions}) reached", d)
-        strategy_room = p.equity * capital_pct - p.strategy_exposure.get(sig.strategy, 0)
-        exposure_room = p.equity * self.max_exposure_pct - p.exposure
+        eq = min(p.equity, self.max_capital_usd) if self.max_capital_usd else p.equity
+        strategy_room = eq * capital_pct - p.strategy_exposure.get(sig.strategy, 0)
+        exposure_room = eq * self.max_exposure_pct - p.exposure
         # 1x only: notional is capped by cash, i.e. never more than the capital allocated to the market
-        size = min(p.equity * (max_pos_pct or self.max_pos_pct), strategy_room, exposure_room, p.cash * 0.98)
+        size = min(eq * (max_pos_pct or self.max_pos_pct), strategy_room, exposure_room, p.cash * 0.98,
+                   self.max_position_usd or float("inf"))
         d.update(size_usd=round(size, 2), strategy_room=round(strategy_room, 2), exposure_room=round(exposure_room, 2))
         if size < self.min_trade_usd:
             return Vote("risk", False, f"size ${size:.2f} < min ${self.min_trade_usd:.2f} "
@@ -311,3 +316,7 @@ class ExecutorAgent:
 
     def accrue(self, positions: list[dict]) -> float:
         return sum(b.accrue(positions) for b in self._brokers.values())
+
+    def sync(self) -> list[str]:
+        """Reconcile brokers against their venue; returns problems that must stop new entries."""
+        return [p for b in self._brokers.values() for p in b.sync()]

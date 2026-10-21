@@ -6,6 +6,7 @@ Run a few cycles from the shell:  python -m src.solana.engine --cycles 3
 """
 import argparse
 import logging
+import threading
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -18,6 +19,7 @@ from src.solana.agents import (DebateAgent, ExecutorAgent, Portfolio, RiskAgent,
 from src.solana.broker import PaperBroker
 from src.solana.ledger import Ledger, now_iso
 from src.solana import hyperliquid as hl
+from src.solana.llm_trader import LLMDecider
 from src.solana.research import ResearchAgent
 from src.solana.strategies import default_strategies
 
@@ -32,7 +34,7 @@ class PaperEngine:
     def __init__(self, ledger: Ledger, scout, safety: SafetyAgent, strategies: list,
                  debate: DebateAgent, risk: RiskAgent, executor: ExecutorAgent,
                  candles_fn=md.pool_candles, max_hold_h: float = cfg.RISK_MAX_HOLD_H, research=None,
-                 bench_fn=None, profiles: dict | None = None):
+                 bench_fn=None, profiles: dict | None = None, llm=None):
         self.ledger, self.safety, self.strategies = ledger, safety, strategies
         self.scouts = scout if isinstance(scout, list) else [scout]
         self.debate, self.risk, self.executor = debate, risk, executor
@@ -41,8 +43,25 @@ class PaperEngine:
         self.candles_fn, self.max_hold_h = candles_fn, max_hold_h
         self.bench_fn = bench_fn
         self.profiles = profiles if profiles is not None else cfg.MARKET_PROFILES
+        self._busy = threading.Lock()   # scheduler and "scan now" must never run two cycles at once
+        self.llm = llm                  # LLMDecider used when decision_mode == "llm"
         self.research = research
         self._safety_logged: dict[str, float] = {}
+
+    # ─── decision mode: deterministic rules or LLM (Risk keeps the hard limits in both) ───
+    def decision_mode(self) -> str:
+        return self.ledger.get_state("decision_mode", "rules")
+
+    def set_decision_mode(self, mode: str):
+        if mode not in ("rules", "llm"):
+            raise ValueError("mode must be 'rules' or 'llm'")
+        if mode == "llm" and not (self.llm and self.llm.enabled):
+            raise ValueError("o modo LLM precisa de ANTHROPIC_API_KEY no .env")
+        self.ledger.set_state("decision_mode", mode)
+        self.ledger.log_decision("mode", cycle=self.cycle, reason=f"decision mode set to {mode}")
+
+    def _deciders(self) -> list:
+        return [self.llm] if self.decision_mode() == "llm" and self.llm else self.strategies
 
     # ─── state helpers ───
     @property
@@ -145,6 +164,12 @@ class PaperEngine:
                 reason = f"take-profit hit ({price:.6g} >= {pos['tp_price']:.6g})"
             elif held_h >= self.max_hold_h:
                 reason = f"max holding time {self.max_hold_h:.0f}h reached"
+            elif self.decision_mode() == "llm" and self.llm and self.llm.enabled and pos.get("pool_address"):
+                try:
+                    fn = self.candles_fns.get(pos["venue"]) if self.candles_fns else self.candles_fn
+                    reason = self.llm.review_exit(pos, fn(pos["pool_address"])[:-1], price)
+                except Exception as e:
+                    logger.warning(f"LLM exit review failed: {e}")
             if reason:
                 fill = self.executor.close(f"exit-{pos['entry_order_id']}", pos, reason)
                 pnl = fill["usd_gross"] - fill["fee_usd"] - pos["cost_usd"]
@@ -157,11 +182,30 @@ class PaperEngine:
 
     # ─── one full cycle ───
     def run_cycle(self) -> dict:
+        if not self._busy.acquire(blocking=False):
+            return {"busy": True, "cycle": self.cycle}
+        try:
+            return self._run_cycle()
+        finally:
+            self._busy.release()
+
+    def scanning(self) -> bool:
+        return self._busy.locked()
+
+    def _run_cycle(self) -> dict:
         cycle = self.cycle + 1
         self.ledger.set_state("cycle", cycle)
         self.ledger.set_state("heartbeat", {"ts": now_iso(), "cycle": cycle})
         stats = {"cycle": cycle, "candidates": 0, "safe": 0, "signals": 0, "entries": 0, "vetoes": 0}
         try:
+            try:
+                problems = self.executor.sync()        # live venues: exchange is the source of truth
+            except Exception as e:
+                problems = [f"venue sync failed: {e}"]
+            for msg in problems:
+                self.ledger.log_decision("reconcile", cycle=cycle, reason=msg)
+            if problems and not self.kill_switch().get("active"):
+                self.trip_kill_switch(f"exchange/ledger mismatch: {problems[0]}")
             self.reconcile()
             try:
                 self.executor.accrue(self.ledger.positions())   # perp funding
@@ -245,8 +289,17 @@ class PaperEngine:
                 self.ledger.log_decision("error", cycle=self.cycle, mint=c.mint, symbol=c.symbol,
                                          reason=f"candles unavailable: {e}")
                 continue
-            for strat in self.strategies:
-                sig = strat.signal(candles)
+            for strat in self._deciders():
+                if hasattr(strat, "decide"):
+                    if not strat.enabled:
+                        self._agent("llm", last_reason="modo LLM sem ANTHROPIC_API_KEY — sem decisões", vetoed=1)
+                        continue
+                    sig = strat.decide(candles, {**c.summary(), "symbol": c.symbol, "venue": c.venue})
+                    d = strat.last.get(c.symbol, {})
+                    self._agent("llm", last_reason=f"{c.symbol}: {d.get('action', 'HOLD')} — {d.get('reason', '')}"[:200],
+                                approved=int(sig is not None))
+                else:
+                    sig = strat.signal(candles)
                 if sig is not None and profile.get("stop_mult", 1) != 1:
                     sig.stop_pct = min(sig.stop_pct * profile["stop_mult"], 0.5)
                     sig.tp_pct *= profile["stop_mult"]
@@ -266,8 +319,10 @@ class PaperEngine:
                     research_vote = self.research.vote(brief)
                     self._agent("research", last_reason=f"{c.symbol}: {research_vote.reason}",
                                 approved=int(research_vote.approve), vetoed=int(not research_vote.approve))
-                debate = self.debate.review(c, sig, {"closes_24h": closes, "safety": safety.detail,
-                                                     "research_brief": brief})
+                debate = (Vote("debate", True, "skipped: the LLM already made this decision")
+                          if strat.name.startswith("llm") else
+                          self.debate.review(c, sig, {"closes_24h": closes, "safety": safety.detail,
+                                                      "research_brief": brief}))
                 self._agent("debate", last_reason=f"{c.symbol}: {debate.reason}",
                             approved=int(debate.approve), vetoed=int(not debate.approve))
                 p = self.portfolio()
@@ -329,33 +384,42 @@ def get_engine() -> PaperEngine:
             candles["hyperliquid"] = hl.candles
         _engine = PaperEngine(ledger, scouts, SafetyAgent(), default_strategies(), DebateAgent(),
                               RiskAgent(), ExecutorAgent(*brokers), candles_fn=candles,
-                              research=ResearchAgent(ledger), bench_fn=bench_prices)
+                              research=ResearchAgent(ledger), bench_fn=bench_prices, llm=LLMDecider())
     return _engine
 
 
-def start():
+def scheduler() -> BackgroundScheduler:
+    """One background scheduler shared by the paper loop and the live loop (separate jobs)."""
     global _scheduler
-    eng = get_engine()
     if _scheduler is None:
         _scheduler = BackgroundScheduler()
-        _scheduler.add_job(eng.run_cycle, "interval", seconds=cfg.PAPER_CYCLE_SEC, id="paper_cycle",
-                           max_instances=1, coalesce=True, next_run_time=datetime.now())
         _scheduler.start()
+    return _scheduler
+
+
+def start():
+    eng = get_engine()
+    sch = scheduler()
+    if sch.get_job("paper_cycle") is None:
+        sch.add_job(eng.run_cycle, "interval", seconds=cfg.PAPER_CYCLE_SEC, id="paper_cycle",
+                    max_instances=1, coalesce=True, next_run_time=datetime.now())
     else:
-        _scheduler.resume()
+        sch.resume_job("paper_cycle")
     eng.ledger.set_state("running", True)
     return {"status": "started", "mode": "PAPER", "interval_sec": cfg.PAPER_CYCLE_SEC}
 
 
 def stop():
-    if _scheduler:
-        _scheduler.pause()
+    job = scheduler().get_job("paper_cycle")
+    if job:
+        job.pause()
     get_engine().ledger.set_state("running", False)
     return {"status": "stopped", "mode": "PAPER"}
 
 
 def is_running() -> bool:
-    return _scheduler is not None and _scheduler.state == 1 and get_engine().ledger.get_state("running", False)
+    job = _scheduler.get_job("paper_cycle") if _scheduler else None
+    return bool(job and job.next_run_time) and get_engine().ledger.get_state("running", False)
 
 
 def heartbeat_ok() -> bool:

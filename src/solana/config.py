@@ -91,3 +91,22 @@ MARKET_PROFILES = {
 ARBITRUM_RPC_URL = os.getenv("ARBITRUM_RPC_URL", "https://arb1.arbitrum.io/rpc")
 ARBITRUM_USDC = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"   # native USDC on Arbitrum One
 HYPERLIQUID_TESTNET_INFO_URL = "https://api.hyperliquid-testnet.xyz/info"
+
+# ─── Hyperliquid LIVE (real orders). Testnet by default; mainnet needs LIVE_TRADING=1 as well. ───
+HL_NETWORK = os.getenv("HL_NETWORK", "testnet")                 # testnet | mainnet
+HL_ACCOUNT_ADDRESS = os.getenv("HL_ACCOUNT_ADDRESS", "")       # your MetaMask 0x address (public)
+# HL_API_WALLET_KEY is read directly from the environment by hl_live and never stored in config/logs
+LIVE_TRADING_ALLOWED = os.getenv("LIVE_TRADING", "0") == "1"
+LIVE_DB_PATH = os.getenv("LIVE_DB_PATH", "./live.db")
+LIVE_CYCLE_SEC = _i("LIVE_CYCLE_SEC", 300)
+LIVE_MAX_CAPITAL_USD = _f("LIVE_MAX_CAPITAL_USD", 20.0)        # the bot never sizes off more than this
+LIVE_MAX_POSITION_USD = _f("LIVE_MAX_POSITION_USD", 12.0)      # Hyperliquid minimum order is $10
+LIVE_MAX_POSITIONS = _i("LIVE_MAX_POSITIONS", 1)
+LIVE_MAX_DAILY_LOSS_PCT = _f("LIVE_MAX_DAILY_LOSS_PCT", 0.10)
+LIVE_MAX_ENTRIES_PER_DAY = _i("LIVE_MAX_ENTRIES_PER_DAY", 3)
+HL_LIVE_MARKETS = [m for m in os.getenv("HL_LIVE_MARKETS", "BTC,ETH,SOL,xyz:GOLD,xyz:SILVER").split(",") if m]
+
+# ─── Model arena: one paper bot per LLM, same markets and risk limits, separate portfolios ───
+ARENA_MODELS = [m for m in os.getenv("ARENA_MODELS", "claude-opus-5-5,claude-sonnet-5-5,claude-haiku-5-5").split(",") if m]
+ARENA_START_USDC = _f("ARENA_START_USDC", 100.0)
+ARENA_CYCLE_SEC = _i("ARENA_CYCLE_SEC", 900)

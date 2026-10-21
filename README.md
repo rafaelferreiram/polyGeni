@@ -43,6 +43,25 @@ make backtest    # walk-forward reports in reports/
 
 Lesson applied from Alpha Arena (LLMs trading alone lost 30–60%): **rules decide, the LLM only analyses and vetoes.**
 
+### Real trading on Hyperliquid (testnet first) — `src/solana/hl_live.py`
+Same engine and agents; only the broker is real (`HyperliquidLiveBroker`, official `hyperliquid-python-sdk`).
+- **Two keys:** an API ("agent") wallet in `.env` (`HL_ACCOUNT_ADDRESS`, `HL_API_WALLET_KEY` — it can trade but
+  cannot withdraw) **and** the dashboard's "Ativar trading automático" button. Mainnet also needs `LIVE_TRADING=1`.
+- **Hard limits:** 1x isolated, long-only, `LIVE_MAX_CAPITAL_USD` / `LIVE_MAX_POSITION_USD` caps, one position,
+  daily loss → kill switch, Hyperliquid's $10 minimum respected.
+- **Protection on the exchange:** every entry gets reduce-only stop-loss and take-profit trigger orders; if they
+  cannot be placed the position is closed immediately.
+- **Idempotent:** client order ids derived from our order id; a crash after submit is never resubmitted.
+- **Exchange is the truth:** native stop/TP exits are recorded from fills; untracked positions or equity drift trip
+  the kill switch. Separate ledger `live.db`. "Fechar tudo" flattens and disarms; testnet has a "test order" button.
+
+### Decision mode and model arena
+- **Regras | LLM** switch: in LLM mode an LLM (`llm_trader.py`) decides BUY/HOLD per market and SELL/HOLD for open
+  positions, once per closed 1h candle. Risk still sets size and limits; LLM stops are clamped to 1–10%.
+- **Arena** (`arena.py`): one paper bot per model (`ARENA_MODELS`, default Opus 5.5 / Sonnet 5.5 / Haiku 5.5),
+  same markets and limits, separate ledgers, leaderboard in the dashboard. The real account uses one chosen model.
+- Cost: roughly 216 calls/day per model at 9 markets × 24 candles (Opus ~$9/day, Sonnet ~$4, Haiku ~$0.2).
+
 ### Venues (pluggable `Broker` interface: buy / sell / mark / accrue)
 - `PaperBroker` (Jupiter): real quote incl. route & price impact, + `PAPER_SLIPPAGE_BPS` + base/priority fee.
 - `HyperliquidPaperBroker`: public Info API only (`l2Book`, `metaAndAssetCtxs` with `dex:"xyz"` for HIP-3,

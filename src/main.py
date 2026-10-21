@@ -38,3 +38,5 @@ def startup():
     logging.getLogger("main").info("polyGeni started. DB initialized.")
     if solana_cfg.PAPER_AUTOSTART:
         paper_engine.start()
+    from src.solana import hl_live
+    hl_live.schedule()   # the live job only trades while armed (state persists in live.db)

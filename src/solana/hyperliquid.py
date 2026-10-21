@@ -36,8 +36,8 @@ def coin_of(instrument: str) -> str:
     return instrument[3:]
 
 
-def info(body: dict):
-    return request_json("POST", cfg.HYPERLIQUID_INFO_URL, json=body)
+def info(body: dict, url: str | None = None):
+    return request_json("POST", url or cfg.HYPERLIQUID_INFO_URL, json=body)
 
 
 def l2_book(coin: str) -> dict:
@@ -48,24 +48,24 @@ def l2_book(coin: str) -> dict:
             "asks": [(float(l["px"]), float(l["sz"])) for l in asks]}
 
 
-_ctx_cache: dict[str, tuple[float, dict]] = {}
+_ctx_cache: dict[tuple, tuple[float, dict]] = {}
 
 
-def asset_ctxs(dex: str = "") -> dict[str, dict]:
+def asset_ctxs(dex: str = "", url: str | None = None) -> dict[str, dict]:
     """coin -> {meta..., ctx...} for one perp dex, cached 60s."""
-    hit = _ctx_cache.get(dex)
+    hit = _ctx_cache.get((url, dex))
     if hit and time.time() - hit[0] < 60:
         return hit[1]
     body = {"type": "metaAndAssetCtxs", **({"dex": dex} if dex else {})}
-    meta, ctxs = info(body)
+    meta, ctxs = info(body, url)
     out = {a["name"]: {**a, **c} for a, c in zip(meta["universe"], ctxs)}
-    _ctx_cache[dex] = (time.time(), out)
+    _ctx_cache[(url, dex)] = (time.time(), out)
     return out
 
 
-def asset_ctx(coin: str) -> dict:
+def asset_ctx(coin: str, url: str | None = None) -> dict:
     dex, full = split_coin(coin)
-    ctx = asset_ctxs(dex).get(full)
+    ctx = asset_ctxs(dex, url).get(full)
     if ctx is None:
         raise RuntimeError(f"unknown Hyperliquid market {full}")
     return ctx
@@ -82,11 +82,12 @@ def taker_fee_bps(ctx: dict) -> float:
     return BASE_TAKER_BPS * mult
 
 
-def candles(coin: str, interval: str = "1h", start_ms: int | None = None, end_ms: int | None = None) -> list[dict]:
+def candles(coin: str, interval: str = "1h", start_ms: int | None = None, end_ms: int | None = None,
+            url: str | None = None) -> list[dict]:
     end_ms = end_ms or int(time.time() * 1000)
     start_ms = start_ms or end_ms - 250 * 3600 * 1000
     rows = info({"type": "candleSnapshot", "req": {"coin": split_coin(coin)[1], "interval": interval,
-                                                  "startTime": start_ms, "endTime": end_ms}})
+                                                  "startTime": start_ms, "endTime": end_ms}}, url)
     return [dict(t=r["t"] // 1000, open=float(r["o"]), high=float(r["h"]), low=float(r["l"]),
                  close=float(r["c"]), volume=float(r["v"]) * float(r["c"])) for r in rows]
 

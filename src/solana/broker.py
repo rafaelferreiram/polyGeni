@@ -34,6 +34,10 @@ class Broker:
         """Periodic carrying costs (e.g. perp funding). Spot venues have none."""
         return 0.0
 
+    def sync(self) -> list[str]:
+        """Live brokers: record exits that happened on the venue (native stops) and report mismatches."""
+        return []
+
 
 class PaperBroker(Broker):
     """Solana spot via Jupiter quotes."""

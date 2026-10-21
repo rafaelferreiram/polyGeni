@@ -35,26 +35,109 @@ function table(id, head, rows) {
     `<tbody>${rows.length ? rows.join("") : `<tr><td colspan="${head.length}" class="muted">Ainda nada</td></tr>`}</tbody>`;
 }
 
-// ─── controls ───
-let lastStatus = null;
-async function act(path) {
-  try { await api(path, "POST"); } catch (e) { alert(e.message); }
-  safe(refreshLive);
+// ─── controls: every button shows "working…", then a visible result ───
+let lastStatus = null, lastLive = null;
+let toastTimer;
+function toast(msg, err = false) {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.className = `toast${err ? " err" : ""}`;
+  t.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => (t.hidden = true), err ? 7000 : 3500);
 }
-function toggleRun() { act(lastStatus?.running ? "/stop" : "/start"); }
-async function kill() {
-  const st = await api("/status");
-  if (st.kill_switch.active) {
-    if (confirm("Rearmar o kill switch e permitir novas entradas?")) await api("/kill-switch/reset", "POST", { reason: "dashboard" });
-  } else if (confirm("Ativar o kill switch? Bloqueia novas entradas; as saídas continuam.")) {
-    await api("/kill-switch", "POST", { reason: "dashboard" });
+async function run(btn, busyLabel, fn, okMsg) {
+  const label = btn.textContent;
+  btn.disabled = true;
+  btn.classList.add("busy");
+  btn.textContent = busyLabel;
+  try {
+    const res = await fn();
+    toast(typeof okMsg === "function" ? okMsg(res) : okMsg);
+    btn.classList.add("done");
+    setTimeout(() => btn.classList.remove("done"), 1500);
+  } catch (e) {
+    toast(`✖ ${e.message}`, true);
+    btn.textContent = label;
+  } finally {
+    btn.disabled = false;
+    btn.classList.remove("busy");
+    safe(refreshLive); safe(refreshLiveTrading);
   }
-  safe(refreshLive);
+}
+function toggleRun(btn) {
+  const on = lastStatus?.running;
+  run(btn, on ? "A parar…" : "A iniciar…", () => api(on ? "/stop" : "/start", "POST"),
+      on ? "⏸ Bot parado — não abre novas posições" : "✓ Bot a correr 24/7 (um ciclo a cada 5 min)");
+}
+function scanNow(btn) {
+  run(btn, "A pedir análise…", () => api("/cycle", "POST"),
+      (r) => (r.started ? "🔍 Análise iniciada — veja a barra roxa e a sala dos agents" : "Já está uma análise a correr"));
+}
+function kill(btn) {
+  const active = lastStatus?.kill_switch?.active;
+  if (!confirm(active ? "Rearmar o kill switch e permitir novas entradas?" : "Ativar o kill switch? Bloqueia novas entradas; as saídas continuam.")) return;
+  run(btn, active ? "A rearmar…" : "A ativar…",
+      () => api(active ? "/kill-switch/reset" : "/kill-switch", "POST", { reason: "dashboard" }),
+      active ? "✓ Kill switch rearmado" : "🛑 Kill switch ativo — sem novas entradas");
+}
+function setMode(mode, btn) {
+  run(btn, mode === "llm" ? "A ligar LLM…" : "A ligar regras…", async () => {
+    await api("/decision-mode", "POST", { mode, target: "paper" });
+    await api("/decision-mode", "POST", { mode, target: "live" });
+  }, mode === "llm" ? "🧠 O LLM passa a decidir compras e vendas (o Risk mantém os limites)" : "✓ Decisões por regras determinísticas");
+}
+
+// ─── real trading (Hyperliquid) ───
+function toggleArm(btn) {
+  const armed = lastLive?.armed;
+  if (!armed) {
+    const net = lastLive?.network === "mainnet" ? "MAINNET COM DINHEIRO REAL" : "testnet (dinheiro de teste)";
+    if (!confirm(`Ativar trading automático em ${net}?\nLimites: capital ${usd(lastLive?.limits?.max_capital_usd, 0)}, posição ${usd(lastLive?.limits?.max_position_usd, 0)}, 1x, stop obrigatório na exchange.`)) return;
+  }
+  run(btn, armed ? "A desativar…" : "A verificar conta e ativar…", () => api(armed ? "/live/disarm" : "/live/arm", "POST"),
+      armed ? "⏸ Trading real desativado (stops na exchange mantêm-se)" : (r) => `✓ Trading automático ATIVO em ${r.network} — saldo ${usd(r.balance)}`);
+}
+function flatten(btn) {
+  if (!confirm("Fechar TODAS as posições reais a mercado e desativar o trading automático?")) return;
+  run(btn, "A fechar posições…", () => api("/live/flatten", "POST"),
+      (r) => (r.errors.length ? `Fechadas: ${r.closed.join(", ") || "nenhuma"} · erros: ${r.errors.join("; ")}` : `✓ Fechadas: ${r.closed.join(", ") || "nenhuma posição aberta"}`));
+}
+function testOrder(btn) {
+  run(btn, "A enviar ordem de teste…", () => api("/live/test-order", "POST"),
+      (r) => (r.position ? `✓ Ordem de teste executada: ${r.position.symbol} com stop e alvo na exchange` : `Sem ordem: ${(r.cycle?.error || "ver o feed")}`));
+}
+async function refreshLiveTrading() {
+  const s = await api("/live/status");
+  lastLive = s;
+  const net = document.getElementById("net-pill");
+  net.textContent = s.network.toUpperCase();
+  net.className = `pill ${s.network}`;
+  const arm = document.getElementById("arm-pill");
+  arm.textContent = s.kill_switch.active ? "KILL SWITCH" : s.armed ? "ATIVO" : "DESATIVADO";
+  arm.className = `pill ${s.armed && !s.kill_switch.active ? "armed" : ""}`;
+  const ready = !s.config.problems.length;
+  const btn = document.getElementById("btn-arm");
+  if (!btn.classList.contains("busy")) btn.textContent = s.armed ? "Desativar trading automático" : "Ativar trading automático";
+  btn.disabled = !ready && !s.armed;
+  document.getElementById("btn-test").hidden = !(s.armed && s.network === "testnet");
+  document.getElementById("live-bal").textContent = s.exchange_balance !== undefined ? usd(s.exchange_balance) : "–";
+  document.getElementById("live-pos").textContent = s.positions.length ? s.positions.map((p) => p.symbol).join(", ") : "0";
+  document.getElementById("live-pnl").innerHTML = pnl(s.trades.reduce((x, t) => x + t.pnl_usd, 0));
+  const L = s.limits;
+  document.getElementById("live-limits").innerHTML = `capital ${usd(L.max_capital_usd, 0)} · posição ${usd(L.max_position_usd, 0)} · ${L.max_positions} de cada vez<br>1x só compra · perda diária ${pct(L.max_daily_loss_pct)} · stop na exchange`;
+  document.getElementById("live-setup").innerHTML = ready ? (s.exchange_error ? `<span class="red">Hyperliquid: ${esc(s.exchange_error)}</span>` : "")
+    : `<b>Para ativar falta:</b><ul class="check">${s.config.problems.map((p) => `<li>⬜ ${esc(p)}</li>`).join("")}</ul>
+       Passos: MetaMask → depositar USDC na Hyperliquid → criar API wallet em More → API → pôr <code>HL_ACCOUNT_ADDRESS</code> e <code>HL_API_WALLET_KEY</code> no <code>.env</code> → reiniciar.`;
+  document.getElementById("live-feed").innerHTML = s.decisions.slice(0, 8).map((d) => `
+    <div class="fi"><span class="w">${ago(d.ts)}</span><span><span class="k-${esc(d.kind)}">${KIND[d.kind] || esc(d.kind)}</span>
+    <b>${esc(d.symbol || "")}</b> — ${esc(d.reason)}</span></div>`).join("");
 }
 
 // ─── live agent room ───
 const AGENTS = [
   ["scout", "🔭", "Scout", "Procura mercados com volume e liquidez"],
+  ["llm", "🧠", "LLM trader", "Decide comprar ou vender (modo LLM)"],
   ["safety", "🛡️", "Safety", "Anti-rug: rejeita o que não consegue verificar"],
   ["mean_reversion", "🎯", "Mean reversion", "Compra quedas exageradas"],
   ["momentum", "🚀", "Momentum", "Compra rompimentos com volume"],
@@ -116,7 +199,8 @@ function renderHead(s) {
 }
 
 const KIND = { entry: "🟢 compra", exit: "🔵 venda", veto: "🟡 bloqueio", error: "🔴 erro", kill_switch: "🛑 kill switch",
-               reconcile: "🧾 reconciliação", pause: "⏸ pausa", resume: "▶ retoma" };
+               reconcile: "🧾 reconciliação", pause: "⏸ pausa", resume: "▶ retoma", arm: "🔓 ativado", disarm: "🔒 desativado",
+               mode: "🔀 modo" };
 
 function renderFeed(decisions, s) {
   const lc = s.last_cycle || {};
@@ -144,6 +228,18 @@ function renderKpis(s, positions) {
   document.getElementById("btn-run").textContent = s.running ? "Parar" : "Iniciar 24/7";
   document.getElementById("btn-kill").textContent = s.kill_switch.active ? "Rearmar kill switch" : "Kill switch";
   nextCycleAt = s.running && s.heartbeat ? new Date(s.heartbeat.ts).getTime() + s.cycle_interval_sec * 1000 : null;
+  // scanning indicator: visible whenever a cycle is running (scheduler or "Analisar agora")
+  const scanning = s.scanning || (s.live?.running && Date.now() - new Date(s.live.ts) < 60000);
+  const bar = document.getElementById("scanbar");
+  bar.hidden = !scanning;
+  if (scanning) {
+    const who = (AGENTS.find(([n]) => n === s.live?.agent) || [])[2];
+    document.getElementById("scan-text").textContent = `A analisar o mercado (ciclo #${s.cycle})${who ? ` — ${who} a trabalhar` : ""}…`;
+  }
+  const scanBtn = document.getElementById("btn-scan");
+  if (!scanBtn.classList.contains("busy")) scanBtn.disabled = !!scanning;
+  for (const m of ["rules", "llm"]) document.getElementById(`mode-${m}`).classList.toggle("on", s.decision_mode === m);
+  document.getElementById("mode-llm").title = s.llm_available ? "O LLM decide compras e vendas" : "Precisa de ANTHROPIC_API_KEY no .env";
 }
 
 async function refreshLive() {
@@ -181,14 +277,15 @@ async function connectWallet(kind) {
     }
     await api("/wallets", "POST", { address, label });
     safe(loadWallets);
-  } catch (e) { alert(e.message || e); }
+    toast(`✓ ${label} ligada: ${short(address)} (só leitura)`);
+  } catch (e) { toast(`✖ ${e.message || e}`, true); }
 }
 
 async function addWallet(ev) {
   ev.preventDefault();
   const el = document.getElementById("w-addr");
   try { await api("/wallets", "POST", { address: el.value.trim(), label: el.value.trim().startsWith("0x") ? "EVM" : "Solana" }); el.value = ""; }
-  catch (e) { alert(e.message); }
+  catch (e) { toast(`✖ ${e.message}`, true); }
   safe(loadWallets);
   return false;
 }
@@ -295,18 +392,18 @@ async function move(ev, kind) {
   ev.preventDefault();
   const input = document.getElementById(kind === "deposit" ? "dep" : "wd");
   try { await api(`/funds/${kind}`, "POST", { amount_usd: Number(input.value), note: "dashboard" }); input.value = ""; }
-  catch (e) { alert(e.message); }
+  catch (e) { toast(`✖ ${e.message}`, true); }
   safe(loadSecondary); safe(refreshLive);
   return false;
 }
 async function togglePause(market, paused) {
-  try { await api("/markets/pause", "POST", { market, paused }); } catch (e) { alert(e.message); }
+  try { await api("/markets/pause", "POST", { market, paused }); } catch (e) { toast(`✖ ${e.message}`, true); }
   safe(loadSecondary);
 }
 async function researchNow(ev) {
   ev.preventDefault();
   const el = document.getElementById("r-mint");
-  try { await api("/research", "POST", { mint: el.value.trim() }); el.value = ""; } catch (e) { alert(e.message); }
+  try { await api("/research", "POST", { mint: el.value.trim() }); el.value = ""; } catch (e) { toast(`✖ ${e.message}`, true); }
   safe(loadSecondary);
   return false;
 }
@@ -332,10 +429,42 @@ async function loadSecondary() {
 
 // ─── loops: live every 2.5s, the rest less often ───
 async function safe(fn) { try { await fn(); } catch (e) { console.warn(e); } }
-safe(refreshLive); safe(loadWallets); safe(loadTrades); safe(loadSecondary);
+safe(refreshLive); safe(refreshLiveTrading); safe(loadWallets); safe(loadTrades); safe(loadSecondary);
+setInterval(() => safe(refreshLiveTrading), 10000);
 setTimeout(() => safe(loadChart), 500);
 setInterval(() => safe(refreshLive), 2500);
 setInterval(() => lastStatus && renderHead(lastStatus), 1000);
 setInterval(() => { safe(loadTrades); safe(loadChart); }, 20000);
 setInterval(() => safe(loadSecondary), 30000);
 setInterval(() => safe(loadWallets), 60000);
+
+// ─── model arena ───
+let lastArena = null;
+async function loadArena() {
+  const a = await api("/arena");
+  lastArena = a;
+  const btn = document.getElementById("btn-arena");
+  if (!btn.classList.contains("busy")) btn.textContent = a.running ? "Parar arena" : "Iniciar arena";
+  const sel = document.getElementById("live-model");
+  if (document.activeElement !== sel) {
+    sel.innerHTML = a.models.map((m) => `<option ${m === a.live_model ? "selected" : ""}>${esc(m)}</option>`).join("");
+  }
+  table("arena-table", ["#", "Modelo", "Património", "Retorno", "Trades", "Acerto", "Aberto", "Última decisão"],
+    a.leaderboard.map((r, i) => `<tr><td>${i + 1}</td><td><b>${esc(r.model)}</b>${r.running ? "" : ' <span class="muted">(parado)</span>'}${r.kill_switch ? ' <span class="red">kill</span>' : ""}</td>
+      <td>${usd(r.equity)}</td><td><span class="${r.twr >= 0 ? "green" : "red"}">${pct(r.twr)}</span><br><span class="muted">BTC ${pct(r.hold_btc)}</span></td>
+      <td>${r.trades}</td><td>${r.win_rate === null ? "–" : pct(r.win_rate)}</td><td>${esc(r.open.join(", ")) || "–"}</td>
+      <td class="muted">${r.last_decision ? `${esc(r.last_decision.market)}: <b>${esc(r.last_decision.action)}</b> — ${esc(r.last_decision.reason || "")}` : "ainda sem decisões"}</td></tr>`));
+}
+function toggleArena(btn) {
+  const on = !lastArena?.running;
+  run(btn, on ? "A iniciar arena…" : "A parar arena…", async () => { await api("/arena", "POST", { on }); await loadArena(); },
+      on ? "🏁 Arena iniciada — cada modelo decide na sua carteira simulada" : "⏸ Arena parada");
+}
+function setLiveModel(sel) {
+  api("/live/model", "POST", { model: sel.value })
+    .then(() => toast(`✓ A conta real passa a ser decidida por ${sel.value} (no modo LLM)`))
+    .catch((e) => toast(`✖ ${e.message}`, true));
+}
+
+safe(loadArena);
+setInterval(() => safe(loadArena), 10000);

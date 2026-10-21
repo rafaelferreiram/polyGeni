@@ -93,6 +93,33 @@
     details.more[open] summary { margin-bottom: 10px; }
     .k-entry { color: var(--green); } .k-exit { color: var(--accent); } .k-veto { color: var(--yellow); } .k-error, .k-kill_switch { color: var(--red); }
     main a { color: var(--accent); }
+    .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+    .seg button { border: 0 !important; border-radius: 0 !important; background: transparent; color: var(--muted); padding: 6px 12px; cursor: pointer; }
+    .seg button.on { background: var(--accent) !important; color: #fff !important; }
+    button[disabled] { opacity: .6; cursor: progress !important; }
+    button.busy::before { content: ""; display: inline-block; width: 10px; height: 10px; margin-right: 6px; border: 2px solid currentColor;
+                          border-right-color: transparent; border-radius: 50%; animation: rot .7s linear infinite; vertical-align: -1px; }
+    button.done { box-shadow: 0 0 0 2px var(--green) !important; }
+    .scanbar { position: sticky; top: 0; z-index: 20; background: var(--accent); color: #fff; font-size: 13px; font-weight: 600;
+               padding: 7px 16px; display: flex; gap: 10px; align-items: center; justify-content: center; }
+    .spin { width: 12px; height: 12px; border: 2px solid #fff; border-right-color: transparent; border-radius: 50%; animation: rot .7s linear infinite; }
+    @keyframes rot { to { transform: rotate(360deg); } }
+    .toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); z-index: 30; background: var(--surface);
+             border: 1px solid var(--border); border-left: 4px solid var(--green); padding: 10px 16px; border-radius: 8px;
+             font-size: 13.5px; max-width: min(560px, calc(100vw - 32px)); box-shadow: 0 8px 30px rgba(0,0,0,.4); }
+    .toast.err { border-left-color: var(--red); }
+    .pill { font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 999px; background: var(--bg); color: var(--muted); border: 1px solid var(--border); }
+    .pill.testnet { color: var(--yellow); border-color: var(--yellow); }
+    .pill.mainnet { color: var(--red); border-color: var(--red); }
+    .pill.armed { color: #fff; background: var(--green); border-color: var(--green); }
+    .live-panel { border-color: rgba(127,90,240,.5); }
+    .live-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin-bottom: 8px; }
+    .live-grid .l { color: var(--muted); font-size: 12px; }
+    .live-grid .v { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .live-grid .s { font-size: 12px; color: var(--muted); line-height: 1.5; }
+    .big { padding: 8px 16px !important; font-weight: 600; }
+    .check { list-style: none; padding: 0; margin: 6px 0; }
+    .check li { margin: 3px 0; }
     @media (max-width: 900px) {
       .two { grid-template-columns: 1fr; }
       .stations { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
@@ -111,14 +138,39 @@
     <div class="logo">⚡ polyGeni <span>agents</span></div>
     <div class="ctrls">
       <span id="run-badge" class="badge badge-off">PARADO</span>
-      <button class="btn-primary" id="btn-run" onclick="toggleRun()">Iniciar 24/7</button>
-      <button class="btn-danger" id="btn-kill" onclick="kill()">Kill switch</button>
+      <div class="seg" role="group" aria-label="Quem decide os trades">
+        <button id="mode-rules" onclick="setMode('rules', this)">Regras</button>
+        <button id="mode-llm" onclick="setMode('llm', this)">🧠 LLM</button>
+      </div>
+      <button id="btn-scan" onclick="scanNow(this)">🔍 Analisar agora</button>
+      <button class="btn-primary" id="btn-run" onclick="toggleRun(this)">Iniciar 24/7</button>
+      <button class="btn-danger" id="btn-kill" onclick="kill(this)">Kill switch</button>
     </div>
   </header>
 
+  <div class="scanbar" id="scanbar" hidden><span class="spin"></span><span id="scan-text">A analisar o mercado…</span></div>
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
   <main>
+    <section class="panel live-panel" id="real">
+      <h2><span>Trading real <span class="pill" id="net-pill">–</span> <span class="pill" id="arm-pill">–</span></span>
+        <span class="ctrls">
+          <button class="btn-primary big" id="btn-arm" onclick="toggleArm(this)">Ativar trading automático</button>
+          <button id="btn-test" onclick="testOrder(this)" hidden>Ordem de teste</button>
+          <button class="btn-danger" id="btn-flat" onclick="flatten(this)">Fechar tudo</button>
+        </span></h2>
+      <div class="live-grid">
+        <div><div class="l">Saldo na Hyperliquid</div><div class="v" id="live-bal">–</div></div>
+        <div><div class="l">Posições reais</div><div class="v" id="live-pos">–</div></div>
+        <div><div class="l">Lucro real</div><div class="v" id="live-pnl">–</div></div>
+        <div><div class="l">Limites duros</div><div class="s" id="live-limits">–</div></div>
+      </div>
+      <div id="live-setup" class="note"></div>
+      <div class="feed" id="live-feed" style="max-height:160px"></div>
+    </section>
+
     <section class="kpis">
-      <div class="kpi"><div class="l">Património (paper)</div><div class="v" id="k-equity">–</div><div class="s" id="k-cash">–</div></div>
+      <div class="kpi"><div class="l">Património (simulado)</div><div class="v" id="k-equity">–</div><div class="s" id="k-cash">–</div></div>
       <div class="kpi"><div class="l">Lucro total</div><div class="v" id="k-pnl">–</div><div class="s" id="k-pnl-s">–</div></div>
       <div class="kpi"><div class="l">Hoje vs segurar SOL</div><div class="v" id="k-day">–</div><div class="s" id="k-day-s">–</div></div>
       <div class="kpi"><div class="l">Posições · trades</div><div class="v" id="k-pos">–</div><div class="s" id="k-pos-s">–</div></div>
@@ -127,6 +179,17 @@
     <section class="panel">
       <h2><span>Sala dos agents <span class="tag">ao vivo</span></span><span class="room-head" id="room-head">–</span></h2>
       <div class="room"><div class="stations" id="stations"></div></div>
+    </section>
+
+    <section class="panel" id="arena">
+      <h2><span>Arena de modelos <span class="tag">paper · mesmo objetivo</span></span>
+        <span class="ctrls">
+          <label class="note" for="live-model">Modelo da conta real</label>
+          <select id="live-model" onchange="setLiveModel(this)"></select>
+          <button id="btn-arena" onclick="toggleArena(this)">Iniciar arena</button>
+        </span></h2>
+      <p class="note">Cada modelo tem a sua carteira simulada de $100, os mesmos mercados (BTC, ETH, SOL, ouro, prata) e os mesmos limites de risco. Corre a cada 15 min; custa tokens de API.</p>
+      <div class="tbl"><table id="arena-table"></table></div>
     </section>
 
     <div class="two">
@@ -201,6 +264,6 @@
   </main>
 
   <script src="/static/chart.min.js"></script>
-  <script src="/static/paper.js?v=4"></script>
+  <script src="/static/paper.js?v=7"></script>
 </body>
 </html>

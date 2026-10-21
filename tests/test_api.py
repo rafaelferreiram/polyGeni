@@ -54,8 +54,13 @@ def test_deposit_withdraw_validation(client, local):
 
 
 def test_withdraw_cannot_touch_cash_backing_positions(client, local, ledger):
-    client.post("/api/paper/cycle", headers=local)        # opens a $10 position (1x, fully paid)
-    assert ledger.positions()
+    import time
+    assert client.post("/api/paper/cycle", headers=local).json()["started"]   # scan runs in the background
+    for _ in range(50):
+        if ledger.positions():
+            break
+        time.sleep(0.05)
+    assert ledger.positions()                              # a $10 position (1x, fully paid)
     assert client.post("/api/paper/funds/withdraw", json={"amount_usd": 95}, headers=local).status_code == 400
 
 

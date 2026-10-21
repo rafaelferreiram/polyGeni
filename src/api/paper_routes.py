@@ -4,6 +4,7 @@ Deposits/withdrawals here move SIMULATED money only; wallets are watch-only.
 """
 import hmac
 import os
+import threading
 import re
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -127,6 +128,9 @@ def status():
         "venues": eng.executor.venues,
         "paused": eng.paused(),
         "live": eng.ledger.get_state("live", {}),
+        "decision_mode": eng.decision_mode(),
+        "llm_available": bool(eng.llm and eng.llm.enabled),
+        "scanning": eng.scanning(),
         "debate_llm": {"enabled": eng.debate.enabled, "model": cfg.DEBATE_MODEL if eng.debate.enabled else None,
                        "mcp_servers": bool(cfg.DEBATE_MCP_SERVERS)},
         "limits": {"max_position_pct": eng.risk.max_pos_pct, "max_exposure_pct": eng.risk.max_exposure_pct,
@@ -205,7 +209,12 @@ def stop():
 
 @router.post("/cycle", dependencies=LOCAL)
 def run_cycle():
-    return engine.get_engine().run_cycle()
+    """Start a scan in the background; the UI follows progress through /status (scanning, live)."""
+    eng = engine.get_engine()
+    if eng.scanning():
+        return {"started": False, "reason": "a scan is already running"}
+    threading.Thread(target=eng.run_cycle, daemon=True).start()
+    return {"started": True}
 
 
 class KillSwitch(BaseModel):
@@ -356,3 +365,104 @@ def readiness():
     return {"mode": "PAPER", "ready": all(c["ok"] for c in checks), "checks": checks,
             "note": "Mesmo com tudo verde, a execução real (fase 3) ainda não existe neste build: exige "
                     "decisão explícita, hot wallet dedicada com limites e LIVE_TRADING=1."}
+
+
+# ─── real trading on Hyperliquid (testnet first) ───
+
+def _live_call(fn, *a):
+    from src.solana import hl_live
+    try:
+        return getattr(hl_live, fn)(*a)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        raise HTTPException(502, f"Hyperliquid: {e}")
+
+
+@router.get("/live/status")
+def live_status():
+    return _live_call("status")
+
+
+@router.post("/live/arm", dependencies=LOCAL)
+def live_arm():
+    return _live_call("arm")
+
+
+@router.post("/live/disarm", dependencies=LOCAL)
+def live_disarm():
+    return _live_call("disarm", "dashboard")
+
+
+@router.post("/live/flatten", dependencies=LOCAL)
+def live_flatten():
+    return _live_call("flatten", "manual 'close everything' from dashboard")
+
+
+@router.post("/live/test-order", dependencies=LOCAL)
+def live_test_order():
+    return _live_call("test_order")
+
+
+@router.post("/live/kill-switch/reset", dependencies=LOCAL)
+def live_kill_reset():
+    from src.solana import hl_live
+    hl_live.get_live_engine().reset_kill_switch("dashboard")
+    return hl_live.get_live_engine().kill_switch()
+
+
+class Mode(BaseModel):
+    mode: str                 # rules | llm
+    target: str = "paper"     # paper | live
+
+
+@router.post("/decision-mode", dependencies=LOCAL)
+def set_mode(req: Mode):
+    if req.target == "live":
+        from src.solana import hl_live
+        eng = hl_live.get_live_engine()
+    else:
+        eng = engine.get_engine()
+    try:
+        eng.set_decision_mode(req.mode)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"target": req.target, "mode": eng.decision_mode()}
+
+
+# ─── model arena (paper) and the model that runs the real account ───
+
+@router.get("/arena")
+def arena_board():
+    from src.solana import arena, hl_live
+    return {"mode": "PAPER", "models": cfg.ARENA_MODELS, "running": any(r["running"] for r in arena.leaderboard()),
+            "leaderboard": arena.leaderboard(), "live_model": hl_live.get_live_engine().llm.model}
+
+
+class Toggle(BaseModel):
+    on: bool
+
+
+@router.post("/arena", dependencies=LOCAL)
+def arena_toggle(req: Toggle):
+    from src.solana import arena
+    try:
+        return arena.set_running(req.on)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+class LiveModel(BaseModel):
+    model: str
+
+
+@router.post("/live/model", dependencies=LOCAL)
+def live_model(req: LiveModel):
+    from src.solana import hl_live
+    if req.model not in cfg.ARENA_MODELS:
+        raise HTTPException(400, f"model must be one of {cfg.ARENA_MODELS}")
+    eng = hl_live.get_live_engine()
+    eng.llm.model = req.model
+    eng.ledger.set_state("live_model", req.model)
+    eng.ledger.log_decision("mode", reason=f"real account decisions by {req.model}")
+    return {"live_model": req.model}
