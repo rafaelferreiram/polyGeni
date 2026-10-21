@@ -176,6 +176,7 @@ def test_daily_entry_cap(ledger):
     eng.rests_on_goal = False                         # the +20% win would otherwise end the day (daily goal)
     eng.run_cycle()
     price.p = 1.2                                     # TP exit next cycle, strategy still firing
+    eng._entered.clear()                              # as if a new candle brought a fresh signal
     eng.run_cycle()
     assert len(ledger.closed_trades()) == 1
     assert len([f for f in ledger.fills() if f["side"] == "buy"]) == 1
@@ -361,3 +362,14 @@ def test_protected_stop_breakeven_then_trails():
     assert abs(protected_stop(pos, 101.6) - 100.6) < 1e-9         # halfway: stop above entry, 1 ATR below the price
     assert abs(protected_stop(pos, 102.9) - 101.9) < 1e-9         # and it keeps trailing up
     assert protected_stop({**pos, "stop_price": 102.0}, 102.9) is None   # never lowers the stop
+
+
+def test_no_reentry_on_the_same_signal_candle(ledger):
+    """After a take-profit, the same candle's signal (with its stale target) must not buy again."""
+    price = Price(1.0)
+    eng = build(ledger, price)
+    eng.run_cycle()
+    price.p = 1.2                       # target hit -> exit; the strategy still "fires" on the same candle
+    eng.run_cycle()
+    eng.run_cycle()
+    assert len(ledger.closed_trades()) == 1 and ledger.positions() == []

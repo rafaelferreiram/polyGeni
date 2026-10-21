@@ -501,6 +501,12 @@ class PaperEngine:
                 if sig is None:
                     self._agent(strat.name, last_reason=f"{c.symbol}: no signal")
                     continue
+                # one trade per signal: after an exit, the same candle's signal (and its now-stale target) is spent
+                # shortcut: kept in memory, a restart may allow one repeat of the latest signal
+                entered = self.__dict__.setdefault("_entered", set())
+                if (c.mint, strat.name, candles[-1]["t"]) in entered:
+                    self._agent(strat.name, last_reason=f"{c.symbol}: sinal já usado neste candle")
+                    continue
                 stats["signals"] += 1
                 self._agent(strat.name, last_reason=f"{c.symbol}: {sig.reason}", approved=1)
                 strat_vote = Vote(strat.name, True, sig.reason, sig.indicators)
@@ -546,6 +552,7 @@ class PaperEngine:
                     self.ledger.log_decision("error", cycle=self.cycle, mint=c.mint, symbol=c.symbol, strategy=strat.name,
                                              signals=signals, votes=votes, reason=f"executor refused/failed: {e}")
                     continue
+                entered.add((c.mint, strat.name, candles[-1]["t"]))
                 self.reconcile()
                 stats["entries"] += 1
                 self._agent("executor", last_reason=f"bought {c.symbol} ${fill['usd_gross']:.2f}", approved=1)

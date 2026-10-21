@@ -115,7 +115,15 @@ the others must first show ≥ 10 profitable lab trades.
   entries a day, but the real account's trade size, leverage and stops, so evidence piles up faster without changing what
   a trade is. A bot outside `REAL_TRUSTED_BOTS` reaches real money when it has ≥ 20 closed lab trades with ≥ 12 winners, win rate ≥ 60%, profit
   factor ≥ 1.2 and net profit after its AI cost (`GREEN_LIGHT_*`). "Treino intensivo" (`POST /api/paper/arena/train-boost`)
-  gives a bot one lab slot per coin (29), $200 of paper capital and no daily cap for 24h — same entry rules. The AI bot is now also consulted on breakouts,
+  gives a bot one lab slot per coin (29), $200 of paper capital and no daily cap for 24h — same entry rules.
+- **⚡ Turbo do dia** (`POST /api/paper/arena/turbo`, tap a reserve bot's card): until Lisbon midnight the bot analyses the
+  market every minute (`TURBO_CYCLE_SEC`), with every lab slot, no daily cap and, for the AI bot, every coin. From then on
+  it uses fast exits — positions close within 2h (15m twins 1h; `TURBO_MAX_HOLD_H`), also on the real account once
+  promoted — aiming at 10+ lab trades a day. Entry rules, size, stops and targets don't change.
+- **🏆 Ranking**: the bots compete in the lab (same rules, same paper money) by net profit after AI cost or by winning
+  trades; filter titulares / reserva / todos.
+- **One trade per signal**: after a position on a coin exits, the same candle's signal can't buy it again (its target is
+  stale — it once bought above its own take-profit and "took profit" at a loss). The AI bot is now also consulted on breakouts,
   strong whale buying and top-trader entries (still free HOLD when nothing is set up).
 - **Ready to add money?** (`GET /api/paper/account/confidence`): 7 objective checks on the real account — 3 profitable
   days in a row, 10+ trades, win rate ≥ 50%, profit factor ≥ 1.3, AI < 25% of trading profit, net profit > 0, no kill
