@@ -20,6 +20,8 @@ _MIN_INTERVAL = {
     "api.geckoterminal.com": 2.1,
     "api.mainnet-beta.solana.com": 0.5,
     "api.jup.ag": 1.0,
+    "api.hyperliquid.xyz": 0.6,           # weight-based limit per IP; heavy history paging triggers 429s
+    "api.hyperliquid-testnet.xyz": 0.6,
 }
 _last_call: dict[str, float] = {}
 _lock = threading.Lock()
