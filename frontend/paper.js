@@ -35,7 +35,10 @@ const coinIcon = (sym) => {
 };
 const coin = (sym) => `<span class="coin">${coinIcon(sym)}<b>${esc(sym)}</b></span>`;
 const pct = (v) => (v === null || v === undefined ? "–" : `${(v * 100).toFixed(2)}%`);
-const time = (iso) => (iso ? new Date(iso).toLocaleString("pt-BR") : "–");
+// every time on the dashboard is Lisbon time (where the user is), with the date when it is not today
+const TZ = "Europe/Lisbon";
+const lisDay = (d) => d.toLocaleDateString("pt-BR", { timeZone: TZ });
+const time = (iso) => (iso ? new Date(iso).toLocaleString("pt-BR", { timeZone: TZ, day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "–");
 const short = (m) => (m ? `${m.slice(0, 4)}…${m.slice(-4)}` : "");
 const ago = (iso) => {
   const s = Math.max(0, (Date.now() - new Date(iso)) / 1000);
@@ -141,7 +144,15 @@ function setHTML(id, html) {
   if (el.dataset.html !== html) { el.innerHTML = html; el.dataset.html = html; }
 }
 const tipRows = (rows) => `<dl>${rows.filter(([, v]) => v !== null && v !== undefined && v !== "").map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>`;
-const hhmm = (iso) => (iso ? new Date(iso).toLocaleTimeString("pt-BR").slice(0, 5) : "–");
+const hhmm = (iso) => {
+  if (!iso) return "–";
+  const d = new Date(iso), now = new Date();
+  const hm = d.toLocaleTimeString("pt-BR", { timeZone: TZ, hour: "2-digit", minute: "2-digit" });
+  if (lisDay(d) === lisDay(now)) return hm;
+  if (lisDay(d) === lisDay(new Date(now.getTime() + 864e5))) return `amanhã ${hm}`;
+  if (lisDay(d) === lisDay(new Date(now.getTime() - 864e5))) return `ontem ${hm}`;
+  return `${d.toLocaleDateString("pt-BR", { timeZone: TZ, day: "2-digit", month: "2-digit" })} ${hm}`;
+};
 
 // ─── animated bot room ───
 const STATIONS = [
@@ -762,7 +773,7 @@ function renderLogs(force) {
   const atBottom = term.scrollHeight - term.scrollTop - term.clientHeight < 40;
   const debug = document.getElementById("log-debug").checked;
   const rows = logLines.filter((l) => (debug || l.level !== "DEBUG") && (!logSrc || l.source === logSrc || l.source.startsWith(logSrc + ":"))).slice(-600);
-  term.innerHTML = rows.length ? rows.map((l) => `<div class="l ${l.level}"><span class="t">${new Date(l.ts).toLocaleTimeString("pt-BR")}</span> <span class="s ${esc(l.source.split(":")[0])}">[${esc(l.source)}]</span> ${l.level.padEnd(5)} ${esc(l.msg)}</div>`).join("")
+  term.innerHTML = rows.length ? rows.map((l) => `<div class="l ${l.level}"><span class="t">${new Date(l.ts).toLocaleTimeString("pt-BR", { timeZone: TZ })}</span> <span class="s ${esc(l.source.split(":")[0])}">[${esc(l.source)}]</span> ${l.level.padEnd(5)} ${esc(l.msg)}</div>`).join("")
     : '<div class="l DEBUG">aguardando logs… (os bots escrevem aqui a cada passo de cada ciclo)</div>';
   if (atBottom || force) term.scrollTop = term.scrollHeight;
 }

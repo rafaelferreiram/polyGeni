@@ -32,6 +32,7 @@ install() {
     <key>PAPER_CYCLE_SEC</key><string>300</string>
     <key>PAPER_DB_PATH</key><string>./paper.db</string>
     <key>PATH</key><string>/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>TZ</key><string>Europe/Lisbon</string>
   </dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
@@ -42,6 +43,7 @@ install() {
 </plist>
 EOF
   launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
+  for _ in $(seq 1 30); do launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1 || break; sleep 1; done   # bootout is async
   launchctl bootstrap "$DOMAIN" "$PLIST"
   echo "installed: $PLIST (logs: $LOG) — dashboard http://127.0.0.1:8000"
 }

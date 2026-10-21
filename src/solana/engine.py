@@ -335,7 +335,7 @@ class PaperEngine:
         self.ledger.set_state("coffee_until", until)
         self.ledger.set_state("sleep", {})
         self.ledger.set_state("idle_streak", 0)
-        self.ledger.log_decision("coffee", cycle=self.cycle, reason=f"☕ café: acordados e atentos até {_ts(until).astimezone().strftime('%H:%M')}")
+        self.ledger.log_decision("coffee", cycle=self.cycle, reason=f"☕ café: acordados e atentos até {_ts(until).astimezone(cfg.TZ).strftime('%H:%M')}")
         return until
 
     # ─── self-pause: nothing to do → sleep; price moves or open positions → wake ───
@@ -357,7 +357,7 @@ class PaperEngine:
                 self.ledger.log_decision("wake", cycle=self.cycle, mint=mint, reason=f"acordei: o preço mexeu {px / ref - 1:+.1%}")
                 return False
         stats["sleeping_until"] = sleep["until"]
-        self._agent("scout", last_reason=f"dormindo até {_ts(sleep['until']).astimezone().strftime('%H:%M')} — {sleep.get('reason', '')}"[:200])
+        self._agent("scout", last_reason=f"dormindo até {_ts(sleep['until']).astimezone(cfg.TZ).strftime('%H:%M')} — {sleep.get('reason', '')}"[:200])
         return True
 
     def _maybe_sleep(self, stats: dict):

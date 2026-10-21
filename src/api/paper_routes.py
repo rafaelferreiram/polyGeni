@@ -561,7 +561,7 @@ def goals(eng) -> dict:
     today = (hl_live.daily_report(eng, 1) or [{}])[0]
     start = today.get("equity_start") or eng.portfolio().equity
     target_usd = round(start * cfg.DAILY_GOAL_PCT, 4)
-    now = datetime.now().astimezone()
+    now = datetime.now(cfg.TZ)
     cycles_target = int((now.hour * 3600 + now.minute * 60 + now.second) // cfg.LIVE_CYCLE_SEC) or 1
     pnl = today.get("pnl_usd", 0.0) or 0.0
     return {"profit": {"target_usd": target_usd, "target_pct": cfg.DAILY_GOAL_PCT, "done_usd": round(pnl, 4)},

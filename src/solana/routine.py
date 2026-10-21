@@ -70,7 +70,7 @@ def setups(markets: list[str]) -> list[dict]:
 
 def snapshot(base: str, hours: float = 24) -> dict:
     get = lambda path: request_json("GET", f"{base}/api/paper{path}", retries=1, timeout=30)
-    out = {"generated_at": datetime.now().astimezone().isoformat(timespec="minutes"), "window_hours": hours}
+    out = {"generated_at": datetime.now(cfg.TZ).isoformat(timespec="minutes"), "window_hours": hours}
     try:
         for kind in ("real", "sim"):
             out[kind] = summarize_account(get(f"/account?kind={kind}"), get(f"/report/daily?kind={kind}&days=8")["days"], hours)

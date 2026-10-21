@@ -143,7 +143,8 @@ def boost_training(model: str, hours: float = 24) -> dict:
         raise ValueError(f"bot {model} não existe")
     until = (datetime.now(timezone.utc) + timedelta(hours=min(max(hours, 1), 72))).isoformat(timespec="seconds")
     eng.ledger.set_state("train_boost_until", until)
-    eng.ledger.log_decision("boost", reason=f"🚀 treino intensivo até {until[11:16]} UTC: {cfg.TRAIN_BOOST_MAX_POSITIONS} vagas, sem limite diário")
+    local = datetime.fromisoformat(until).astimezone(cfg.TZ).strftime("%d/%m %H:%M")
+    eng.ledger.log_decision("boost", reason=f"🚀 treino intensivo até {local} (Lisboa): {cfg.TRAIN_BOOST_MAX_POSITIONS} vagas, sem limite diário")
     _apply_training_boost(eng)
     return {"until": until}
 

@@ -142,6 +142,9 @@ LAB_SCORE_DAYS = float(os.getenv("LAB_SCORE_DAYS", "30"))   # Coordinator ranks 
 ARENA_START_USDC = _f("ARENA_START_USDC", 20.0)     # each bot gets what the real account would have
 # the lab proves bots faster with more paper capital and slots: same position size, stop and target as the real
 # account (so each trade is valid evidence), but up to LAB_MAX_POSITIONS at once and no low daily entry cap
+# the user's timezone (Lisbon): daily reports, goals, messages and the dashboard all use it
+from zoneinfo import ZoneInfo
+TZ = ZoneInfo(os.getenv("KAIROS_TZ", "Europe/Lisbon"))
 TRAINING_DB_PATH = os.getenv("TRAINING_DB_PATH", "./training.db")   # training center samples (see trainer.py)
 LAB_CAPITAL_USD = _f("LAB_CAPITAL_USD", 100.0)
 LAB_MAX_POSITIONS = _i("LAB_MAX_POSITIONS", 8)
