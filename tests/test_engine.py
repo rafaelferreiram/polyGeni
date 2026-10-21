@@ -217,3 +217,12 @@ def test_coffee_keeps_the_wallet_awake(ledger):
     ledger.set_state("sleep", {"until": until, "reason": "test", "prices": {}})   # even a stale sleep is ignored
     s = eng.run_cycle()
     assert s["entries"] == 1 and "sleeping_until" not in s
+
+
+def test_setup_rank_prefers_oversold_uptrend():
+    from src.solana.engine import _setup_rank
+    up = [{"close": 100 + i * 0.5} for i in range(250)]
+    dip = up[:-5] + [{"close": up[-6]["close"] - 1.5 * k} for k in range(1, 6)]   # pullback, still above EMA200
+    down = [{"close": 300 - i * 0.5} for i in range(250)]
+    ranked = sorted([("up", up), ("dip", dip), ("down", down)], key=lambda r: _setup_rank(r[1]))
+    assert [n for n, _ in ranked] == ["dip", "up", "down"]

@@ -553,7 +553,7 @@ def account(kind: str = "sim"):
         "kill_switch": eng.kill_switch(), "live": led.get_state("live", {}), "agents": led.get_state("agents", {}),
         "limits": {"max_capital_usd": cfg.LIVE_MAX_CAPITAL_USD, "max_position_usd": cfg.LIVE_MAX_POSITION_USD,
                    "max_positions": cfg.LIVE_MAX_POSITIONS, "max_daily_loss_pct": cfg.LIVE_MAX_DAILY_LOSS_PCT,
-                   "markets": cfg.HL_LIVE_MARKETS},
+                   "markets": cfg.HL_MARKETS if kind == "sim" else cfg.HL_LIVE_MARKETS},
     }
     if kind == "real":
         st = hl_live.config_status()

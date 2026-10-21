@@ -70,7 +70,12 @@ Same engine and agents; only the broker is real (`HyperliquidLiveBroker`, offici
 - **☕ Coffee** (button next to the bots, `POST /api/paper/account/coffee`): keeps both wallets (simulation and real) and the whole team awake
   (no self-pause, a scan every cycle) for 4 hours. Entry rules do **not** loosen: in the backtest, accepting shallower
   dips (Bollinger k 1.0–1.5, RSI < 40–45, shorter targets) tripled the trades and turned +2.5% into −4% to −19%.
-- Markets: crypto first (BTC, ETH, SOL, HYPE, XRP); gold/silver with `HL_INCLUDE_METALS=1`.
+- Markets: the whole liquid crypto market on Hyperliquid, not one coin — 24 perps by volume (`HL_BROAD`: BTC, ETH,
+  SOL, HYPE, XRP, BNB, DOGE, ADA, AVAX, LINK, LTC, SUI, NEAR, AAVE, UNI, ARB, TAO, ZEC, XMR, WLD, ENA, ZRO, ONDO, kPEPE)
+  for simulation, lab and real account. Every cycle all of them are scanned and ranked (uptrend first, then the most
+  oversold), so the single position slot goes to the best setup of the moment. Override with `HL_MARKETS` /
+  `HL_LIVE_MARKETS`; gold/silver with `HL_INCLUDE_METALS=1`. Per-coin backtest (208 days, fixed rules): the original 5
+  coins +$2.43 over 54 trades, the 19 new ones −$3.69 over 159 — the wider set is being proven live, watch the lab.
 
 ### Decision mode and model arena
 - **Regras | LLM** switch: in LLM mode an LLM (`llm_trader.py`) decides BUY/HOLD per market and SELL/HOLD for open

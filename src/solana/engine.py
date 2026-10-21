@@ -342,6 +342,7 @@ class PaperEngine:
                                            "price": c.price_usd} for c in candidates])
         self._agent("scout", last_reason=f"{len(candidates)} candidates", approved=len(candidates))
         paused = set(self.paused())
+        ready = []
         for c in candidates:
             if c.mint in paused or c.venue in paused:
                 continue
@@ -372,6 +373,10 @@ class PaperEngine:
                 self.ledger.log_decision("error", cycle=self.cycle, mint=c.mint, symbol=c.symbol,
                                          reason=f"candles unavailable: {e}")
                 continue
+            ready.append((c, candles, safety, profile))
+        # best opportunity first: with one slot, the deepest dip inside an uptrend gets it, not the first coin listed
+        ready.sort(key=lambda r: _setup_rank(r[1]))
+        for c, candles, safety, profile in ready:
             for strat in self._ordered(c):
                 if hasattr(strat, "decide"):
                     if not strat.enabled:
@@ -444,6 +449,16 @@ def bench_prices() -> dict:
     """Benchmark prices for buy-and-hold comparisons (Hyperliquid mids: one public call)."""
     mids = hl.info({"type": "allMids"})
     return {"SOL": float(mids["SOL"]), "BTC": float(mids["BTC"])}
+
+
+def _setup_rank(candles: list[dict]) -> tuple:
+    """Sort key: markets in an uptrend first, then the most oversold (lowest RSI). Cheap, no extra API calls."""
+    from src.solana.strategies import ema, rsi
+    closes = [k["close"] for k in candles]
+    if len(closes) < 15:
+        return (1, 100.0)
+    trend = ema(closes[-600:], 200) if len(closes) >= 200 else None
+    return (0 if trend and closes[-1] > trend else 1, rsi(closes))
 
 
 def _votes(*votes: Vote) -> dict:

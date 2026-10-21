@@ -383,14 +383,15 @@ _shadow: PaperEngine | None = None
 
 
 def get_shadow_engine() -> PaperEngine:
-    """'What would the real account do?': identical limits, markets and decision mode, but fills are simulated
-    on real Hyperliquid MAINNET order books with fake money (SHADOW_START_USDC)."""
+    """'What would the real account do?': identical limits and decision mode, but fills are simulated on real
+    Hyperliquid MAINNET order books with fake money (SHADOW_START_USDC). It scans HL_MARKETS (the same
+    broad set as the real account by default)."""
     global _shadow
     if _shadow is None:
         ledger = Ledger(cfg.SHADOW_DB_PATH, cfg.SHADOW_START_USDC)
         from src.solana.engine import bench_prices
         _shadow = PaperEngine(
-            ledger, [hl.HyperliquidScout(cfg.HL_LIVE_MARKETS)], _NoSafety(), default_strategies(), DebateAgent(),
+            ledger, [hl.HyperliquidScout(cfg.HL_MARKETS)], _NoSafety(), default_strategies(), DebateAgent(),
             _risk(), ExecutorAgent(hl.HyperliquidPaperBroker(ledger)), candles_fn={hl.VENUE: hl.candles},
             profiles={hl.VENUE: {"max_pos_pct": 1.0, "stop_mult": cfg.MARKET_PROFILES.get(hl.VENUE, {}).get("stop_mult", 1.5)}},
             llm=team(), coordinator=_coordinate, bench_fn=bench_prices,

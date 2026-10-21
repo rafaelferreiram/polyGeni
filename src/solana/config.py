@@ -79,7 +79,10 @@ HL_ENABLED = os.getenv("HL_ENABLED", "1") == "1"
 # crypto first (more volatility); gold/silver are opt-in with HL_INCLUDE_METALS=1
 HL_INCLUDE_METALS = os.getenv("HL_INCLUDE_METALS", "0") == "1"
 _METALS = ["xyz:GOLD", "xyz:SILVER"] if HL_INCLUDE_METALS else []
-HL_MARKETS = [m for m in os.getenv("HL_MARKETS", "BTC,ETH,SOL,HYPE,XRP").split(",") if m] + _METALS
+# broad, liquid crypto set (by Hyperliquid volume, ≥ 208 days of history) for simulation, lab and real account:
+# the bots scan all of it every cycle and take the best setup; risk limits are per position, not per coin
+HL_BROAD = "BTC,ETH,SOL,HYPE,XRP,BNB,DOGE,ADA,AVAX,LINK,LTC,SUI,NEAR,AAVE,UNI,ARB,TAO,ZEC,XMR,WLD,ENA,ZRO,ONDO,kPEPE"
+HL_MARKETS = [m for m in os.getenv("HL_MARKETS", HL_BROAD).split(",") if m] + _METALS
 HL_ALLOW_SHORT = False  # long-only in phase 1
 
 # Per-venue risk profile: Solana tokens get a small slice, majors/metals a bigger one with wider stops.
@@ -109,7 +112,7 @@ LIVE_MAX_POSITION_USD = _f("LIVE_MAX_POSITION_USD", 12.0)      # Hyperliquid min
 LIVE_MAX_POSITIONS = _i("LIVE_MAX_POSITIONS", 0)               # 0 = auto: capital // position size (max 6)
 LIVE_MAX_DAILY_LOSS_PCT = _f("LIVE_MAX_DAILY_LOSS_PCT", 0.10)
 LIVE_MAX_ENTRIES_PER_DAY = _i("LIVE_MAX_ENTRIES_PER_DAY", 3)
-HL_LIVE_MARKETS = [m for m in os.getenv("HL_LIVE_MARKETS", "BTC,ETH,SOL,HYPE,XRP").split(",") if m] + _METALS
+HL_LIVE_MARKETS = [m for m in os.getenv("HL_LIVE_MARKETS", HL_BROAD).split(",") if m] + _METALS
 
 # ─── Model arena: one paper bot per LLM, same markets and risk limits, separate portfolios ───
 # "rules" = deterministic baseline bot (no LLM, no API cost) that every model must beat

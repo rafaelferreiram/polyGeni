@@ -78,7 +78,8 @@ def snapshot(base: str, hours: float = 24) -> dict:
         out["server"] = "online"
     except Exception as e:
         out["server"] = f"OFFLINE ou erro: {str(e)[:160]} — os bots não estão rodando; abrir com `make run`"
-    out["setups"] = setups(cfg.HL_LIVE_MARKETS)
+    out["setups"] = setups(cfg.HL_MARKETS)        # broad set; the report says which ones the real account trades
+    out["real_markets"] = cfg.HL_LIVE_MARKETS
     out["projection"] = projection(cfg.LIVE_MAX_POSITION_USD)
     out["limits"] = {"max_capital_usd": cfg.LIVE_MAX_CAPITAL_USD, "max_position_usd": cfg.LIVE_MAX_POSITION_USD,
                      "max_daily_loss_pct": cfg.LIVE_MAX_DAILY_LOSS_PCT, "max_entries_per_day": cfg.LIVE_MAX_ENTRIES_PER_DAY,
