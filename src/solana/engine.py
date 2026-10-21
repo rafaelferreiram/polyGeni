@@ -43,6 +43,8 @@ def protected_stop(pos: dict, price: float) -> float | None:
     if price < entry * (1 + cfg.QUICK_WIN_PCT) and price < entry + (tp - entry) / 2:
         return None
     new = max(entry * 1.003, entry + cfg.QUICK_WIN_KEEP * (price - entry))
+    if price >= entry * (1 + cfg.QUICK_WIN2_PCT):           # second tier: bank most of a good move
+        new = max(new, entry + cfg.QUICK_WIN2_KEEP * (price - entry))
     if price >= entry + (tp - entry) / 2:
         new = max(new, price - (tp - entry) / 3)
     return new if new > stop * 1.0005 else None
@@ -180,6 +182,24 @@ class PaperEngine:
         for msg in issues:
             self.ledger.log_decision("reconcile", cycle=self.cycle, reason=msg)
         return issues
+
+    def _btc_ok(self) -> bool:
+        """BTC above its 50-hour average (closed 1h candles). Logged once when it flips; data errors don't block."""
+        if not cfg.BTC_FILTER:
+            return True
+        from src.solana import hyperliquid as hl
+        from src.solana.strategies import ema
+        try:
+            closes = [c["close"] for c in hl.candles("BTC")[:-1]]
+            ok = len(closes) < 60 or closes[-1] > ema(closes[-150:], 50)
+        except Exception:
+            return True
+        if self.ledger.get_state("btc_ok") != ok:
+            self.ledger.set_state("btc_ok", ok)
+            self.ledger.log_decision("btc_filter", cycle=self.cycle, reason=(
+                "✅ filtro BTC: BTC voltou acima da média de 50h — compras liberadas" if ok else
+                "⏸ filtro BTC: BTC abaixo da média de 50h — sem compras novas até ele voltar (vendas e stops seguem normais)"))
+        return ok
 
     def _quota_levels(self) -> dict[str, int]:
         """Titulares behind their daily minimum of completed trades: 1 = one trade behind pro rata, 2 = two or more.
@@ -525,12 +545,20 @@ class PaperEngine:
         trainer.set_breadth(breadth)
         held = {x["mint"] for x in self.ledger.positions()}
         quota = self._quota_levels()
+        if not self._btc_ok():                       # BTC below its 50h average: no new buys this cycle
+            ready = []
+        per_bot = {}
+        for x in self.ledger.positions():
+            per_bot[x["strategy"]] = per_bot.get(x["strategy"], 0) + 1
         for c, candles, safety, profile in ready:
             if self.__dict__.get("_yield"):
                 break
             if c.mint in held:          # already holding it: its stop/target and exit review handle it — no AI tokens
                 continue
             for strat in self._ordered(c):
+                if not self.__dict__.get("lab_model") and per_bot.get(strat.name, 0) >= cfg.MAX_POSITIONS_PER_BOT:
+                    self._agent(strat.name, last_reason=f"{c.symbol}: já tem {cfg.MAX_POSITIONS_PER_BOT} posições abertas")
+                    continue
                 if hasattr(strat, "decide"):
                     if not strat.enabled:
                         self._agent(strat.name, last_reason="sem ANTHROPIC_API_KEY — este bot não decide", vetoed=1)

@@ -184,6 +184,14 @@ PROTECT_PROFIT = os.getenv("PROTECT_PROFIT", "1") == "1"   # breakeven + trailin
 # so a small win is banked if the price turns, while the target can still be reached
 QUICK_WIN_PCT = _f("QUICK_WIN_PCT", 0.006)
 QUICK_WIN_KEEP = _f("QUICK_WIN_KEEP", 0.5)
+# second tier, what worked in the user's manual sells (+0.5% to +1%): from +1.2% the stop locks 80% of the gain, so the
+# trade is sold on the first pullback (a half sale is impossible: Hyperliquid's minimum order is $10, positions are $10)
+QUICK_WIN2_PCT = _f("QUICK_WIN2_PCT", 0.012)
+QUICK_WIN2_KEEP = _f("QUICK_WIN2_KEEP", 0.8)
+# no buys while BTC is below its 50-hour average (when BTC falls almost every coin falls with it)
+BTC_FILTER = os.getenv("BTC_FILTER", "1") == "1"
+# on the real/simulation accounts, one titular may hold at most this many positions (room for the others)
+MAX_POSITIONS_PER_BOT = _i("MAX_POSITIONS_PER_BOT", 3)
 BOT_SELF_PAUSE = os.getenv("BOT_SELF_PAUSE", "0") == "1"
 BOT_MAX_SLEEP_MIN = _i("BOT_MAX_SLEEP_MIN", 120)
 # an AI bot may act on the REAL wallet only after this many lab trades with positive expectancy

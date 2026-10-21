@@ -137,6 +137,8 @@ def from_decision(source: str, model: str | None, kind: str, symbol: str | None,
             post(author, "handoff", f"@{name(to) if to else '?'}, essa é mais a sua: {symbol} — {why}", symbol, throttle=False)
         elif kind == "veto" and symbol and ("aprendizado" in reason or "rede do time" in reason):
             post(author, "lesson", f"Pulei {symbol}: {reason.replace('aprendizado: ', '')}", symbol)
+        elif kind == "btc_filter" and source == "real":
+            post("rede", "network", reason, throttle=False)
         elif kind == "evolution":
             post(author, "evolution", reason, throttle=False)
         elif kind == "quota" and reason.startswith("⏱"):
