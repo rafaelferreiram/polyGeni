@@ -131,6 +131,16 @@ the others must first show ≥ 10 profitable lab trades.
   its latest trades with dates, amounts and exit reasons. Turbo/coffee buttons are there too.
 - **Real account**: at most 5 positions at a time and no daily trade cap (`LIVE_MAX_POSITIONS=5`,
   `LIVE_MAX_ENTRIES_PER_DAY` high in `.env`); the 10% daily loss stop and the kill switch stay.
+- **Daily quota for titulares** (`DAILY_MIN_TRADES=5`): each titular should complete at least 5 buy+sell round trips a
+  day on the real account. Behind pro rata (Lisbon day), it loosens its entry one notch per trade behind (max 2: e.g.
+  São Marcos RSI 30→35→40 and a narrower band, Endrick a shorter breakout window, Evair less whale buying needed) and
+  aims at a 40% closer target for a quicker round trip. Size, stops, quick wins and the account limits don't change.
+  Cards show "⏱ X/5 operações hoje".
+- **Evolution of the reserves** (`evolution.py`, `lineage.json`): every 20h of a reserve's life (`EVOLVE_PERIOD_H`) its
+  trades of that period are judged; below 60% wins (`EVOLVE_MIN_WIN_RATE`) or no trade, it is retired and a successor
+  named after a Palmeiras Libertadores champion takes the slot — same strategy family, exits tuned from how the parent
+  lost (wider stop, closer target, no forced 2h exit / longer hold), the parent's lessons inherited, and a fresh record
+  (0 trades). Titulares are never retired. The modal's "🧬 Evolução" card shows lineage, improvements and the next cut.
 - **Self-learning** (`learning.py`, `SELF_LEARNING=1`): every entry is saved with its situation (trend, RSI band, dip /
   breakout setups, coin). From each bot's own closed trades of the last 30 days, a situation with ≥ 6 trades, win rate
   < 35% and a net loss is avoided from then on (veto "aprendizado: evita …"); it is allowed again when the record

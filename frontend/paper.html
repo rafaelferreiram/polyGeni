@@ -246,12 +246,13 @@
     .pos .top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
     .pos .sym { font-size: 18px; font-weight: 700; } .pos .pl { font-size: 18px; font-weight: 650; font-variant-numeric: tabular-nums; }
     .pos .sub { font-size: 12px; color: var(--muted); margin-top: 2px; display: flex; justify-content: space-between; gap: 8px; }
-    .track { position: relative; height: 8px; border-radius: 999px; margin: 16px 0 6px;
+    .track { position: relative; height: 8px; border-radius: 999px; margin: 16px 0 12px;
              background: linear-gradient(90deg, rgba(248,113,113,.55), var(--surface) 50%, rgba(52,211,153,.55)); }
     .track .entry { position: absolute; top: -4px; width: 2px; height: 16px; background: var(--muted); }
     .track .now { position: absolute; top: -5px; width: 12px; height: 18px; margin-left: -6px; border-radius: 4px; background: #fff;
                   box-shadow: 0 0 0 2px var(--bg); transition: left .5s; }
-    .pos .ends { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+    .pos .ends { display: flex; justify-content: space-between; gap: 8px; font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+    .pos .ends span:nth-child(2) { text-align: center; } .pos .ends span:last-child { text-align: right; }
     .empty { color: var(--muted); font-size: 13px; padding: 6px 0; }
     .radar-tbl { max-height: none; }
     .radar-tbl td, .radar-tbl th { white-space: nowrap; }
@@ -292,6 +293,8 @@
     .panel h2 .fold { margin-left: auto; background: transparent; border: 0; color: var(--muted); font-size: 14px; padding: 2px 6px; cursor: pointer; }
     .panel.collapsed > :not(h2) { display: none !important; } .panel.collapsed h2 { margin-bottom: 0 !important; }
     .panel.collapsed .fold { transform: rotate(-90deg); }
+    @media (max-width: 600px) { .panel { position: relative; } .panel h2 { padding-right: 28px; }
+      .panel h2 .fold { position: absolute; top: 14px; right: 10px; margin: 0; } }
     .chartbox { height: 360px; width: 100%; } .chartbox.small { height: 170px; margin-top: 6px; }
     .news { display: grid; gap: 2px; max-height: 420px; overflow-y: auto; }
     .ni { display: grid; grid-template-columns: 70px 1fr; gap: 10px; padding: 8px 4px; border-bottom: 1px solid var(--border); font-size: 13px; }
@@ -492,6 +495,7 @@
       #toptraders, #g-hist, #analise, #transacoes, #relatorio, #g-sist, #fundos, #conexoes, #avancado,
       #mode-seg, .boost, .legend, .panel h2 .note, .kpi .s, .sb-nav, .logo small) { display: none !important; }
     body.lite .kpi .v { font-size: 30px; }
+    @media (max-width: 600px) { .kpi .v, body.lite .kpi .v { font-size: 23px !important; white-space: nowrap; } }
     /* remote (through the internet) is read-only: hide every control that changes something */
     body.ro :is(#btn-go, #mode-seg, #btn-coffee, #btn-scan, .boost, .posd-actions, #avancado, #alert button,
       .tboost:not(.on)) { display: none !important; }
@@ -539,7 +543,7 @@
     <section class="kpis">
       <div class="kpi"><div class="l" id="k-eq-l">Saldo</div><div class="v" id="k-eq">–</div><div class="s" id="k-eq-s">–</div></div>
       <div class="kpi"><div class="l">Lucro líquido <span class="muted">(depois de IA e custos)</span></div><div class="v" id="k-pnl">–</div><div class="s" id="k-pnl-s">–</div></div>
-      <div class="kpi"><div class="l">Posição aberta</div><div class="v" id="k-pos">–</div><div class="s" id="k-pos-s">–</div></div>
+      <div class="kpi"><div class="l">Posições abertas</div><div class="v" id="k-pos">–</div><div class="s" id="k-pos-s">–</div></div>
       <div class="kpi"><div class="l">Trades · acerto</div><div class="v" id="k-tr">–</div><div class="s" id="k-tr-s">–</div></div>
     </section>
     <div class="two">
@@ -729,6 +733,6 @@
 
   <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <script src="https://unpkg.com/qrcode-generator@1.4.4/qrcode.js"></script>
-  <script src="/static/paper.js?v=87"></script>
+  <script src="/static/paper.js?v=93"></script>
 </body>
 </html>

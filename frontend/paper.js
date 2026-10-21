@@ -34,6 +34,8 @@ const coinIcon = (sym) => {
             : `<span class="ci ci-l">${esc(String(sym || "?").replace(/^k/, "")[0] || "?")}</span>`;
 };
 const coin = (sym) => `<span class="coin">${coinIcon(sym)}<b>${esc(sym)}</b></span>`;
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+const pct0 = (v) => (v === null || v === undefined ? "–" : `${Math.round(v * 100)}%`);
 const pct = (v) => (v === null || v === undefined ? "–" : `${(v * 100).toFixed(2)}%`);
 // every time on the dashboard is Lisbon time (where the user is), with the date when it is not today
 const TZ = "Europe/Lisbon";
@@ -314,15 +316,15 @@ async function refresh() {
   const P = a.profit || {};
   document.getElementById("k-pnl").innerHTML = pnl(netOf(P, "all"));
   const all = a.performance?.all;
-  document.getElementById("k-pnl-s").textContent = `trades ${usd(P.trading_all)} · IA −${usd(P.ai_all)}${all ? ` · segurar BTC ${pct(all.hold_btc)}` : ""}`;
+  document.getElementById("k-pnl-s").textContent = `trades ${usd(P.trading_all)} · IA −${usd(P.ai_all)}${all?.hold_btc != null ? ` · segurar BTC ${pct(all.hold_btc)}` : ""}`;
   renderProfit(P);
-  const p = a.positions[0];
+  const ps = a.positions, cost = ps.reduce((s, x) => s + x.cost_usd, 0), now = ps.reduce((s, x) => s + (x.mark_value ?? x.cost_usd), 0);
   const kp = document.getElementById("k-pos");
-  kp.textContent = p ? p.symbol : "Sem posição";
-  kp.classList.toggle("soft", !p);
-  document.getElementById("k-pos-s").innerHTML = p ? `${usd(p.cost_usd)} → ${usd(p.mark_value)} ${pnl(p.mark_value !== null ? p.mark_value - p.cost_usd : null)}` : "esperando uma oportunidade";
+  kp.textContent = ps.length ? `${ps.length} ${ps.length === 1 ? "posição" : "posições"}` : "Nenhuma";
+  kp.classList.toggle("soft", !ps.length);
+  document.getElementById("k-pos-s").innerHTML = ps.length ? `${ps.map((x) => esc(x.symbol)).join(", ")} · ${usd(cost)} → ${usd(now)} ${pnl(now - cost)}` : "esperando uma oportunidade";
   const kt = document.getElementById("k-tr");
-  kt.textContent = a.trades.length ? `${a.trades.length} · ${pct(a.win_rate)}` : "Nenhum";
+  kt.textContent = a.trades.length ? `${a.trades.length} · ${pct0(a.win_rate)}` : "Nenhum";
   kt.classList.toggle("soft", !a.trades.length);
   document.getElementById("k-tr-s").innerHTML = a.trades.length ? `total ${pnl(a.trades.reduce((x, t) => x + t.pnl_usd, 0))}` : "sem trades fechados";
   // scan bar + room
@@ -595,7 +597,15 @@ const MODEL_LOOK = {
 const ACTION_PT = { BUY: "🟢 comprar", HOLD: "⏸ esperar", SELL: "🔵 vender", sleep: "😴 dormindo", wake: "⏰ acordou",
                     entry: "🟢 comprou", exit: "🔵 vendeu", veto: "🟡 bloqueado" };
 const FREE = new Set(["rules", "trend", "trend4h", "whales", "copy", "short", "trend4h_15m", "whales_15m", "copy_15m"]);   // deterministic bots: no AI cost
-const look = (m) => ({ role: "IA analisa e decide", ...(MODEL_LOOK[m] || { label: m, color: "#9fe8c7", ico: "🤖" }) });
+const look = (m) => {
+  let lin = null;
+  try { lin = lastArena?.leaderboard?.find((r) => r.model === m)?.lineage; } catch (e) { /* arena not loaded yet */ }
+  if (lin && !MODEL_LOOK[m]) {                  // evolved reserve: champion name, its family's look
+    const b = MODEL_LOOK[lin.base] || {};
+    return { ...b, label: lin.label, ico: b.ico || "🧬", role: `${b.role || "bot"} · geração ${lin.gen}` };
+  }
+  return { role: "IA analisa e decide", ...(MODEL_LOOK[m] || { label: m, color: "#9fe8c7", ico: "🤖" }) };
+};
 let lastArena = null;
 
 async function loadArena() {
@@ -679,7 +689,7 @@ function renderTeam() {
         <div><div class="nm">${esc(L.label)}${r.model_now && r.model_now !== m.model ? ` <small class="green">🚀 ${esc(look(r.model_now).label)}</small>` : reviewOn(r) ? ` <small class="green">🚀 ${esc(look(reviewOn(r).model).label)}</small>` : ""}</div><div class="rl">${esc(L.role)}</div></div></div>
       <span class="chip">${esc(chip)}</span>
       <div class="now">Última decisão: ${now}</div>
-      ${rewardLine(r.reward, rankOf[m.model])}${greenLine(r.green_light)}${learnedLine(r.learned)}${trainButton(m.model, r)}${coffeeButton(m.model, r)}
+      ${rewardLine(r.reward, rankOf[m.model])}${greenLine(r.green_light)}${quotaLine(r.quota)}${learnedLine(r.learned)}${trainButton(m.model, r)}${coffeeButton(m.model, r)}
       <div class="stats"><span><b>${pnl(m.pnl_usd ?? 0)}</b>resultado</span><span><b>${m.trades ?? 0}</b>trades</span>
         <span><b>${isRules ? "grátis" : usd(r.ai_cost_usd ?? 0)}</b>custo IA</span></div>
       <div class="tip" role="tooltip">${tip}<div class="note" style="margin-top:6px">${esc(bubble)}</div></div>
@@ -717,7 +727,7 @@ const lisbonDay = () => new Date().toLocaleDateString("en-CA", { timeZone: "Euro
 function coffeeButton(model, r) {
   if (!r) return "";
   const until = r.coffee_until && new Date(r.coffee_until) > new Date() ? r.coffee_until : null;
-  if (until) return `<button class="tcoffee on" disabled>☕ com café até ${hhmm(until)}</button>`;
+  if (until) return `<button class="tcoffee on" disabled title="com café: sem pausas">☕ até ${new Date(until).toLocaleTimeString("pt-BR", { timeZone: "Europe/Lisbon", hour: "2-digit", minute: "2-digit" })}</button>`;
   if (!r.green_light?.ok && r.coffee_day === lisbonDay()) return `<button class="tcoffee" disabled>☕ café de hoje já usado</button>`;
   return `<button class="tcoffee" onclick="event.stopPropagation(); botCoffee('${esc(model)}', this)">☕ ${r.green_light?.ok ? "Café" : "Café (1 por dia)"}</button>`;
 }
@@ -742,7 +752,7 @@ function greenLine(g) {
   if (g.ok) return `<div class="gl ok" title="passou no laboratório: ${g.trades} trades, acerto ${pct(g.win_rate)}, fator ${g.profit_factor}">🟢 luz verde · conta real</div>`;
   const w = Math.min(clamp01(g.wins / g.needed), clamp01(g.trades / (g.needed_trades || 1))) * 100;
   return `<div class="gl" title="Para a conta real: ${g.needed_trades} trades no laboratório, ${g.needed} vencedores, acerto ≥ 60%, fator de lucro ≥ 1,2, lucro líquido > 0. Falta: ${(g.missing || []).join(", ")}">
-    <span>🚦 ${g.trades}/${g.needed_trades} trades · ✅ ${g.wins}/${g.needed} · ❌ ${g.trades - g.wins}${g.trades ? ` · acerto ${pct(g.win_rate)} · ${pnl(g.net_usd)}` : ""}</span><i style="width:${w.toFixed(0)}%"></i></div>`;
+    <span>🚦 ${g.trades}/${g.needed_trades} · ✅ ${g.wins}/${g.needed} · ❌ ${g.trades - g.wins}${g.trades ? ` · ${pct0(g.win_rate)}` : ""}</span><i style="width:${w.toFixed(0)}%"></i></div>`;
 }
 // ─── bot modal: everything about one bot ───
 let modalBot = null;
@@ -767,7 +777,6 @@ async function renderBotModal() {
   modalData = d;
   paintBotModal();
 }
-const pct0 = (v) => (v === null || v === undefined ? "–" : `${Math.round(v * 100)}%`);
 function paintBotModal() {
   const d = modalData;
   if (!d) return;
@@ -788,10 +797,10 @@ function paintBotModal() {
     const prog = g.ok ? 1 : Math.min((g.trades || 0) / (g.needed_trades || 20), (g.wins || 0) / (g.needed || 12));
     body = `<h4>${realOn ? "Conta real (dinheiro de verdade)" : "Laboratório"}</h4>
       <div class="bm-hero">${realOn
-        ? hero("Resultado fechado", pnl(rs.pnl_usd ?? 0), `${rs.trades || 0} trades`) + hero("Acerto", pct0(rs.win_rate), rs.trades ? `${rs.wins} de ${rs.trades}` : "sem trades ainda") +
-          hero("Em aberto agora", pnl(d.open_pnl_real), `${d.positions_real.length} posições`) + hero("Média por trade", pnl(rs.expectancy ?? 0))
+        ? hero("Resultado fechado", pnl(rs.pnl_usd ?? 0), `${rs.trades || 0} trades${r.quota ? ` · hoje ${r.quota.done}/${r.quota.target}` : ""}`) + hero("Acerto", pct0(rs.win_rate), rs.trades ? `${rs.wins} de ${rs.trades}` : "sem trades ainda") +
+          hero("Em aberto agora", pnl(d.open_pnl_real), plural(d.positions_real.length, "posição", "posições")) + hero("Média por trade", pnl(rs.expectancy ?? 0))
         : hero("Resultado fechado", pnl(s.pnl_usd ?? 0), `${s.trades || 0} trades`) + hero("Acerto", pct0(s.win_rate), s.trades ? `${s.wins} de ${s.trades}` : "sem trades ainda") +
-          hero("Em aberto agora", pnl(d.open_pnl), `${d.positions_lab.length} posições`) + hero("Média por trade", pnl(s.expectancy ?? 0))}</div>
+          hero("Em aberto agora", pnl(d.open_pnl), plural(d.positions_lab.length, "posição", "posições")) + hero("Média por trade", pnl(s.expectancy ?? 0))}</div>
       <div class="bm-two" style="margin-top:12px">
         <div class="bm-card"><div class="t">🧪 Laboratório <span class="muted">dinheiro falso, mesmas regras</span></div>${rows([
           ["Trades fechados", `${s.trades || 0} · acerto ${pct0(s.win_rate)}`], ["Resultado fechado", pnl(s.pnl_usd ?? 0)], ["Em aberto", pnl(d.open_pnl)],
@@ -804,6 +813,7 @@ function paintBotModal() {
       </div>
       ${g.ok ? "" : `<h4>Rumo à conta real</h4><div class="bm-card"><div class="t"><span>${g.trades || 0} de ${g.needed_trades || 20} trades · ${g.wins || 0} de ${g.needed || 12} vitórias</span><span>${pct0(prog)}</span></div>
         <div class="bm-prog"><i style="width:${prog * 100}%"></i></div><span class="muted">Falta: ${esc((g.missing || []).join(", ") || "—")}</span></div>`}
+      ${evolutionCard(d, r)}
       <h4>Resultado por dia</h4>${daysChart(d.days)}
       ${REMOTE ? "" : `<div class="bm-actions">${trainButton(d.model, r)}${coffeeButton(d.model, r)}</div>`}`;
   } else if (modalTab === "proximas") {
@@ -836,6 +846,18 @@ function paintBotModal() {
     <div class="bm-body">${body}</div>`;
   document.querySelector(".bm-body").scrollTop = scrollTop;
 }
+// evolution: reserves are judged every 20h of life; a weak one is replaced by an improved successor
+function evolutionCard(d, r) {
+  const lin = r.lineage, v = r.last_verdict;
+  if (d.titular && !lin) return "";
+  const next = r.born_at ? (() => { const born = new Date(r.born_at), h = 20 * 3600e3, k = Math.floor((Date.now() - born) / h) + 1;
+    return new Date(born.getTime() + k * h); })() : null;
+  return `<h4>🧬 Evolução</h4><div class="bm-card">${lin ? `<div class="t"><span>Geração ${lin.gen} · filho de ${esc(lin.parent_label || lin.parent)}</span><span class="muted">nasceu ${dt(lin.born_at)}</span></div>
+      <div class="bm-rows">${lin.why.map((w) => `<div><span>✨ ${esc(w)}</span></div>`).join("")}
+      ${lin.inherited_avoid.length ? `<div><span>📚 Já nasceu evitando: ${lin.inherited_avoid.map(esc).join(", ")}</span></div>` : ""}</div>` : ""}
+    ${!d.titular ? `<p class="note" style="margin:${lin ? "10px" : "0"} 0 0">A cada 20h de vida, se o acerto do período ficar abaixo de 60% (ou sem trades), ele é aposentado e nasce um sucessor melhorado com nome de campeão da Libertadores.
+      ${next ? `Próximo corte: <b>${dt(next.toISOString())}</b>.` : ""}${v ? ` Último corte: ${v.wins}/${v.trades} (${pct0(v.win_rate)}) ${v.pass ? "✅ passou" : "❌"}` : ""}</p>` : ""}</div>`;
+}
 function daysChart(days) {
   if (!days.length) return '<div class="empty">Sem trades fechados ainda.</div>';
   const max = Math.max(...days.map((x) => Math.abs(x.lab + x.real)), 0.01);
@@ -845,6 +867,14 @@ function daysChart(days) {
 }
 const exitPt = (r) => /take-profit/.test(r) ? "🎯 alvo" : /stop-loss/.test(r) ? "🛑 stop" : /max holding/.test(r) ? "⏱ tempo máximo" : /manualmente/.test(r) ? "✋ você vendeu" : r;
 setInterval(() => { if (modalBot) safe(renderBotModal); }, 15000);
+
+// daily quota (titulares): completed buy+sell round trips today on the real account
+function quotaLine(q) {
+  if (!q) return "";
+  const w = Math.min(q.done / q.target, 1) * 100;
+  return `<div class="gl${q.done >= q.target ? " ok" : ""}" title="Mínimo de ${q.target} operações completas (compra e venda) por dia na conta real. Atrasado, o titular solta um pouco a entrada e mira um alvo mais perto.">
+    <span>⏱ ${q.done}/${q.target} operações hoje</span><i style="width:${w.toFixed(0)}%"></i></div>`;
+}
 
 // self-learning: what the bot learned from its own closed trades (it skips situations it keeps losing in)
 function learnedLine(l) {
@@ -861,7 +891,7 @@ function trainButton(model, r) {
   const until = r.train_boost_until && new Date(r.train_boost_until) > new Date() ? r.train_boost_until : null;
   const scan = r.ai_full_scan_until && new Date(r.ai_full_scan_until) > new Date() ? `<div class="gl ok">🧠 analisa as 29 moedas a cada hora até ${hhmm(r.ai_full_scan_until)}</div>` : "";
   const turbo = r.turbo_until && new Date(r.turbo_until) > new Date() ? r.turbo_until : null;
-  return scan + (turbo ? `<button class="tboost on" disabled>⚡ turbo ligado até a meia-noite · analisa sem parar · saída em até ${model.endsWith("_15m") ? 1 : 2}h</button>`
+  return scan + (turbo ? `<button class="tboost on" disabled title="analisa sem parar até a meia-noite">⚡ turbo até 00:00</button>`
     : `<button class="tboost" onclick="event.stopPropagation(); trainBoost('${esc(model)}', this)">⚡ Turbo hoje</button>`);
 }
 function trainBoost(model, btn) {

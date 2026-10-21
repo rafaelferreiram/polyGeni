@@ -66,7 +66,7 @@ function render(d) {
     lab.map((b) => {
       const g = b.green_light || {};
       const prog = g.trusted || g.ok ? 1 : Math.min((g.trades || 0) / (g.needed_trades || 20), (g.wins || 0) / (g.needed || 12));
-      return `<tr><td><b>${esc(name(b.model))}</b></td><td>${g.trusted || g.ok ? "⚽ titular" : "🪑 reserva"}</td>
+      return `<tr><td><b>${esc(b.label || name(b.model))}</b></td><td>${g.trusted || g.ok ? "⚽ titular" : "🪑 reserva"}</td>
         <td class="n">${b.trades || 0}</td><td class="n">${pct(b.win_rate)}</td><td class="n">${pnl(b.expectancy, 3)}</td>
         <td class="n">${pct(b.ret_per_trade, 2)}</td><td class="n">${b.profit_factor ?? "–"}</td><td class="n">${b.trades_per_day}</td>
         <td class="n">${usd(b.ai_usd, 3)}</td><td class="n">${pnl(b.net)}</td>

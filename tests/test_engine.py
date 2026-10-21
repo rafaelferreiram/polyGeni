@@ -376,7 +376,7 @@ def test_no_reentry_on_the_same_signal_candle(ledger):
     assert len(ledger.closed_trades()) == 1 and ledger.positions() == []
 
 
-def test_bot_learns_to_avoid_a_situation_it_keeps_losing_in(ledger, monkeypatch):
+def test_bot_records_situations_and_avoids_specific_losing_ones(ledger, monkeypatch):
     from src.solana import config as cfg, learning
     monkeypatch.setattr(learning, "CACHE_S", 0)
     monkeypatch.setattr(cfg, "LEARN_MIN_TRADES", 3)
@@ -393,11 +393,26 @@ def test_bot_learns_to_avoid_a_situation_it_keeps_losing_in(ledger, monkeypatch)
         eng.strategies[0].fire = True
     assert len(ledger.closed_trades()) == 3 and all(t["pnl_usd"] < 0 for t in ledger.closed_trades())
     assert ledger.decisions(kind="entry")[0]["signals"]["tags"]           # each entry keeps its situation
-    price.p = 1.0
-    eng.__dict__.get("_entered", set()).clear()
-    eng.risk.max_daily_loss_pct = 1.0                 # the daily loss stop must not be what blocks it
+    rec = learning.record(ledger)
+    assert learning.summary(rec)["seen"] == 3
+    # every tag here is on all of its trades: that is the strategy itself, not a situation to avoid
+    assert learning.avoid(rec, list(rec)) == []
+    # a specific losing situation among varied trades is avoided
+    rec = {"moeda A": {"n": 6, "wins": 3, "pnl": 0.1}, "moeda B": {"n": 6, "wins": 0, "pnl": -0.5},
+           "RSI alto": {"n": 4, "wins": 0, "pnl": -0.4}, "alta": {"n": 12, "wins": 3, "pnl": -0.4}}
+    monkeypatch.setattr(cfg, "LEARN_MIN_TRADES", 4)
+    assert learning.avoid(rec, ["RSI alto", "alta", "moeda B"]) == ["RSI alto", "moeda B"]
+    assert learning.avoid({}, ["RSI alto"], inherited=["RSI alto"]) == ["RSI alto"]      # inherited lesson
+
+
+def test_titular_behind_its_daily_quota_loosens_a_notch_and_aims_closer(ledger, monkeypatch):
+    from src.solana import arena, config as cfg
+    monkeypatch.setattr(arena, "is_titular", lambda m: True)
+    monkeypatch.setattr(cfg, "DAILY_MIN_TRADES", 100_000)          # far behind whatever the hour
+    eng = build(ledger, Price(1.0))
     eng.run_cycle()
-    assert len(ledger.closed_trades()) == 3 and ledger.positions() == []
-    assert "aprendizado: evita" in ledger.decisions(kind="veto")[0]["reason"]
-    summary = learning.summary(learning.record(ledger))
-    assert summary["avoid"] and summary["seen"] == 3
+    entry = ledger.decisions(kind="entry")[0]
+    assert "cota do dia (nível 2)" in entry["reason"] and eng.strategies[0].relax == 2
+    assert ledger.decisions(kind="quota")
+    monkeypatch.setattr(arena, "is_titular", lambda m: False)        # reserves never get the quota
+    assert eng._quota_levels() == {} and eng.strategies[0].relax == 0

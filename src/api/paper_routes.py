@@ -435,7 +435,8 @@ def set_mode(req: Mode):
 @router.get("/arena")
 def arena_board():
     from src.solana import arena, hl_live
-    return {"mode": "PAPER", "models": cfg.ARENA_MODELS, "running": any(r["running"] for r in arena.leaderboard()),
+    from src.solana import evolution
+    return {"mode": "PAPER", "models": evolution.active_models(), "running": any(r["running"] for r in arena.leaderboard()),
             "leaderboard": arena.leaderboard(), "live_model": "coordinator"}
 
 
@@ -892,7 +893,7 @@ def confidence(eng) -> dict:
 def admin():
     """Owner's control room: money, AI spend, profit per trade per account and per bot, and where scaling would pay.
     Read-only; every number comes from the ledgers and the append-only cost book."""
-    from src.solana import arena, costs, hl_live
+    from src.solana import arena, costs, evolution, hl_live
     book = costs.book()
     now = datetime.now(timezone.utc)
 
@@ -917,7 +918,7 @@ def admin():
         first = min((t["entry_ts"] for t in trades), default=None)
         days = max((now - datetime.fromisoformat(first)).total_seconds() / 86400, 1) if first else None   # no extrapolating hours
         ret = [t["pnl_usd"] / t["cost_usd"] for t in trades if t.get("cost_usd")]
-        lab.append({"model": model, **st, "lab_pnl": round(pnl, 4), "ai_usd": round(ai, 4), "net": round(net, 4),
+        lab.append({"model": model, "label": (evolution.load()["bots"].get(model) or {}).get("label"), **st, "lab_pnl": round(pnl, 4), "ai_usd": round(ai, 4), "net": round(net, 4),
                     "trades_per_day": round(len(trades) / days, 1) if days else 0,
                     "ret_per_trade": round(sum(ret) / len(ret), 5) if ret else None,
                     "green_light": arena.green_light(model)})

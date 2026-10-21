@@ -159,7 +159,13 @@ SELF_LEARNING = os.getenv("SELF_LEARNING", "1") == "1"
 LEARN_DAYS = _i("LEARN_DAYS", 30)
 LEARN_MIN_TRADES = _i("LEARN_MIN_TRADES", 6)
 LEARN_MAX_WIN_RATE = _f("LEARN_MAX_WIN_RATE", 0.35)
-MAX_TITULARES = _i("MAX_TITULARES", 6)          # the real account fields at most this many bots: the best ones
+MAX_TITULARES = _i("MAX_TITULARES", 6)
+# daily quota: a titular behind DAILY_MIN_TRADES completed trades (Lisbon day, pro rata) loosens its entry a notch or two
+# and aims at a closer target, so it completes buy+sell round trips; size, stops and the account limits do not change
+DAILY_MIN_TRADES = _i("DAILY_MIN_TRADES", 5)
+# evolution: every EVOLVE_PERIOD_H of a reserve's life, under EVOLVE_MIN_WIN_RATE (or no trade) -> replaced by a successor
+EVOLVE_PERIOD_H = _f("EVOLVE_PERIOD_H", 20)
+EVOLVE_MIN_WIN_RATE = _f("EVOLVE_MIN_WIN_RATE", 0.6)          # the real account fields at most this many bots: the best ones
 GREEN_LIGHT_TRADES = _i("GREEN_LIGHT_TRADES", 20)
 GREEN_LIGHT_WINS = _i("GREEN_LIGHT_WINS", 12)
 GREEN_LIGHT_WIN_RATE = _f("GREEN_LIGHT_WIN_RATE", 0.6)
