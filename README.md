@@ -556,6 +556,10 @@ scale: recommendations, the "ready to add money?" checklist and a linear project
 
 ## Exits
 
+**Quick wins**: once a trade is up 0.6% (`QUICK_WIN_PCT`), the stop locks half of the gain (`QUICK_WIN_KEEP`, never
+below entry + 0.3% fees), so small wins are banked if the price turns while the target stays reachable. Titulares
+keep their strategy's own time limit (the turbo's forced 2h exit only applies to reserves).
+
 Stop 2 ATR, target 3 ATR and a max holding time per bot. Once a trade is halfway to its target the stop moves to breakeven
 (+0.3% for fees) and then trails 1 ATR below the price (`PROTECT_PROFIT=1`), so winners are held but never turn into losers.
 On the real account the exchange stop stays at the original level as a backstop; the raised stop is enforced by the bot.

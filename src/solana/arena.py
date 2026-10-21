@@ -195,8 +195,8 @@ def turbo(model: str) -> dict:
 def fast_exit_hold(strategy: str) -> float | None:
     """Max hours a position may stay open for a bot trained with turbo (None = its normal hold)."""
     eng = (_bots or {}).get(strategy)
-    if not eng or not eng.ledger.get_state("fast_exits", False):
-        return None
+    if not eng or not eng.ledger.get_state("fast_exits", False) or is_titular(strategy):
+        return None              # titulares keep their strategy's own exits (a forced 2h exit cost Evair money)
     return cfg.TURBO_FAST_MAX_HOLD_H if strategy in FAST_BOTS else cfg.TURBO_MAX_HOLD_H
 
 

@@ -32,16 +32,19 @@ def _ts(iso: str) -> datetime:
 
 
 def protected_stop(pos: dict, price: float) -> float | None:
-    """Hold winners, never let them turn into losers: once the price is halfway to the target the stop moves to
-    breakeven (entry + 0.3% for fees), and from there it trails 1 ATR (target distance / 3) below the price.
+    """Hold winners, never let them turn into losers:
+    - quick win: up QUICK_WIN_PCT or more -> the stop locks QUICK_WIN_KEEP of the gain (at least entry + 0.3% fees);
+    - halfway to the target -> the stop trails 1 ATR (target distance / 3) below the price.
     Returns the new, higher stop, or None. Only ever raises the stop. The exchange SL stays as the backstop."""
     stop, tp, qty = pos.get("stop_price"), pos.get("tp_price"), pos.get("qty") or 0
     if not (stop and tp and qty) or tp <= stop:
         return None
     entry = pos["cost_usd"] / qty
-    if price < entry + (tp - entry) / 2:
+    if price < entry * (1 + cfg.QUICK_WIN_PCT) and price < entry + (tp - entry) / 2:
         return None
-    new = max(entry * 1.003, price - (tp - entry) / 3)
+    new = max(entry * 1.003, entry + cfg.QUICK_WIN_KEEP * (price - entry))
+    if price >= entry + (tp - entry) / 2:
+        new = max(new, price - (tp - entry) / 3)
     return new if new > stop * 1.0005 else None
 
 

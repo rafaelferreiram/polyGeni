@@ -167,6 +167,10 @@ GREEN_LIGHT_PROFIT_FACTOR = _f("GREEN_LIGHT_PROFIT_FACTOR", 1.2)
 # self-pause: a bot with nothing to do sleeps (up to BOT_MAX_SLEEP_MIN) and wakes early if price moves.
 # Off by default: the bots watch the market every cycle 24/7 (the AI pre-filter already keeps idle cycles free).
 PROTECT_PROFIT = os.getenv("PROTECT_PROFIT", "1") == "1"   # breakeven + trailing stop once a trade is halfway to target
+# quick wins: once a trade is up QUICK_WIN_PCT, the stop locks QUICK_WIN_KEEP of the gain (never below entry + fees),
+# so a small win is banked if the price turns, while the target can still be reached
+QUICK_WIN_PCT = _f("QUICK_WIN_PCT", 0.006)
+QUICK_WIN_KEEP = _f("QUICK_WIN_KEEP", 0.5)
 BOT_SELF_PAUSE = os.getenv("BOT_SELF_PAUSE", "0") == "1"
 BOT_MAX_SLEEP_MIN = _i("BOT_MAX_SLEEP_MIN", 120)
 # an AI bot may act on the REAL wallet only after this many lab trades with positive expectancy
