@@ -629,15 +629,17 @@ class Coffee(BaseModel):
 
 @router.post("/account/coffee", dependencies=LOCAL)
 def account_coffee(req: Coffee):
-    """☕ Keep the wallet and the whole team awake (no self-pause) for a few hours and scan now.
+    """☕ Keep both wallets (simulation and real) and the whole team awake (no self-pause) for a few hours and scan now.
     Entry rules stay the same: looser dips lost money in the backtest, so coffee buys attention, not risk."""
-    from src.solana import arena
+    from src.solana import arena, hl_live
     hours = max(0.5, min(req.hours, 12))
-    until = _account_engine(req.kind).give_coffee(hours)
-    for bot in arena.bots().values():          # the lab bots are the team's brains: they stay awake too
-        bot.give_coffee(hours)
+    # one cup for the whole house: simulation and real share the team, so both stay awake together
+    for eng in [_account_engine("sim"), _account_engine("real"), *arena.bots().values()]:
+        until = eng.give_coffee(hours)
     threading.Thread(target=arena.run_round, daemon=True).start()
-    return {"coffee_until": until, "hours": hours, "scan_started": _scan_in_background(req.kind)}
+    running = {"sim": _account_engine("sim").ledger.get_state("running", False), "real": hl_live.is_armed()}
+    return {"coffee_until": until, "hours": hours, "accounts": ["sim", "real"],
+            "scan_started": {k: _scan_in_background(k) for k, on in running.items() if on}}
 
 
 class AccountMode(BaseModel):

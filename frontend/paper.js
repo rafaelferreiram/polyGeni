@@ -101,7 +101,7 @@ function scanNow(btn) {
 function giveCoffee(btn) {
   if (!acc?.running) return toast("Carregue em ▶ Start primeiro", true);
   run(btn, "A preparar o café…", () => api("/account/coffee", "POST", { kind: KIND, hours: 4 }),
-      (r) => `☕ Equipa com cafeína até ${new Date(r.coffee_until).toLocaleTimeString().slice(0, 5)} — sem pausas, a analisar todos os ciclos`);
+      (r) => `☕ Equipa com cafeína até ${new Date(r.coffee_until).toLocaleTimeString().slice(0, 5)} nas contas simulada e real — sem pausas, a analisar todos os ciclos`);
 }
 
 function setMode(mode, btn) {
