@@ -1,10 +1,11 @@
 # polyGeni
 
 > ⚠️ **No real trading by default.** The Polymarket bot only places real orders with `POLY_LIVE_TRADING=1`
-> explicitly set; otherwise every order is a dry run. The Solana bot (below) is **paper trading only**:
-> it never builds, signs or sends a transaction and never creates, reads or uses a private key.
+> explicitly set; otherwise every order is a dry run. The Solana bot is **paper trading only**. The Hyperliquid
+> bot trades real money only with `LIVE_TRADING=1`, an API wallet key for that network **and** a click on Start in
+> the dashboard's 💰 Real account, inside hard USD caps (default $20 capital, $12 per position, 1x, long-only).
 
-## Multi-agent crypto + gold/silver bot — Phase 1: PAPER trading
+## Multi-agent crypto + gold/silver bot — paper, simulation and small live account
 
 Simulated money, **real market data**: Solana spot via real Jupiter quotes, and Hyperliquid perps
 (BTC, ETH, SOL, `xyz:GOLD`, `xyz:SILVER`) via the real L2 order book, taker fees and hourly funding.
@@ -45,15 +46,17 @@ Lesson applied from Alpha Arena (LLMs trading alone lost 30–60%): **rules deci
 
 ### Real trading on Hyperliquid (testnet first) — `src/solana/hl_live.py`
 Same engine and agents; only the broker is real (`HyperliquidLiveBroker`, official `hyperliquid-python-sdk`).
-- **Two keys:** an API ("agent") wallet in `.env` (`HL_ACCOUNT_ADDRESS`, `HL_API_WALLET_KEY` — it can trade but
-  cannot withdraw) **and** the dashboard's "Ativar trading automático" button. Mainnet also needs `LIVE_TRADING=1`.
+- **Two keys:** an API ("agent") wallet per network in `.env` (`HL_ACCOUNT_ADDRESS`, `HL_API_WALLET_KEY_TESTNET` /
+  `HL_API_WALLET_KEY_MAINNET` — they can trade but cannot withdraw), `HL_NETWORK=testnet|mainnet`, **and** Start on
+  the dashboard's 💰 Real account. Mainnet also needs `LIVE_TRADING=1` (Polymarket uses its own `POLY_LIVE_TRADING`).
+- **Unified accounts** are supported: the balance is read from the spot clearinghouse (no Spot→Perps transfer needed).
 - **Hard limits:** 1x isolated, long-only, `LIVE_MAX_CAPITAL_USD` / `LIVE_MAX_POSITION_USD` caps, one position,
   daily loss → kill switch, Hyperliquid's $10 minimum respected.
 - **Protection on the exchange:** every entry gets reduce-only stop-loss and take-profit trigger orders; if they
   cannot be placed the position is closed immediately.
 - **Idempotent:** client order ids derived from our order id; a crash after submit is never resubmitted.
 - **Exchange is the truth:** native stop/TP exits are recorded from fills; untracked positions or equity drift trip
-  the kill switch. Separate ledger `live.db`. "Fechar tudo" flattens and disarms; testnet has a "test order" button.
+  the kill switch. One ledger per network (`live_testnet.db`, `live_mainnet.db`) so test money never mixes with real money. "Fechar tudo" flattens and disarms; testnet has a "test order" button.
 
 ### One wallet, a team of bots
 - **Team:** `ARENA_MODELS` (default `rules`, Fable 5.1, Opus 5.5, Opus 5, Sonnet 5.5, Haiku 5.5). Each bot runs in the
@@ -126,6 +129,15 @@ docker-compose publishes `127.0.0.1:8000` only (inside Docker set `PAPER_TRUSTED
   wallet to its public address; withdrawals only to an allow-listed address with daily limits; real swaps via
   Jupiter only with `LIVE_TRADING=1` **after** 4–8 weeks of 24/7 paper trading that beats hold SOL after costs.
 
+### Daily report and morning/evening routine
+- **Daily report:** dashboard table "Relatório diário" (`GET /api/paper/report/daily?kind=real|sim`) — trades, wins,
+  losses, P&L after fees and funding, AI cost, net; a markdown copy is written nightly at 23:55 to `reports/daily/`.
+- **Routine skill** (`.claude/skills/trading-routine/`): a read-only review in Portuguese of what traded, what went well
+  or badly, gains and losses net of AI, market setups and an honest projection for the day; improvements are only
+  proposed, never applied. Data: `.venv/bin/python -m src.solana.routine` (JSON snapshot from the running dashboard +
+  public candles). Reports go to `reports/routines/YYYY-MM-DD-manha|noite.md`; scheduled in the Claude app daily at
+  11:00 and 22:00 (runs while the app is open). Ask "faz a rotina da manhã" to run it on demand.
+
 ### Profitability guards — the AI must earn more than it costs
 - **Real cost per call** (`costs.py`, `costs.db`): priced from the usage each API response returns (tokens,
   cache, web searches at $10/1000) with the published per-model rates.
@@ -173,7 +185,8 @@ in this bull window**; mean-reversion beats holding gold/silver. Reports: `repor
 - Holder concentration comes from Jupiter's audit (third-party) and includes pool vaults.
 - Live candles come from GeckoTerminal (~30 req/min) / Hyperliquid; Solana backtest uses Binance and excludes memecoins.
 - Hyperliquid paper is 1x long-only; short selling and leverage are deliberately off.
-- Live phase 3 (real wallets, signing, withdrawals) is not built.
+- Live trading exists only on Hyperliquid (1x long-only, small caps); Solana real swaps and withdrawals are not built.
+- Sub-hour timeframes were tested and rejected: on 1–15 min candles the typical move is smaller than the round-trip cost.
 - Paper fills assume the quoted route would fill; no MEV/landing failures beyond the extra slippage bps.
 
 ---
