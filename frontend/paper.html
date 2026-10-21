@@ -7,283 +7,231 @@
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
   <link rel="stylesheet" href="/static/style.css" />
   <style>
-    :root { --glow: rgba(44,182,125,.45); --floor: #121216; }
-    body { min-height: 100vh; }
-    .paper-strip { background: var(--yellow); color: #111; font: 600 12px/1 var(--font); text-align: center; padding: 6px 16px; letter-spacing: .4px; }
+    /* graphite + mint, no purple: one brand colour, semantic red/amber only where they mean something */
+    :root {
+      --bg: #0b0e0d; --surface: #121715; --surface-2: #171d1a; --border: #222a26;
+      --text: #e8eeeb; --muted: #8a9690;
+      --accent: #34d399; --accent-ink: #04120b; --green: #34d399; --red: #f87171; --yellow: #fbbf24;
+      --glow: rgba(52,211,153,.35); --floor: #0e1210; --metal: #1f2622; --metal-2: #2a332e;
+      --font: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    }
+    body { min-height: 100vh; background: var(--bg); font-family: var(--font); -webkit-font-smoothing: antialiased; }
+    header { background: var(--bg) !important; border-bottom: 1px solid var(--border) !important; padding: 14px 24px !important; }
+    .logo { font-weight: 700; letter-spacing: -.3px; }
+    .panel { background: var(--surface) !important; border: 1px solid var(--border) !important; border-radius: 14px !important; padding: 18px 20px !important; }
+    .panel h2 { font-size: 12px !important; font-weight: 600 !important; letter-spacing: .06em; text-transform: uppercase; color: var(--muted) !important; margin-bottom: 14px !important; }
+    .tag { background: transparent !important; border: 1px solid var(--border); color: var(--muted) !important; text-transform: none; letter-spacing: 0; font-weight: 500; }
+    button { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 7px 12px; font: 500 13px var(--font); }
+    button:hover { border-color: #33403a; }
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .strip { font: 500 12px/1 var(--font); text-align: center; padding: 7px 16px; letter-spacing: .2px; }
+    .strip.sim { background: #1d1a0e; color: var(--yellow); border-bottom: 1px solid #3a3213; }
+    .strip.real { background: #2a1214; color: var(--red); border-bottom: 1px solid #4a1d21; }
     header { gap: 12px; flex-wrap: wrap; }
-    header .logo span { font-weight: 400; color: var(--muted); font-size: 13px; margin-left: 6px; }
     .ctrls { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-    .ctrls button { cursor: pointer; }
-    .btn-primary { background: var(--accent) !important; color: #fff !important; border: 0; }
-    .btn-danger { background: transparent !important; color: var(--red) !important; border: 1px solid var(--red) !important; }
-    main { padding: 16px; max-width: 1280px; margin: 0 auto; display: grid; gap: 16px; }
-    .panel h2 { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
-    .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
-    .kpi { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
-    .kpi .l { color: var(--muted); font-size: 12px; }
-    .kpi .v { font-size: 24px; font-weight: 700; margin-top: 4px; font-variant-numeric: tabular-nums; }
-    .kpi .s { color: var(--muted); font-size: 12px; margin-top: 2px; }
-
-    /* live agent room */
-    .room-head { color: var(--muted); font-size: 13px; font-weight: 400; }
-    .room-head b { color: var(--text); }
-    .room { background:
-              radial-gradient(circle at 50% 0%, rgba(127,90,240,.10), transparent 60%),
-              repeating-linear-gradient(0deg, transparent 0 39px, rgba(255,255,255,.035) 39px 40px),
-              repeating-linear-gradient(90deg, transparent 0 39px, rgba(255,255,255,.035) 39px 40px), var(--floor);
-            border: 1px solid var(--border); border-radius: 12px; padding: 22px 18px; }
-    .stations { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 34px 26px; }
-    .st { position: relative; background: rgba(22,22,26,.92); border: 1px solid var(--border); border-radius: 12px;
-          padding: 12px; min-height: 150px; transition: border-color .3s, box-shadow .3s, transform .3s; }
-    .st .top { display: flex; gap: 10px; align-items: center; }
-    .av { width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center; font-size: 22px;
-          background: #1e1e24; border: 2px solid var(--border); flex: none; }
-    .st .nm { font-weight: 600; font-size: 14px; }
-    .st .rl { color: var(--muted); font-size: 11.5px; line-height: 1.35; }
-    .st .state { font-size: 11px; margin-top: 8px; display: flex; gap: 6px; align-items: center; color: var(--muted); }
-    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
-    .bubble { margin-top: 8px; background: #202027; border-radius: 8px; padding: 7px 9px; font-size: 12px; line-height: 1.4;
-              color: var(--text); min-height: 34px; overflow-wrap: anywhere; position: relative; }
-    .bubble::before { content: ""; position: absolute; top: -5px; left: 16px; width: 10px; height: 10px; background: #202027; transform: rotate(45deg); }
-    .st .cnt { font-size: 11px; color: var(--muted); margin-top: 6px; font-variant-numeric: tabular-nums; }
-    .st.working { border-color: var(--green); box-shadow: 0 0 0 1px var(--green), 0 0 24px var(--glow); transform: translateY(-2px); }
-    .st.working .av { border-color: var(--green); animation: bob 1s ease-in-out infinite; }
-    .st.working .dot { background: var(--green); animation: blink .8s infinite; }
-    .st.ok .dot { background: var(--green); }
-    .st.ok .av { border-color: rgba(44,182,125,.6); }
-    .st.blocked .dot { background: var(--yellow); }
-    .st.blocked .av { border-color: rgba(242,201,76,.7); }
-    .st.blocked .bubble { border-left: 3px solid var(--yellow); }
-    .st.idle { opacity: .72; }
-    .typing::after { content: "…"; animation: dots 1.2s steps(3) infinite; display: inline-block; width: 1.2em; overflow: hidden; vertical-align: bottom; }
-    /* connectors: row 1 flows right, row 2 flows left (snake) */
-    .st[data-dir="r"]::after, .st[data-dir="l"]::after, .st[data-dir="d"]::after { position: absolute; color: var(--muted); font-size: 18px; }
-    .st[data-dir="r"]::after { content: "→"; right: -22px; top: 50%; transform: translateY(-50%); }
-    .st[data-dir="l"]::after { content: "←"; left: -22px; top: 50%; transform: translateY(-50%); }
-    .st[data-dir="d"]::after { content: "↓"; bottom: -28px; left: 50%; transform: translateX(-50%); }
-    .st.flow::after { color: var(--green); }
-    @keyframes bob { 50% { transform: translateY(-3px); } }
-    @keyframes blink { 50% { opacity: .2; } }
-    @keyframes dots { from { width: 0; } to { width: 1.2em; } }
-    @media (prefers-reduced-motion: reduce) { .st, .st * { animation: none !important; transition: none !important; } }
-
-    .feed { max-height: 280px; overflow-y: auto; }
-    .fi { display: flex; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
-    .fi .w { color: var(--muted); min-width: 56px; font-variant-numeric: tabular-nums; }
-    .two { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 16px; }
-    .wallet-row { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
-    .wcard { border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-top: 10px; }
-    .wcard h3 { font-size: 14px; display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
-    .wbal { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin-top: 8px; }
-    .wbal div { background: var(--bg); border-radius: 8px; padding: 8px 10px; font-size: 12px; color: var(--muted); }
-    .wbal b { display: block; color: var(--text); font-size: 16px; font-variant-numeric: tabular-nums; }
-    input, select { background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 8px; min-width: 0; }
-    input { flex: 1; }
-    form.inline { display: flex; gap: 8px; flex-wrap: wrap; }
-    table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
-    th { color: var(--muted); font-weight: 500; }
-    .tbl { overflow-x: auto; max-height: 360px; overflow-y: auto; }
-    .note { color: var(--muted); font-size: 12.5px; line-height: 1.55; }
-    .perf { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 10px; }
-    .perf div { background: var(--bg); border-radius: 8px; padding: 8px; text-align: center; font-size: 12px; color: var(--muted); }
-    .perf b { display: block; font-size: 16px; }
-    details.more { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px; }
-    details.more summary { cursor: pointer; font-weight: 600; }
-    details.more[open] summary { margin-bottom: 10px; }
-    .k-entry { color: var(--green); } .k-exit { color: var(--accent); } .k-veto { color: var(--yellow); } .k-error, .k-kill_switch { color: var(--red); }
-    main a { color: var(--accent); }
-    .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
-    .seg button { border: 0 !important; border-radius: 0 !important; background: transparent; color: var(--muted); padding: 6px 12px; cursor: pointer; }
-    .seg button.on { background: var(--accent) !important; color: #fff !important; }
+    .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+    .seg button { border: 0 !important; border-radius: 0 !important; background: transparent; color: var(--muted); padding: 7px 14px; cursor: pointer; font-weight: 600; }
+    .seg button.on { background: var(--surface-2) !important; color: var(--text) !important; box-shadow: inset 0 -2px 0 var(--accent); }
+    #acct-seg button.on[data-k="real"] { box-shadow: inset 0 -2px 0 var(--red); }
+    #mode-seg button { padding: 6px 10px; font-size: 12px; }
+    .go { font-size: 15px; font-weight: 700; padding: 9px 22px !important; border-radius: 10px !important; border: 0 !important; cursor: pointer; }
+    .go.start { background: var(--accent) !important; color: var(--accent-ink) !important; }
+    .go.stop { background: #3a2026 !important; color: var(--red) !important; box-shadow: inset 0 0 0 1px var(--red); }
     button[disabled] { opacity: .6; cursor: progress !important; }
     button.busy::before { content: ""; display: inline-block; width: 10px; height: 10px; margin-right: 6px; border: 2px solid currentColor;
                           border-right-color: transparent; border-radius: 50%; animation: rot .7s linear infinite; vertical-align: -1px; }
     button.done { box-shadow: 0 0 0 2px var(--green) !important; }
-    .scanbar { position: sticky; top: 0; z-index: 20; background: var(--accent); color: #fff; font-size: 13px; font-weight: 600;
-               padding: 7px 16px; display: flex; gap: 10px; align-items: center; justify-content: center; }
-    .spin { width: 12px; height: 12px; border: 2px solid #fff; border-right-color: transparent; border-radius: 50%; animation: rot .7s linear infinite; }
+    /* scanning: a thin animated line under the header, text lives in the bots panel */
+    .scanbar { position: sticky; top: 0; z-index: 20; height: 3px; overflow: hidden; background: transparent; }
+    .scanbar::after { content: ""; position: absolute; inset: 0; width: 40%; background: linear-gradient(90deg, transparent, var(--accent), transparent);
+                      animation: sweep 1.2s ease-in-out infinite; }
+    .scanbar > * { display: none; }
+    @keyframes sweep { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+    .live-chip { display: inline-flex; gap: 6px; align-items: center; color: var(--accent); font-weight: 600; text-transform: none; letter-spacing: 0; }
+    .live-chip::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: pulse .6s infinite alternate; }
     @keyframes rot { to { transform: rotate(360deg); } }
     .toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); z-index: 30; background: var(--surface);
              border: 1px solid var(--border); border-left: 4px solid var(--green); padding: 10px 16px; border-radius: 8px;
              font-size: 13.5px; max-width: min(560px, calc(100vw - 32px)); box-shadow: 0 8px 30px rgba(0,0,0,.4); }
     .toast.err { border-left-color: var(--red); }
-    .pill { font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 999px; background: var(--bg); color: var(--muted); border: 1px solid var(--border); }
-    .pill.testnet { color: var(--yellow); border-color: var(--yellow); }
-    .pill.mainnet { color: var(--red); border-color: var(--red); }
-    .pill.armed { color: #fff; background: var(--green); border-color: var(--green); }
-    .live-panel { border-color: rgba(127,90,240,.5); }
-    .live-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin-bottom: 8px; }
-    .live-grid .l { color: var(--muted); font-size: 12px; }
-    .live-grid .v { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
-    .live-grid .s { font-size: 12px; color: var(--muted); line-height: 1.5; }
-    .big { padding: 8px 16px !important; font-weight: 600; }
-    .check { list-style: none; padding: 0; margin: 6px 0; }
-    .check li { margin: 3px 0; }
-    @media (max-width: 900px) {
+    main { padding: 16px; max-width: 1280px; margin: 0 auto; display: grid; gap: 16px; }
+    .panel h2 { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+    .kpi { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; }
+    .kpi .l { color: var(--muted); font-size: 12px; font-weight: 500; }
+    .kpi .v { font-size: 28px; font-weight: 650; margin-top: 6px; font-variant-numeric: tabular-nums; letter-spacing: -.5px; }
+    .kpi .v.soft { color: var(--muted); font-weight: 500; font-size: 20px; }
+    .kpi .s { color: var(--muted); font-size: 12px; margin-top: 2px; line-height: 1.45; }
+    .note { color: var(--muted); font-size: 12.5px; line-height: 1.55; }
+    .setup { border: 1px solid #4a1d21; border-radius: 14px; padding: 16px 18px; background: #1a1012; }
+    .setup ol { padding-left: 20px; line-height: 1.8; font-size: 13.5px; }
+
+    /* ── animated bot room ── */
+    .room { background:
+              radial-gradient(ellipse at 50% -20%, rgba(52,211,153,.10), transparent 60%),
+              repeating-linear-gradient(0deg, transparent 0 31px, rgba(255,255,255,.035) 31px 32px),
+              repeating-linear-gradient(90deg, transparent 0 31px, rgba(255,255,255,.035) 31px 32px), var(--floor);
+            border: 1px solid var(--border); border-radius: 14px; padding: 26px 18px 20px; overflow: hidden; }
+    .line { display: flex; align-items: stretch; gap: 0; }
+    .st { flex: 1 1 0; min-width: 0; background: rgba(18,23,21,.96); border: 1px solid var(--border); border-radius: 14px;
+          padding: 14px 12px 12px; transition: border-color .3s, box-shadow .3s, transform .3s; position: relative; }
+    .wire { flex: 0 0 34px; align-self: center; height: 4px; border-radius: 2px; background: var(--border); position: relative; overflow: hidden; }
+    .wire.on { background: repeating-linear-gradient(90deg, var(--green) 0 8px, transparent 8px 14px); background-size: 28px 4px;
+               animation: flow .6s linear infinite; }
+    @keyframes flow { to { background-position: 28px 0; } }
+    .head { display: flex; gap: 10px; align-items: center; }
+    .bot { width: 52px; height: 44px; border-radius: 13px; background: linear-gradient(180deg, var(--metal-2), var(--metal));
+           position: relative; flex: none; border: 2px solid #4a4a58; margin-top: 10px; }
+    .bot::before, .bot::after { content: ""; position: absolute; top: 15px; width: 9px; height: 9px; border-radius: 50%;
+           background: #9fe8c7; box-shadow: 0 0 6px #9fe8c7; animation: blink 4s infinite; }
+    .bot::before { left: 11px; } .bot::after { right: 11px; }
+    .ant { position: absolute; top: -13px; left: 50%; width: 2px; height: 11px; background: #4a4a58; transform: translateX(-50%); }
+    .ant::after { content: ""; position: absolute; top: -6px; left: -3px; width: 8px; height: 8px; border-radius: 50%; background: #555; }
+    .badge-ico { position: absolute; bottom: -8px; right: -10px; font-size: 16px; filter: drop-shadow(0 1px 2px #000); }
+    .mouth { position: absolute; bottom: 7px; left: 50%; transform: translateX(-50%); width: 14px; height: 3px; border-radius: 2px; background: #4a4a58; }
+    .nm { font-weight: 700; font-size: 14px; }
+    .rl { color: var(--muted); font-size: 11.5px; line-height: 1.35; }
+    .bubble { margin-top: 12px; background: var(--surface-2); border-radius: 10px; padding: 8px 10px; font-size: 12px; line-height: 1.45;
+              min-height: 52px; overflow-wrap: anywhere; position: relative; color: var(--text); }
+    .bubble::before { content: ""; position: absolute; top: -5px; left: 22px; width: 10px; height: 10px; background: var(--surface-2); transform: rotate(45deg); }
+    .rl { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .head > div:last-child, main > *, .two > * { min-width: 0; }   /* let long text shrink instead of widening the page */
+    html, body { overflow-x: hidden; }
+    .state { font-size: 11px; color: var(--muted); margin-top: 8px; display: flex; gap: 6px; align-items: center; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+    .zz { position: absolute; top: 6px; right: 10px; color: var(--muted); font-size: 11px; font-weight: 700; animation: zz 2.4s ease-in-out infinite; }
+    /* working: scanning eyes, blinking antenna, glow, typing */
+    .st.working { border-color: var(--green); box-shadow: 0 0 0 1px var(--green), 0 0 28px var(--glow); transform: translateY(-4px); }
+    .st.working .bot { border-color: var(--green); animation: hop .9s ease-in-out infinite; }
+    .st.working .bot::before, .st.working .bot::after { animation: scan 1s ease-in-out infinite; }
+    .st.working .ant::after { background: var(--green); box-shadow: 0 0 10px var(--green); animation: pulse .5s infinite alternate; }
+    .st.working .mouth { width: 8px; height: 6px; border-radius: 50%; background: var(--green); }
+    .st.working .dot { background: var(--green); animation: pulse .5s infinite alternate; }
+    .st.working .bubble::after { content: " ▍"; color: var(--green); animation: pulse .5s infinite alternate; }
+    .st.ok .dot { background: var(--green); }
+    .st.ok .bot { border-color: rgba(44,182,125,.7); }
+    .st.blocked .dot { background: var(--yellow); }
+    .st.blocked .bot { border-color: rgba(242,201,76,.8); }
+    .st.blocked .bot::before, .st.blocked .bot::after { height: 3px; border-radius: 2px; top: 18px; background: var(--yellow); box-shadow: none; }
+    .st.blocked .bubble { box-shadow: inset 3px 0 0 var(--yellow); }
+    .st.idle .bot::before, .st.idle .bot::after { height: 2px; top: 19px; box-shadow: none; background: #7d8a84; animation: none; }
+    .st.idle { opacity: .8; }
+    .st.off { opacity: .45; filter: grayscale(.6); }
+    @keyframes blink { 0%, 92%, 100% { transform: scaleY(1); } 95% { transform: scaleY(.1); } }
+    @keyframes scan { 0%, 100% { transform: translateX(-3px); } 50% { transform: translateX(3px); } }
+    @keyframes hop { 50% { transform: translateY(-4px); } }
+    @keyframes pulse { to { opacity: .25; } }
+    @keyframes zz { 0% { opacity: 0; transform: translate(0, 4px); } 50% { opacity: 1; } 100% { opacity: 0; transform: translate(6px, -8px); } }
+    @media (prefers-reduced-motion: reduce) { .room *, .wire { animation: none !important; transition: none !important; } }
+    .room-foot { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 14px; font-size: 12.5px; color: var(--muted); }
+    .room-foot b { color: var(--text); }
+
+    .two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+    .feed { max-height: 320px; overflow-y: auto; }
+    .fi { display: flex; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+    .fi .w { color: var(--muted); min-width: 56px; font-variant-numeric: tabular-nums; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    th { color: var(--muted); font-weight: 500; }
+    .tbl { overflow-x: auto; max-height: 320px; overflow-y: auto; }
+    .wallet-row { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+    .wcard { border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-top: 10px; }
+    .wcard h3 { font-size: 14px; display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+    .wbal { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-top: 8px; }
+    .wbal div { background: var(--bg); border-radius: 8px; padding: 8px 10px; font-size: 12px; color: var(--muted); }
+    .wbal b { display: block; color: var(--text); font-size: 15px; font-variant-numeric: tabular-nums; }
+    input, select { background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 8px; min-width: 0; }
+    input { flex: 1; }
+    form.inline { display: flex; gap: 8px; flex-wrap: wrap; }
+    details.more { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px; }
+    details.more summary { cursor: pointer; font-weight: 600; }
+    details.more[open] summary { margin-bottom: 10px; }
+    .k-entry { color: var(--green); } .k-exit { color: #7dd3fc; } .k-veto { color: var(--yellow); } .k-error, .k-kill_switch { color: var(--red); }
+    main a { color: var(--accent); }
+    @media (max-width: 960px) {
       .two { grid-template-columns: 1fr; }
-      .stations { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
-      .st[data-dir]::after { display: none; }
+      .line { flex-direction: column; }
+      .wire { flex-basis: 24px; width: 4px; height: 24px; align-self: center; }
+      .wire.on { background: repeating-linear-gradient(180deg, var(--green) 0 8px, transparent 8px 14px); background-size: 4px 28px; animation: flowv .6s linear infinite; }
+      @keyframes flowv { to { background-position: 0 28px; } }
     }
-    @media (max-width: 600px) {
-      header { position: static; }
-      .perf { grid-template-columns: repeat(2, 1fr); }
-      .stations { grid-template-columns: 1fr; }
-    }
+    @media (max-width: 600px) { header { position: static; } .go { width: 100%; } }
   </style>
 </head>
 <body>
-  <div class="paper-strip">PAPER — dinheiro simulado com preços reais. O bot ainda não negoceia dinheiro real.</div>
+  <div class="strip sim" id="strip">SIMULAÇÃO — dinheiro falso, preços e order books reais da Hyperliquid</div>
   <header>
-    <div class="logo">⚡ polyGeni <span>agents</span></div>
+    <div class="logo">⚡ polyGeni</div>
     <div class="ctrls">
-      <span id="run-badge" class="badge badge-off">PARADO</span>
-      <div class="seg" role="group" aria-label="Quem decide os trades">
-        <button id="mode-rules" onclick="setMode('rules', this)">Regras</button>
-        <button id="mode-llm" onclick="setMode('llm', this)">🧠 LLM</button>
+      <div class="seg" id="acct-seg" role="group" aria-label="Conta">
+        <button data-k="sim" onclick="setKind('sim')">🧪 Simulação</button>
+        <button data-k="real" onclick="setKind('real')">💰 Real</button>
       </div>
-      <button id="btn-scan" onclick="scanNow(this)">🔍 Analisar agora</button>
-      <button class="btn-primary" id="btn-run" onclick="toggleRun(this)">Iniciar 24/7</button>
-      <button class="btn-danger" id="btn-kill" onclick="kill(this)">Kill switch</button>
+      <div class="seg" id="mode-seg" role="group" aria-label="Quem decide">
+        <button data-m="rules" onclick="setMode('rules', this)">Regras</button>
+        <button data-m="llm" onclick="setMode('llm', this)">🧠 LLM</button>
+      </div>
+      <button class="go start" id="btn-go" onclick="go(this)">▶ Start</button>
     </div>
   </header>
-
   <div class="scanbar" id="scanbar" hidden><span class="spin"></span><span id="scan-text">A analisar o mercado…</span></div>
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
   <main>
-    <section class="panel live-panel" id="real">
-      <h2><span>Trading real <span class="pill" id="net-pill">–</span> <span class="pill" id="arm-pill">–</span></span>
-        <span class="ctrls">
-          <button class="btn-primary big" id="btn-arm" onclick="toggleArm(this)">Ativar trading automático</button>
-          <button id="btn-test" onclick="testOrder(this)" hidden>Ordem de teste</button>
-          <button class="btn-danger" id="btn-flat" onclick="flatten(this)">Fechar tudo</button>
-        </span></h2>
-      <div class="live-grid">
-        <div><div class="l">Saldo na Hyperliquid</div><div class="v" id="live-bal">–</div></div>
-        <div><div class="l">Posições reais</div><div class="v" id="live-pos">–</div></div>
-        <div><div class="l">Lucro real</div><div class="v" id="live-pnl">–</div></div>
-        <div><div class="l">Limites duros</div><div class="s" id="live-limits">–</div></div>
-      </div>
-      <div id="live-setup" class="note"></div>
-      <div class="feed" id="live-feed" style="max-height:160px"></div>
-    </section>
-
-    <section class="panel" id="sim">
-      <h2><span>Simulação da conta real <span class="tag">dinheiro falso · preços reais da Hyperliquid</span></span>
-        <span class="ctrls">
-          <span class="pill" id="sim-mode">–</span>
-          <button id="btn-sim-scan" onclick="simScan(this)">🔍 Analisar agora</button>
-          <button id="btn-sim-run" onclick="simToggle(this)">Pausar</button>
-        </span></h2>
-      <p class="note">O que a conta real faria com <b id="sim-start">$20</b>: mesmos mercados, mesmos limites ($12 por posição, 1x, stop obrigatório) e o mesmo modo de decisão — mas sem dinheiro real. Fills simulados no order book real.</p>
-      <div class="live-grid">
-        <div><div class="l">Saldo simulado</div><div class="v" id="sim-eq">–</div><div class="s" id="sim-cash">–</div></div>
-        <div><div class="l">Lucro</div><div class="v" id="sim-pnl">–</div><div class="s" id="sim-vs">–</div></div>
-        <div><div class="l">Posição aberta</div><div class="v" id="sim-pos">–</div><div class="s" id="sim-pos-s">–</div></div>
-        <div><div class="l">Trades · acerto</div><div class="v" id="sim-trades">–</div><div class="s" id="sim-cycle">–</div></div>
-      </div>
-      <div class="two">
-        <div class="feed" id="sim-feed" style="max-height:220px"></div>
-        <div class="tbl" style="max-height:220px"><table id="sim-trades-t"></table></div>
-      </div>
-    </section>
+    <div class="setup" id="setup" hidden></div>
 
     <section class="kpis">
-      <div class="kpi"><div class="l">Património (simulado)</div><div class="v" id="k-equity">–</div><div class="s" id="k-cash">–</div></div>
-      <div class="kpi"><div class="l">Lucro total</div><div class="v" id="k-pnl">–</div><div class="s" id="k-pnl-s">–</div></div>
-      <div class="kpi"><div class="l">Hoje vs segurar SOL</div><div class="v" id="k-day">–</div><div class="s" id="k-day-s">–</div></div>
-      <div class="kpi"><div class="l">Posições · trades</div><div class="v" id="k-pos">–</div><div class="s" id="k-pos-s">–</div></div>
+      <div class="kpi"><div class="l" id="k-eq-l">Saldo</div><div class="v" id="k-eq">–</div><div class="s" id="k-eq-s">–</div></div>
+      <div class="kpi"><div class="l">Lucro</div><div class="v" id="k-pnl">–</div><div class="s" id="k-pnl-s">–</div></div>
+      <div class="kpi"><div class="l">Posição aberta</div><div class="v" id="k-pos">–</div><div class="s" id="k-pos-s">–</div></div>
+      <div class="kpi"><div class="l">Trades · acerto</div><div class="v" id="k-tr">–</div><div class="s" id="k-tr-s">–</div></div>
     </section>
 
     <section class="panel">
-      <h2><span>Sala dos agents <span class="tag">ao vivo</span></span><span class="room-head" id="room-head">–</span></h2>
-      <div class="room"><div class="stations" id="stations"></div></div>
-    </section>
-
-    <section class="panel" id="arena">
-      <h2><span>Arena de modelos <span class="tag">paper · mesmo objetivo</span></span>
-        <span class="ctrls">
-          <label class="note" for="live-model">Modelo da conta real</label>
-          <select id="live-model" onchange="setLiveModel(this)"></select>
-          <button id="btn-arena" onclick="toggleArena(this)">Iniciar arena</button>
-        </span></h2>
-      <p class="note">Cada modelo tem a sua carteira simulada de $100, os mesmos mercados (BTC, ETH, SOL, ouro, prata) e os mesmos limites de risco. Corre a cada 15 min; custa tokens de API.</p>
-      <div class="tbl"><table id="arena-table"></table></div>
+      <h2><span>Bots a trabalhar <span class="tag" id="room-tag">–</span></span><span class="note" id="room-head"></span></h2>
+      <div class="room">
+        <div class="line" id="line"></div>
+        <div class="room-foot"><span id="room-left"></span><span id="room-right"></span></div>
+      </div>
     </section>
 
     <div class="two">
-      <section class="panel">
-        <h2>O que acabou de acontecer</h2>
-        <div class="feed" id="feed"></div>
-      </section>
+      <section class="panel"><h2>O que os bots fizeram</h2><div class="feed" id="feed"></div></section>
+      <section class="panel"><h2><span>Trades</span><span class="tag" id="trades-total"></span></h2><div class="tbl"><table id="trades"></table></div></section>
+    </div>
+
+    <div class="two">
       <section class="panel" id="carteiras">
         <h2>Carteiras <span class="tag">só leitura</span></h2>
-        <p class="note">Ligar a carteira só partilha o endereço público para mostrar saldos. Não pedimos assinaturas e o bot não mexe nos fundos.</p>
         <div class="wallet-row">
-          <button class="btn-primary" onclick="connectWallet('metamask')">🦊 Conectar MetaMask</button>
-          <button onclick="connectWallet('phantom')">👻 Phantom</button>
-          <button onclick="connectWallet('solflare')">☀️ Solflare</button>
+          <button onclick="connectWallet('metamask')">🦊 Conectar MetaMask</button>
+          <button onclick="connectWallet('phantom')">👻 Conectar Phantom</button>
         </div>
-        <form class="inline" onsubmit="return addWallet(event)">
-          <input id="w-addr" placeholder="ou cole um endereço público (0x… ou Solana)" required>
-          <button>Adicionar</button>
-        </form>
+        <p class="note">Só leitura: a ligação partilha o endereço público para mostrar saldos. Nada é assinado.</p>
         <div id="wallets"></div>
-        <details style="margin-top:10px"><summary class="note">Como pôr fundos na Hyperliquid (para a fase real)</summary>
-          <ol class="note">
-            <li>Na MetaMask, rede <b>Arbitrum One</b>, com o teu endereço <code>0x…</code>.</li>
-            <li>Envia de uma exchange <b>USDC</b> (nativo, não USDC.e) e ~$2 em <b>ETH</b>, sempre na rede <b>Arbitrum One</b>.</li>
-            <li>Em app.hyperliquid.xyz: <b>Connect → MetaMask → Deposit</b> (mínimo 5 USDC).</li>
-            <li>O saldo aparece aqui em "Hyperliquid". A execução real ainda não está ligada.</li>
-          </ol>
-        </details>
+      </section>
+      <section class="panel" id="arena">
+        <h2><span>Arena de modelos <span class="tag">simulação</span></span>
+          <span class="ctrls"><select id="live-model" onchange="setLiveModel(this)" title="Modelo que decide no modo LLM"></select>
+          <button id="btn-arena" onclick="toggleArena(this)">Iniciar arena</button></span></h2>
+        <p class="note">Um bot por modelo de IA, cada um com $100 falsos, mesmos mercados e limites. Custa tokens de API.</p>
+        <div class="tbl"><table id="arena-table"></table></div>
       </section>
     </div>
 
-    <section class="panel">
-      <h2><span>Desempenho</span>
-        <span class="period-toggle">
-          <button class="period-btn" onclick="setChartPeriod('day',this)">Dia</button>
-          <button class="period-btn" onclick="setChartPeriod('week',this)">Semana</button>
-          <button class="period-btn" onclick="setChartPeriod('month',this)">Mês</button>
-          <button class="period-btn active" onclick="setChartPeriod('all',this)">Tudo</button>
-        </span></h2>
-      <div class="perf" id="perf"></div>
-      <canvas id="equity-chart" height="110"></canvas>
-    </section>
-
-    <div class="two">
-      <section class="panel">
-        <h2><span>Trades</span><span class="tag" id="trades-total"></span></h2>
-        <div class="wallet-row">
-          <select id="f-venue" data-all="Todos os venues" onchange="renderTrades()"></select>
-          <select id="f-asset" data-all="Todos os ativos" onchange="renderTrades()"></select>
-          <select id="f-strat" data-all="Todas as estratégias" onchange="renderTrades()"></select>
-        </div>
-        <div class="tbl"><table id="trades"></table></div>
-      </section>
-      <section class="panel">
-        <h2>Posições abertas</h2>
-        <div class="tbl"><table id="positions"></table></div>
-      </section>
-    </div>
-
-    <details class="more"><summary>Saldo simulado (depósitos e levantamentos paper)</summary>
-      <form class="inline" onsubmit="return move(event,'deposit')"><input id="dep" type="number" min="1" step="any" placeholder="USD a depositar" required><button>Depositar</button></form>
-      <form class="inline" style="margin-top:8px" onsubmit="return move(event,'withdraw')"><input id="wd" type="number" min="1" step="any" placeholder="USD a levantar" required><button>Levantar</button></form>
-      <div class="tbl" style="margin-top:8px"><table id="funds"></table></div>
+    <details class="more"><summary>Avançado</summary>
+      <div class="wallet-row">
+        <button class="btn-danger" id="btn-flat" onclick="flatten(this)">Fechar todas as posições reais</button>
+        <button id="btn-test" onclick="testOrder(this)">Ordem de teste (testnet)</button>
+        <button id="btn-kill" onclick="killReset(this)">Rearmar kill switch</button>
+      </div>
+      <p class="note" id="limits"></p>
+      <h3 style="margin-top:12px">Pronto para dinheiro real?</h3><div id="readiness"></div>
+      <h3 style="margin-top:12px">Paper de tokens Solana ($100)</h3><p class="note" id="old-paper"></p>
+      <h3 style="margin-top:12px">Decision log (paper Solana)</h3><div class="tbl"><table id="decisions"></table></div>
     </details>
-    <details class="more"><summary>Pronto para dinheiro real?</summary><div id="readiness"></div></details>
-    <details class="more"><summary>Mercados e pausa</summary><div id="markets"></div></details>
-    <details class="more"><summary>Research dos tokens</summary>
-      <form class="inline" onsubmit="return researchNow(event)"><input id="r-mint" placeholder="Mint Solana para pesquisar agora" required><button>Pesquisar</button></form>
-      <div id="research"></div>
-    </details>
-    <details class="more"><summary>Decision log completo</summary><div class="tbl"><table id="decisions"></table></div></details>
   </main>
 
-  <script src="/static/chart.min.js"></script>
-  <script src="/static/paper.js?v=8"></script>
+  <script src="/static/paper.js?v=11"></script>
 </body>
 </html>

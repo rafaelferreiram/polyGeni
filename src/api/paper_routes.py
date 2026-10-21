@@ -491,3 +491,108 @@ def shadow_scan():
         return {"started": False}
     threading.Thread(target=hl_live.shadow_cycle, daemon=True).start()
     return {"started": True}
+
+
+# ─── one account, two modes: "sim" (fake money) and "real" — identical engine, limits and view ───
+
+def _account_engine(kind: str):
+    from src.solana import hl_live
+    if kind == "sim":
+        return hl_live.get_shadow_engine()
+    if kind == "real":
+        return hl_live.get_live_engine()
+    raise HTTPException(400, "kind must be 'sim' or 'real'")
+
+
+@router.get("/account")
+def account(kind: str = "sim"):
+    from src.solana import hl_live
+    eng = _account_engine(kind)
+    led = eng.ledger
+    p = eng.portfolio()
+    trades = led.closed_trades()
+    out = {
+        "kind": kind, "money": "fake" if kind == "sim" else "real", "network": "mainnet" if kind == "sim" else hl_live.network(),
+        "running": led.get_state("running", False) if kind == "sim" else hl_live.is_armed(),
+        "scanning": eng.scanning(), "decision_mode": eng.decision_mode(), "model": eng.llm.model if eng.llm else None,
+        "llm_available": bool(eng.llm and eng.llm.enabled),
+        "equity": round(p.equity, 4), "cash": round(p.cash, 4), "exposure": round(p.exposure, 4),
+        "pnl_usd": round(p.equity - led.contributed(), 4), "contributed": led.contributed(),
+        "performance": performance(led.equity_history(100_000)),
+        "positions": led.positions(), "trades": trades[:100],
+        "win_rate": round(sum(t["pnl_usd"] > 0 for t in trades) / len(trades), 3) if trades else None,
+        "decisions": led.decisions(25), "last_cycle": led.get_state("last_cycle"), "cycle": eng.cycle,
+        "heartbeat": led.get_state("heartbeat"), "cycle_interval_sec": cfg.LIVE_CYCLE_SEC,
+        "kill_switch": eng.kill_switch(), "live": led.get_state("live", {}), "agents": led.get_state("agents", {}),
+        "limits": {"max_capital_usd": cfg.LIVE_MAX_CAPITAL_USD, "max_position_usd": cfg.LIVE_MAX_POSITION_USD,
+                   "max_positions": cfg.LIVE_MAX_POSITIONS, "max_daily_loss_pct": cfg.LIVE_MAX_DAILY_LOSS_PCT,
+                   "markets": cfg.HL_LIVE_MARKETS},
+    }
+    if kind == "real":
+        st = hl_live.config_status()
+        out["config"] = st
+        if not st["problems"]:
+            try:
+                out["exchange_balance"] = hl_live._broker(eng).account_value()
+            except Exception as e:
+                out["exchange_error"] = str(e)[:200]
+    return out
+
+
+class Kind(BaseModel):
+    kind: str = "sim"
+
+
+def _scan_in_background(kind: str) -> bool:
+    from src.solana import hl_live
+    eng = _account_engine(kind)
+    if eng.scanning():
+        return False
+    threading.Thread(target=hl_live.shadow_cycle if kind == "sim" else hl_live.live_cycle, daemon=True).start()
+    return True
+
+
+@router.post("/account/start", dependencies=LOCAL)
+def account_start(req: Kind):
+    """One click: turn the account on and start analysing immediately."""
+    from src.solana import hl_live
+    if req.kind == "real":
+        _live_call("arm")
+    else:
+        hl_live.get_shadow_engine().ledger.set_state("running", True)
+    return {"kind": req.kind, "running": True, "scan_started": _scan_in_background(req.kind)}
+
+
+@router.post("/account/stop", dependencies=LOCAL)
+def account_stop(req: Kind):
+    from src.solana import hl_live
+    if req.kind == "real":
+        hl_live.disarm("dashboard stop")
+    else:
+        hl_live.get_shadow_engine().ledger.set_state("running", False)
+    return {"kind": req.kind, "running": False}
+
+
+@router.post("/account/scan", dependencies=LOCAL)
+def account_scan(req: Kind):
+    from src.solana import hl_live
+    running = hl_live.is_armed() if req.kind == "real" else hl_live.get_shadow_engine().ledger.get_state("running", False)
+    if not running:
+        raise HTTPException(400, "carregue em Start primeiro")
+    return {"started": _scan_in_background(req.kind)}
+
+
+class AccountMode(BaseModel):
+    mode: str
+
+
+@router.post("/account/mode", dependencies=LOCAL)
+def account_mode(req: AccountMode):
+    """Simulation and real always share the decision mode (that is what makes them comparable)."""
+    from src.solana import hl_live
+    try:
+        hl_live.get_live_engine().set_decision_mode(req.mode)
+        hl_live.get_shadow_engine().set_decision_mode(req.mode)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"mode": req.mode}

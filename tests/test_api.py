@@ -104,3 +104,26 @@ def test_wallets_accept_public_evm_and_solana_only(client, local, monkeypatch):
     ws = client.get("/api/paper/wallets").json()["wallets"]
     assert {w.get("chain", "sol") for w in ws} == {"evm", "sol"}
     assert next(w for w in ws if w.get("chain") == "evm")["arbitrum_usdc"] == 7.0
+
+
+def test_account_sim_and_real_share_shape_and_controls(client, local, monkeypatch, tmp_path):
+    from src.solana import config as scfg
+    from src.solana import hl_live
+    monkeypatch.setattr(scfg, "SHADOW_DB_PATH", str(tmp_path / "shadow.db"))
+    monkeypatch.setattr(scfg, "LIVE_DB_PATH", str(tmp_path / "live.db"))
+    monkeypatch.setattr(hl_live, "_shadow", None)
+    monkeypatch.setattr(hl_live, "_live", None)
+    monkeypatch.setattr(hl_live, "shadow_cycle", lambda: None)
+    monkeypatch.delenv("HL_API_WALLET_KEY", raising=False)
+    sim = client.get("/api/paper/account?kind=sim").json()
+    real = client.get("/api/paper/account?kind=real").json()
+    shared = {"equity", "pnl_usd", "positions", "trades", "decisions", "agents", "live", "limits", "decision_mode"}
+    assert shared <= set(sim) and shared <= set(real)
+    assert sim["money"] == "fake" and real["money"] == "real" and sim["equity"] == 20.0
+    assert client.post("/api/paper/account/stop", json={"kind": "sim"}, headers=local).json()["running"] is False
+    assert client.post("/api/paper/account/scan", json={"kind": "sim"}, headers=local).status_code == 400
+    r = client.post("/api/paper/account/start", json={"kind": "sim"}, headers=local).json()
+    assert r["running"] is True
+    # real cannot start without the API wallet configured
+    assert client.post("/api/paper/account/start", json={"kind": "real"}, headers=local).status_code == 400
+    assert client.post("/api/paper/account/start", json={"kind": "sim"}).status_code == 403   # token required

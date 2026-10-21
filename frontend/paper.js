@@ -13,7 +13,7 @@ async function api(path, method = "GET", body = null) {
   return res.json();
 }
 
-// Token names, reasons and research text come from public APIs / LLMs: always escape.
+// Token names, reasons and LLM text come from outside: always escape.
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const usd = (v, d = 2) => (v === null || v === undefined ? "–" : `$${Number(v).toFixed(d)}`);
 const pnl = (v) => {
@@ -28,15 +28,14 @@ const ago = (iso) => {
   const s = Math.max(0, (Date.now() - new Date(iso)) / 1000);
   return s < 60 ? `${Math.round(s)}s` : s < 3600 ? `${Math.round(s / 60)} min` : `${Math.round(s / 3600)} h`;
 };
-
 function table(id, head, rows) {
   document.getElementById(id).innerHTML =
     `<thead><tr>${head.map((h) => `<th>${h}</th>`).join("")}</tr></thead>` +
     `<tbody>${rows.length ? rows.join("") : `<tr><td colspan="${head.length}" class="muted">Ainda nada</td></tr>`}</tbody>`;
 }
+async function safe(fn) { try { await fn(); } catch (e) { console.warn(e); } }
 
-// ─── controls: every button shows "working…", then a visible result ───
-let lastStatus = null, lastLive = null;
+// ─── feedback: every click shows "working…" then a visible result ───
 let toastTimer;
 function toast(msg, err = false) {
   const t = document.getElementById("toast");
@@ -44,7 +43,7 @@ function toast(msg, err = false) {
   t.className = `toast${err ? " err" : ""}`;
   t.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => (t.hidden = true), err ? 7000 : 3500);
+  toastTimer = setTimeout(() => (t.hidden = true), err ? 8000 : 3500);
 }
 async function run(btn, busyLabel, fn, okMsg) {
   const label = btn.textContent;
@@ -62,194 +61,210 @@ async function run(btn, busyLabel, fn, okMsg) {
   } finally {
     btn.disabled = false;
     btn.classList.remove("busy");
-    safe(refreshLive); safe(refreshLiveTrading);
+    safe(refresh);
   }
-}
-function toggleRun(btn) {
-  const on = lastStatus?.running;
-  run(btn, on ? "A parar…" : "A iniciar…", () => api(on ? "/stop" : "/start", "POST"),
-      on ? "⏸ Bot parado — não abre novas posições" : "✓ Bot a correr 24/7 (um ciclo a cada 5 min)");
-}
-function scanNow(btn) {
-  run(btn, "A pedir análise…", () => api("/cycle", "POST"),
-      (r) => (r.started ? "🔍 Análise iniciada — veja a barra roxa e a sala dos agents" : "Já está uma análise a correr"));
-}
-function kill(btn) {
-  const active = lastStatus?.kill_switch?.active;
-  if (!confirm(active ? "Rearmar o kill switch e permitir novas entradas?" : "Ativar o kill switch? Bloqueia novas entradas; as saídas continuam.")) return;
-  run(btn, active ? "A rearmar…" : "A ativar…",
-      () => api(active ? "/kill-switch/reset" : "/kill-switch", "POST", { reason: "dashboard" }),
-      active ? "✓ Kill switch rearmado" : "🛑 Kill switch ativo — sem novas entradas");
-}
-function setMode(mode, btn) {
-  run(btn, mode === "llm" ? "A ligar LLM…" : "A ligar regras…", async () => {
-    await api("/decision-mode", "POST", { mode, target: "paper" });
-    await api("/decision-mode", "POST", { mode, target: "live" });
-  }, mode === "llm" ? "🧠 O LLM passa a decidir compras e vendas (o Risk mantém os limites)" : "✓ Decisões por regras determinísticas");
 }
 
-// ─── real trading (Hyperliquid) ───
-function toggleArm(btn) {
-  const armed = lastLive?.armed;
-  if (!armed) {
-    const net = lastLive?.network === "mainnet" ? "MAINNET COM DINHEIRO REAL" : "testnet (dinheiro de teste)";
-    if (!confirm(`Ativar trading automático em ${net}?\nLimites: capital ${usd(lastLive?.limits?.max_capital_usd, 0)}, posição ${usd(lastLive?.limits?.max_position_usd, 0)}, 1x, stop obrigatório na exchange.`)) return;
-  }
-  run(btn, armed ? "A desativar…" : "A verificar conta e ativar…", () => api(armed ? "/live/disarm" : "/live/arm", "POST"),
-      armed ? "⏸ Trading real desativado (stops na exchange mantêm-se)" : (r) => `✓ Trading automático ATIVO em ${r.network} — saldo ${usd(r.balance)}`);
+// ─── account: simulation and real are the same view ───
+let KIND = "sim";
+try { KIND = localStorage.getItem("acct") || "sim"; } catch (e) { /* storage blocked */ }
+let acc = null;
+
+function setKind(k) {
+  KIND = k;
+  try { localStorage.setItem("acct", k); } catch (e) { /* ignore */ }
+  replay = null;
+  lastCycleSeen = null;
+  safe(refresh);
 }
+
+function go(btn) {
+  const on = acc?.running;
+  if (!on && KIND === "real") {
+    const L = acc?.limits || {};
+    const net = acc?.network === "mainnet" ? "MAINNET — DINHEIRO REAL" : "testnet (dinheiro de teste)";
+    if (!confirm(`Ligar os bots na conta REAL (${net})?\n\nLimites: capital ${usd(L.max_capital_usd, 0)}, posição ${usd(L.max_position_usd, 0)}, 1x, stop e alvo na exchange, perda diária ${pct(L.max_daily_loss_pct)}.`)) return;
+  }
+  run(btn, on ? "A parar…" : "A ligar os bots…",
+      () => api(`/account/${on ? "stop" : "start"}`, "POST", { kind: KIND }),
+      on ? "■ Bots parados — não abrem novas posições (stops continuam ativos)"
+         : `▶ Bots a trabalhar na conta ${KIND === "sim" ? "simulada" : "REAL"} — primeira análise já a correr`);
+}
+
+function setMode(mode, btn) {
+  run(btn, "…", () => api("/account/mode", "POST", { mode }),
+      mode === "llm" ? "🧠 O LLM decide comprar e vender (Risk mantém os limites)" : "✓ Decisões por regras");
+}
+
+// ─── animated bot room ───
+const STATIONS = [
+  { key: "scout", ico: "🔭", name: "Scout", role: "observa os mercados" },
+  { key: "decider", ico: "🎯", name: "Estratégia", role: "decide se compra" },
+  { key: "risk", ico: "🛡️", name: "Risk", role: "limites e tamanho" },
+  { key: "executor", ico: "⚙️", name: "Executor", role: "envia a ordem" },
+  { key: "guard", ico: "👁️", name: "Guarda", role: "vigia stop e alvo" },
+];
+let replay = null, lastCycleSeen = null;
+
+function stationData(st, a) {
+  const deciderKey = a.decision_mode === "llm" ? "llm" : "mean_reversion";
+  if (st.key === "decider") {
+    return { ...(a.agents[deciderKey] || {}), name: a.decision_mode === "llm" ? "LLM trader" : "Estratégia",
+             ico: a.decision_mode === "llm" ? "🧠" : "🎯",
+             role: a.decision_mode === "llm" ? a.model : "compra quedas exageradas" };
+  }
+  if (st.key === "guard") {
+    const p = a.positions[0];
+    const lastExit = a.decisions.find((d) => d.kind === "exit");
+    return { last_reason: p ? `${p.symbol}: stop ${Number(p.stop_price).toPrecision(5)} · alvo ${Number(p.tp_price).toPrecision(5)} · agora ${usd(p.mark_value)}`
+                            : lastExit ? `Última saída: ${lastExit.symbol} — ${lastExit.reason}` : "Sem posições para vigiar",
+             last_run: a.heartbeat?.ts, last_ok: true, guard: true };
+  }
+  return a.agents[st.key] || {};
+}
+
+function renderRoom(a) {
+  const cycleStart = a.heartbeat ? new Date(a.heartbeat.ts).getTime() : 0;
+  const liveAgent = a.live?.running && Date.now() - new Date(a.live.ts) < 30000 ? a.live.agent : null;
+  const activeKey = replay ? replay.order[replay.i] : liveAgent === "llm" || liveAgent === "mean_reversion" ? "decider" : liveAgent;
+  const html = STATIONS.map((st, i) => {
+    const d = stationData(st, a);
+    const acted = d.last_run && new Date(d.last_run).getTime() >= cycleStart - 1000;
+    const working = a.running && activeKey === st.key;
+    let cls = !a.running ? "off" : working ? "working" : !acted ? "idle" : d.last_ok === false ? "blocked" : "ok";
+    if (st.key === "guard" && a.running && !working) cls = a.positions.length ? "ok" : "idle";
+    const state = !a.running ? "desligado" : working ? "a trabalhar" : cls === "idle" ? "à espera" : cls === "blocked" ? "bloqueou" : "feito";
+    const bubble = !a.running ? "Carregue em ▶ Start para me pôr a trabalhar"
+      : working && !replay ? (a.live.detail || "a pensar…") : (d.last_reason || (st.key === "risk" || st.key === "executor" ? "Só entro em ação quando há sinal de compra" : "…"));
+    const wireOn = a.running && (working || (replay && replay.order.indexOf(st.key) >= 0 && replay.order.indexOf(st.key) < replay.i));
+    return `${i ? `<div class="wire ${wireOn ? "on" : ""}"></div>` : ""}
+      <div class="st ${cls}">
+        ${cls === "idle" ? '<span class="zz">z z</span>' : ""}
+        <div class="head"><div class="bot"><span class="ant"></span><span class="mouth"></span><span class="badge-ico">${d.ico || st.ico}</span></div>
+          <div><div class="nm">${esc(d.name || st.name)}</div><div class="rl">${esc(d.role || st.role)}</div></div></div>
+        <div class="state"><span class="dot"></span>${state}</div>
+        <div class="bubble">${esc(bubble)}</div>
+      </div>`;
+  }).join("");
+  document.getElementById("line").innerHTML = html;
+}
+
+function maybeReplay(a) {
+  // after each finished cycle, replay what every bot did, one after the other
+  const lc = a.last_cycle;
+  if (!lc || !a.running || a.scanning) return;
+  if (lastCycleSeen === null) { lastCycleSeen = lc.cycle; if (Date.now() - new Date(lc.finished) > 120000) return; }
+  else if (lc.cycle === lastCycleSeen) return;
+  lastCycleSeen = lc.cycle;
+  const cycleStart = a.heartbeat ? new Date(a.heartbeat.ts).getTime() - 1000 : 0;
+  const ranAt = (k) => {
+    const d = k === "decider" ? (a.agents.llm?.last_run && a.decision_mode === "llm" ? a.agents.llm : a.agents.mean_reversion) : a.agents[k];
+    return d?.last_run && new Date(d.last_run).getTime() >= cycleStart ? new Date(d.last_run).getTime() : null;
+  };
+  const order = ["scout", "decider", "risk", "executor"].filter((k) => ranAt(k) !== null);
+  if (a.positions.length) order.push("guard");
+  if (!order.length) return;
+  replay = { order, i: 0 };
+  const step = () => {
+    renderRoom(acc);
+    if (++replay.i <= order.length) setTimeout(step, 900);
+    else { replay = null; renderRoom(acc); }
+  };
+  step();
+}
+
+// ─── main refresh ───
+const KINDS = { entry: "🟢 compra", exit: "🔵 venda", veto: "🟡 bloqueio", error: "🔴 erro", kill_switch: "🛑 kill switch",
+                reconcile: "🧾 reconciliação", arm: "🔓 ligado", disarm: "🔒 desligado", mode: "🔀 modo" };
+let nextCycleAt = null;
+
+async function refresh() {
+  const a = await api(`/account?kind=${KIND}`);
+  acc = a;
+  // header
+  document.querySelectorAll("#acct-seg button").forEach((b) => b.classList.toggle("on", b.dataset.k === KIND));
+  document.querySelectorAll("#mode-seg button").forEach((b) => b.classList.toggle("on", b.dataset.m === a.decision_mode));
+  document.querySelector('#mode-seg [data-m="llm"]').title = a.llm_available ? "O LLM decide compras e vendas" : "Precisa de ANTHROPIC_API_KEY no .env";
+  const strip = document.getElementById("strip");
+  strip.className = `strip ${KIND}`;
+  strip.textContent = KIND === "sim" ? "SIMULAÇÃO — dinheiro falso, preços e order books reais da Hyperliquid"
+    : `CONTA REAL (${a.network.toUpperCase()}) — ${a.network === "mainnet" ? "dinheiro real" : "dinheiro de teste da Hyperliquid"}`;
+  const btn = document.getElementById("btn-go");
+  if (!btn.classList.contains("busy")) {
+    btn.textContent = a.running ? "■ Stop" : "▶ Start";
+    btn.className = `go ${a.running ? "stop" : "start"}`;
+  }
+  // setup (real account not configured yet)
+  const setup = document.getElementById("setup");
+  const problems = a.config?.problems || [];
+  setup.hidden = !(KIND === "real" && (problems.length || a.exchange_error));
+  if (!setup.hidden) {
+    setup.innerHTML = `<b>Para ligar a conta real falta:</b> ${problems.map(esc).join(" · ")}${a.exchange_error ? ` <span class="red">${esc(a.exchange_error)}</span>` : ""}
+      <ol><li>Depositar ≥ 5 USDC na Hyperliquid (rede Arbitrum) com a MetaMask</li>
+      <li>Testnet: Faucet → More → API → <b>Generate</b> → Authorize (guarde a chave só no <code>.env</code>)</li>
+      <li>No <code>.env</code>: <code>HL_NETWORK=testnet</code>, <code>HL_ACCOUNT_ADDRESS=0x…</code>, <code>HL_API_WALLET_KEY=…</code> e reiniciar</li></ol>`;
+  }
+  // KPIs
+  document.getElementById("k-eq-l").textContent = KIND === "sim" ? "Saldo simulado" : "Saldo real na Hyperliquid";
+  document.getElementById("k-eq").textContent = usd(KIND === "real" && a.exchange_balance !== undefined ? a.exchange_balance : a.equity);
+  document.getElementById("k-eq-s").textContent = `cash ${usd(a.cash)} · em posição ${usd(a.exposure)}`;
+  document.getElementById("k-pnl").innerHTML = pnl(a.pnl_usd);
+  const all = a.performance?.all;
+  document.getElementById("k-pnl-s").textContent = all ? `${pct(all.twr)} · segurar BTC ${pct(all.hold_btc)}` : "ainda sem histórico";
+  const p = a.positions[0];
+  const kp = document.getElementById("k-pos");
+  kp.textContent = p ? p.symbol : "Sem posição";
+  kp.classList.toggle("soft", !p);
+  document.getElementById("k-pos-s").innerHTML = p ? `${usd(p.cost_usd)} → ${usd(p.mark_value)} ${pnl(p.mark_value !== null ? p.mark_value - p.cost_usd : null)}` : "à espera de uma oportunidade";
+  const kt = document.getElementById("k-tr");
+  kt.textContent = a.trades.length ? `${a.trades.length} · ${pct(a.win_rate)}` : "Nenhum";
+  kt.classList.toggle("soft", !a.trades.length);
+  document.getElementById("k-tr-s").innerHTML = a.trades.length ? `total ${pnl(a.trades.reduce((x, t) => x + t.pnl_usd, 0))}` : "sem trades fechados";
+  // scan bar + room
+  nextCycleAt = a.running && a.heartbeat ? new Date(a.heartbeat.ts).getTime() + a.cycle_interval_sec * 1000 : null;
+  const scanning = a.scanning || (a.live?.running && Date.now() - new Date(a.live.ts) < 60000);
+  document.getElementById("scanbar").hidden = !scanning;
+  if (scanning) document.getElementById("scan-text").textContent = `A analisar o mercado (ciclo #${a.cycle})…`;
+  document.getElementById("room-tag").textContent = KIND === "sim" ? "simulação" : `real · ${a.network}`;
+  document.getElementById("room-head").innerHTML = scanning ? '<span class="live-chip">a analisar o mercado</span>' : "";
+  if (!replay) renderRoom(a);
+  maybeReplay(a);
+  renderFoot();
+  // feed + trades
+  const lc = a.last_cycle;
+  document.getElementById("feed").innerHTML = (lc ? `<div class="fi"><span class="w">${ago(lc.finished)}</span><span>⚙️ Ciclo #${lc.cycle}: ${lc.candidates} mercados, ${lc.signals} sinais, ${lc.entries} compras</span></div>` : "") +
+    (a.decisions.map((d) => `<div class="fi"><span class="w">${ago(d.ts)}</span><span><span class="k-${esc(d.kind)}">${KINDS[d.kind] || esc(d.kind)}</span> <b>${esc(d.symbol || "")}</b> — ${esc(d.reason)}</span></div>`).join("")
+     || '<p class="note">Os bots ainda não fizeram nada nesta conta.</p>');
+  document.getElementById("trades-total").innerHTML = a.trades.length ? pnl(a.trades.reduce((x, t) => x + t.pnl_usd, 0)) : "";
+  table("trades", ["Ativo", "Entrada → saída", "Lucro", "Motivo"], a.trades.map((t) => `
+    <tr><td><b>${esc(t.symbol)}</b><br><span class="muted">${time(t.exit_ts)}</span></td>
+    <td>${Number(t.entry_price).toPrecision(6)} → ${Number(t.exit_price).toPrecision(6)}</td>
+    <td>${pnl(t.pnl_usd)}<br><span class="muted">${pct(t.pnl_pct)}</span></td><td class="muted">${esc(t.reason)}</td></tr>`));
+  const L = a.limits;
+  document.getElementById("limits").textContent = `Limites (iguais na simulação e no real): capital ${usd(L.max_capital_usd, 0)}, posição ${usd(L.max_position_usd, 0)}, ${L.max_positions} de cada vez, 1x só compra, perda diária ${pct(L.max_daily_loss_pct)}, mercados ${L.markets.join(", ")}.`;
+}
+
+function renderFoot() {
+  if (!acc) return;
+  const left = document.getElementById("room-left"), right = document.getElementById("room-right");
+  if (!acc.running) { left.innerHTML = "Bots <b>desligados</b>"; right.textContent = ""; return; }
+  const secs = nextCycleAt ? Math.round((nextCycleAt - Date.now()) / 1000) : null;
+  left.innerHTML = acc.scanning ? `Ciclo <b>#${acc.cycle}</b> a decorrer` : `Próxima análise em <b>${secs > 0 ? `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}` : "instantes"}</b>`;
+  right.innerHTML = `Quem decide: <b>${acc.decision_mode === "llm" ? `🧠 ${esc(acc.model)}` : "regras"}</b>`;
+}
+
+// ─── advanced actions (real account) ───
 function flatten(btn) {
-  if (!confirm("Fechar TODAS as posições reais a mercado e desativar o trading automático?")) return;
-  run(btn, "A fechar posições…", () => api("/live/flatten", "POST"),
+  if (!confirm("Fechar TODAS as posições reais a mercado e desligar os bots da conta real?")) return;
+  run(btn, "A fechar…", () => api("/live/flatten", "POST"),
       (r) => (r.errors.length ? `Fechadas: ${r.closed.join(", ") || "nenhuma"} · erros: ${r.errors.join("; ")}` : `✓ Fechadas: ${r.closed.join(", ") || "nenhuma posição aberta"}`));
 }
 function testOrder(btn) {
-  run(btn, "A enviar ordem de teste…", () => api("/live/test-order", "POST"),
-      (r) => (r.position ? `✓ Ordem de teste executada: ${r.position.symbol} com stop e alvo na exchange` : `Sem ordem: ${(r.cycle?.error || "ver o feed")}`));
+  run(btn, "A enviar…", () => api("/live/test-order", "POST"),
+      (r) => (r.position ? `✓ Ordem de teste: ${r.position.symbol} com stop e alvo na exchange` : "Sem ordem — ver o feed"));
 }
-async function refreshLiveTrading() {
-  const s = await api("/live/status");
-  lastLive = s;
-  const net = document.getElementById("net-pill");
-  net.textContent = s.network.toUpperCase();
-  net.className = `pill ${s.network}`;
-  const arm = document.getElementById("arm-pill");
-  arm.textContent = s.kill_switch.active ? "KILL SWITCH" : s.armed ? "ATIVO" : "DESATIVADO";
-  arm.className = `pill ${s.armed && !s.kill_switch.active ? "armed" : ""}`;
-  const ready = !s.config.problems.length;
-  const btn = document.getElementById("btn-arm");
-  if (!btn.classList.contains("busy")) btn.textContent = s.armed ? "Desativar trading automático" : "Ativar trading automático";
-  btn.disabled = !ready && !s.armed;
-  document.getElementById("btn-test").hidden = !(s.armed && s.network === "testnet");
-  document.getElementById("live-bal").textContent = s.exchange_balance !== undefined ? usd(s.exchange_balance) : "–";
-  document.getElementById("live-pos").textContent = s.positions.length ? s.positions.map((p) => p.symbol).join(", ") : "0";
-  document.getElementById("live-pnl").innerHTML = pnl(s.trades.reduce((x, t) => x + t.pnl_usd, 0));
-  const L = s.limits;
-  document.getElementById("live-limits").innerHTML = `capital ${usd(L.max_capital_usd, 0)} · posição ${usd(L.max_position_usd, 0)} · ${L.max_positions} de cada vez<br>1x só compra · perda diária ${pct(L.max_daily_loss_pct)} · stop na exchange`;
-  document.getElementById("live-setup").innerHTML = ready ? (s.exchange_error ? `<span class="red">Hyperliquid: ${esc(s.exchange_error)}</span>` : "")
-    : `<b>Para ativar falta:</b><ul class="check">${s.config.problems.map((p) => `<li>⬜ ${esc(p)}</li>`).join("")}</ul>
-       Passos: MetaMask → depositar USDC na Hyperliquid → criar API wallet em More → API → pôr <code>HL_ACCOUNT_ADDRESS</code> e <code>HL_API_WALLET_KEY</code> no <code>.env</code> → reiniciar.`;
-  document.getElementById("live-feed").innerHTML = s.decisions.slice(0, 8).map((d) => `
-    <div class="fi"><span class="w">${ago(d.ts)}</span><span><span class="k-${esc(d.kind)}">${KIND[d.kind] || esc(d.kind)}</span>
-    <b>${esc(d.symbol || "")}</b> — ${esc(d.reason)}</span></div>`).join("");
-}
-
-// ─── live agent room ───
-const AGENTS = [
-  ["scout", "🔭", "Scout", "Procura mercados com volume e liquidez"],
-  ["llm", "🧠", "LLM trader", "Decide comprar ou vender (modo LLM)"],
-  ["safety", "🛡️", "Safety", "Anti-rug: rejeita o que não consegue verificar"],
-  ["mean_reversion", "🎯", "Mean reversion", "Compra quedas exageradas"],
-  ["momentum", "🚀", "Momentum", "Compra rompimentos com volume"],
-  ["research", "📚", "Research", "Métricas, notícias e riscos do token"],
-  ["debate", "⚖️", "Debate LLM", "Bull vs bear — só pode vetar"],
-  ["risk", "🧮", "Risk", "Limites e tamanho — palavra final"],
-  ["executor", "⚙️", "Executor", "Executa no broker paper"],
-];
-
-function renderRoom(agents, s) {
-  const byName = Object.fromEntries(agents.map((a) => [a.name, a]));
-  const shown = AGENTS.filter(([n]) => byName[n]);       // only agents that exist in this build
-  const live = s.live || {};
-  const cycleStart = s.heartbeat ? new Date(s.heartbeat.ts).getTime() : 0;
-  const cols = window.innerWidth <= 900 ? 0 : 4;
-  const DOWNSTREAM = new Set(["research", "debate", "risk", "executor"]);
-  // snake layout: a reversed, incomplete last row needs spacers on its left so it lines up under the row above
-  let spacers = "";
-  if (cols) {
-    const lastRow = Math.floor((shown.length - 1) / cols), missing = (lastRow + 1) * cols - shown.length;
-    if (lastRow % 2 === 1) for (let j = 0; j < missing; j++) spacers += `<div style="order:${lastRow * cols + j}"></div>`;
-  }
-  document.getElementById("stations").innerHTML = spacers + shown.map(([n, icon, label, role], i) => {
-    const a = byName[n] || {};
-    const acted = a.last_run && new Date(a.last_run).getTime() >= cycleStart - 1000;
-    const working = live.running && live.agent === n && Date.now() - new Date(live.ts) < 30000;
-    const cls = working ? "working" : !acted ? "idle" : a.last_ok === false ? "blocked" : "ok";
-    const stateTxt = working ? '<span class="typing">a trabalhar</span>' : !acted ? "à espera do próximo ciclo"
-      : a.last_ok === false ? "bloqueou neste ciclo" : "concluiu neste ciclo";
-    // snake layout on wide screens: row 1 left→right, row 2 right→left
-    let dir = "", order = i;
-    if (cols) {
-      const row = Math.floor(i / cols), col = i % cols, last = i === shown.length - 1;
-      if (row % 2 === 1) order = row * cols + (cols - 1 - col);
-      if (!last) dir = col === cols - 1 ? "d" : row % 2 === 0 ? "r" : "l";
-    }
-    return `<div class="st ${cls} ${working ? "flow" : ""}" data-dir="${dir}" style="order:${order}" title="${esc(role)}">
-      <div class="top"><div class="av">${icon}</div><div><div class="nm">${esc(label)}</div><div class="rl">${esc(role)}</div></div></div>
-      <div class="state"><span class="dot"></span>${stateTxt}</div>
-      <div class="bubble">${esc((working ? live.detail : a.last_reason) || (DOWNSTREAM.has(n) ? "Só entra em ação quando uma estratégia dá sinal" : "Ainda não correu"))}</div>
-      <div class="cnt">✔ ${a.approved ?? 0} · ✖ ${a.vetoed ?? 0}${a.trades ? ` · ${a.trades} trades ${pnl(a.pnl_usd)}` : ""}${a.capital_usd !== undefined ? ` · capital ${usd(a.capital_usd, 0)}` : ""}</div>
-    </div>`;
-  }).join("");
-}
-
-let nextCycleAt = null;
-function renderHead(s) {
-  const live = s.live || {};
-  const el = document.getElementById("room-head");
-  if (live.running && live.agent) {
-    const label = (AGENTS.find(([n]) => n === live.agent) || [])[2] || live.agent;
-    el.innerHTML = `Ciclo <b>#${s.cycle}</b> em curso · <b>${esc(label)}</b> a trabalhar`;
-  } else if (s.running) {
-    const left = nextCycleAt ? Math.round((nextCycleAt - Date.now()) / 1000) : null;
-    el.innerHTML = `Ciclo <b>#${s.cycle}</b> concluído · próximo em <b>${left > 0 ? `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}` : "instantes"}</b>`;
-  } else {
-    el.innerHTML = "Bot <b>parado</b> — clique em Iniciar 24/7";
-  }
-}
-
-const KIND = { entry: "🟢 compra", exit: "🔵 venda", veto: "🟡 bloqueio", error: "🔴 erro", kill_switch: "🛑 kill switch",
-               reconcile: "🧾 reconciliação", pause: "⏸ pausa", resume: "▶ retoma", arm: "🔓 ativado", disarm: "🔒 desativado",
-               mode: "🔀 modo" };
-
-function renderFeed(decisions, s) {
-  const lc = s.last_cycle || {};
-  const head = lc.cycle ? `<div class="fi"><span class="w">${ago(lc.finished)}</span><span>⚙️ Ciclo #${lc.cycle}: ${lc.candidates} mercados, ${lc.safe} seguros, ${lc.signals} sinais, ${lc.entries} compras</span></div>` : "";
-  document.getElementById("feed").innerHTML = head + decisions.map((d) => `
-    <div class="fi"><span class="w">${ago(d.ts)}</span>
-    <span><span class="k-${esc(d.kind)}">${KIND[d.kind] || esc(d.kind)}</span> <b>${esc(d.symbol || "")}</b>
-    ${d.strategy ? `<span class="muted">(${esc(d.strategy)})</span>` : ""} — ${esc(d.reason)}</span></div>`).join("");
-}
-
-function renderKpis(s, positions) {
-  lastStatus = s;
-  document.getElementById("k-equity").textContent = usd(s.equity);
-  document.getElementById("k-cash").textContent = `cash ${usd(s.cash)} · em posições ${usd(s.exposure)}`;
-  document.getElementById("k-pnl").innerHTML = pnl(s.total_pnl);
-  document.getElementById("k-pnl-s").textContent = `realizado ${usd(s.realized_pnl)} · aberto ${usd(s.unrealized_pnl)}`;
-  const d = s.performance?.day;
-  document.getElementById("k-day").innerHTML = d ? `<span class="${d.twr >= 0 ? "green" : "red"}">${pct(d.twr)}</span>` : "–";
-  document.getElementById("k-day-s").textContent = d ? `segurar SOL ${pct(d.hold_sol)} · BTC ${pct(d.hold_btc)}` : "";
-  document.getElementById("k-pos").textContent = `${positions} · ${s.closed_trades}`;
-  document.getElementById("k-pos-s").textContent = s.win_rate === null ? "sem trades fechados" : `taxa de acerto ${pct(s.win_rate)}`;
-  const rb = document.getElementById("run-badge");
-  rb.textContent = s.kill_switch.active ? "KILL SWITCH" : s.running ? (s.heartbeat_ok ? "A CORRER" : "SEM SINAL") : "PARADO";
-  rb.className = `badge ${s.running && s.heartbeat_ok && !s.kill_switch.active ? "badge-on" : "badge-off"}`;
-  document.getElementById("btn-run").textContent = s.running ? "Parar" : "Iniciar 24/7";
-  document.getElementById("btn-kill").textContent = s.kill_switch.active ? "Rearmar kill switch" : "Kill switch";
-  nextCycleAt = s.running && s.heartbeat ? new Date(s.heartbeat.ts).getTime() + s.cycle_interval_sec * 1000 : null;
-  // scanning indicator: visible whenever a cycle is running (scheduler or "Analisar agora")
-  const scanning = s.scanning || (s.live?.running && Date.now() - new Date(s.live.ts) < 60000);
-  const bar = document.getElementById("scanbar");
-  bar.hidden = !scanning;
-  if (scanning) {
-    const who = (AGENTS.find(([n]) => n === s.live?.agent) || [])[2];
-    document.getElementById("scan-text").textContent = `A analisar o mercado (ciclo #${s.cycle})${who ? ` — ${who} a trabalhar` : ""}…`;
-  }
-  const scanBtn = document.getElementById("btn-scan");
-  if (!scanBtn.classList.contains("busy")) scanBtn.disabled = !!scanning;
-  for (const m of ["rules", "llm"]) document.getElementById(`mode-${m}`).classList.toggle("on", s.decision_mode === m);
-  document.getElementById("mode-llm").title = s.llm_available ? "O LLM decide compras e vendas" : "Precisa de ANTHROPIC_API_KEY no .env";
-}
-
-async function refreshLive() {
-  const [s, { agents }, { decisions }, { positions }] = await Promise.all([
-    api("/status"), api("/agents"), api("/decisions?limit=12"), api("/positions")]);
-  renderKpis(s, positions.length);
-  renderRoom(agents, s);
-  renderHead(s);
-  renderFeed(decisions, s);
-  renderPositions(positions);
+function killReset(btn) {
+  run(btn, "A rearmar…", () => api(KIND === "real" ? "/live/kill-switch/reset" : "/kill-switch/reset", "POST", { reason: "dashboard" }), "✓ Kill switch rearmado");
 }
 
 // ─── wallets (watch-only) ───
@@ -258,185 +273,44 @@ function metamaskProvider() {
   if (!eth) return null;
   return (eth.providers || [eth]).find((p) => p.isMetaMask) || null;
 }
-
 async function connectWallet(kind) {
   try {
     let address, label;
     if (kind === "metamask") {
       const mm = metamaskProvider();
-      if (!mm) throw new Error("MetaMask não encontrada neste browser. Abra http://127.0.0.1:8000/paper no Chrome/Brave/Firefox com a extensão MetaMask, ou cole o endereço 0x… abaixo.");
-      // eth_requestAccounts only shares the public address — no signature, no spending permission.
-      [address] = await mm.request({ method: "eth_requestAccounts" });
+      if (!mm) throw new Error("MetaMask não encontrada neste browser. Abra http://127.0.0.1:8000/paper no Chrome ou Brave com a extensão MetaMask instalada.");
+      [address] = await mm.request({ method: "eth_requestAccounts" });   // public address only, no signature
       label = "MetaMask";
     } else {
-      const provider = kind === "phantom" ? window.phantom?.solana : window.solflare;
-      if (!provider) throw new Error(`Extensão ${kind === "phantom" ? "Phantom" : "Solflare"} não encontrada. Instale-a ou cole o endereço público.`);
+      const provider = window.phantom?.solana;
+      if (!provider) throw new Error("Phantom não encontrada neste browser. Instale a extensão Phantom no Chrome ou Brave.");
       const res = await provider.connect();
       address = (res?.publicKey || provider.publicKey).toString();
-      label = kind === "phantom" ? "Phantom" : "Solflare";
+      label = "Phantom";
     }
     await api("/wallets", "POST", { address, label });
-    safe(loadWallets);
     toast(`✓ ${label} ligada: ${short(address)} (só leitura)`);
+    safe(loadWallets);
   } catch (e) { toast(`✖ ${e.message || e}`, true); }
 }
-
-async function addWallet(ev) {
-  ev.preventDefault();
-  const el = document.getElementById("w-addr");
-  try { await api("/wallets", "POST", { address: el.value.trim(), label: el.value.trim().startsWith("0x") ? "EVM" : "Solana" }); el.value = ""; }
-  catch (e) { toast(`✖ ${e.message}`, true); }
-  safe(loadWallets);
-  return false;
-}
-
 async function removeWallet(addr) {
   await api(`/wallets/${encodeURIComponent(addr)}`, "DELETE");
   safe(loadWallets);
 }
-
 function walletCard(w) {
-  const head = `<h3><span>${esc(w.label || "Carteira")} <span class="muted">${short(w.address)}</span></span>
-    <button onclick="removeWallet('${esc(w.address)}')">remover</button></h3>`;
+  const head = `<h3><span>${esc(w.label || "Carteira")} <span class="muted">${short(w.address)}</span></span><button onclick="removeWallet('${esc(w.address)}')">remover</button></h3>`;
   if (w.error) return `<div class="wcard">${head}<div class="red note">${esc(w.error)}</div></div>`;
   if (w.chain === "evm") {
-    const hl = (k, name) => {
-      const x = w[k] || {};
-      return x.error ? `<div>${name}<b>–</b>indisponível</div>`
-        : `<div>${name}<b>${usd(x.account_value)}</b>${x.positions || 0} posições${(x.spot || []).length ? ` · spot ${x.spot.map((b) => `${esc(b.coin)} ${Number(b.total).toFixed(2)}`).join(", ")}` : ""}</div>`;
-    };
-    return `<div class="wcard">${head}<div class="wbal">
-      <div>USDC (Arbitrum)<b>${Number(w.arbitrum_usdc).toFixed(2)}</b>pronto a depositar</div>
-      <div>ETH (Arbitrum)<b>${Number(w.arbitrum_eth).toFixed(5)}</b>para o gás</div>
-      ${hl("hyperliquid", "Hyperliquid")}${hl("hyperliquid_testnet", "Hyperliquid testnet")}</div></div>`;
+    const hl = (k, name) => { const x = w[k] || {}; return x.error ? `<div>${name}<b>–</b></div>` : `<div>${name}<b>${usd(x.account_value)}</b>${x.positions || 0} posições</div>`; };
+    return `<div class="wcard">${head}<div class="wbal"><div>USDC Arbitrum<b>${Number(w.arbitrum_usdc).toFixed(2)}</b></div>
+      <div>ETH Arbitrum<b>${Number(w.arbitrum_eth).toFixed(5)}</b></div>${hl("hyperliquid", "Hyperliquid")}${hl("hyperliquid_testnet", "HL testnet")}</div></div>`;
   }
-  return `<div class="wcard">${head}<div class="wbal"><div>SOL<b>${Number(w.sol).toFixed(4)}</b>Solana</div>
-    <div>Tokens<b>${w.tokens.length}</b>${w.tokens.slice(0, 3).map((t) => `${short(t.mint)} ${Number(t.amount).toPrecision(4)}`).join(" · ")}</div></div></div>`;
+  return `<div class="wcard">${head}<div class="wbal"><div>SOL<b>${Number(w.sol).toFixed(4)}</b></div><div>Tokens<b>${w.tokens.length}</b></div></div></div>`;
 }
-
 async function loadWallets() {
   const { wallets } = await api("/wallets");
-  document.getElementById("wallets").innerHTML = wallets.length ? wallets.map(walletCard).join("")
-    : '<p class="note" style="margin-top:10px">Nenhuma carteira ligada ainda.</p>';
+  document.getElementById("wallets").innerHTML = wallets.length ? wallets.map(walletCard).join("") : '<p class="note">Nenhuma carteira ligada.</p>';
 }
-
-// ─── performance, trades, positions ───
-let chart, chartPeriod = "all";
-function setChartPeriod(p, btn) {
-  chartPeriod = p;
-  document.querySelectorAll(".period-btn").forEach((b) => b.classList.toggle("active", b === btn));
-  safe(loadChart);
-}
-async function loadChart() {
-  let { history } = await api("/equity?limit=20000");
-  const span = { day: 864e5, week: 7 * 864e5, month: 30 * 864e5 }[chartPeriod];
-  if (span) history = history.filter((h) => Date.now() - new Date(h.ts) <= span);
-  const labels = history.map((h) => new Date(h.ts).toLocaleString());
-  const sets = [history.map((h) => h.equity), history.map((h) => h.contributed)];
-  if (!chart) {
-    chart = new Chart(document.getElementById("equity-chart"), {
-      type: "line",
-      data: { labels, datasets: [
-        { label: "Património", data: sets[0], borderColor: "#7f5af0", pointRadius: 0, tension: 0.2 },
-        { label: "Capital aportado", data: sets[1], borderColor: "#72757e", borderDash: [4, 4], pointRadius: 0 },
-      ] },
-      options: { animation: false, plugins: { legend: { labels: { color: "#72757e" } } },
-        scales: { x: { ticks: { color: "#72757e", maxTicksLimit: 6 } }, y: { ticks: { color: "#72757e" } } } },
-    });
-  } else {
-    chart.data.labels = labels;
-    sets.forEach((d, i) => (chart.data.datasets[i].data = d));
-    chart.update();
-  }
-  const perf = lastStatus?.performance || {};
-  const names = { day: "Hoje", week: "7 dias", month: "30 dias", all: "Total" };
-  document.getElementById("perf").innerHTML = Object.entries(names).map(([k, l]) => {
-    const p = perf[k];
-    return p ? `<div>${l}<b class="${p.twr >= 0 ? "green" : "red"}">${pct(p.twr)}</b>${pnl(p.gain_usd)} · SOL ${pct(p.hold_sol)}</div>` : `<div>${l}<b>–</b></div>`;
-  }).join("");
-}
-
-let allTrades = [];
-function fillSelect(id, values) {
-  const el = document.getElementById(id), cur = el.value;
-  el.innerHTML = `<option value="">${el.dataset.all}</option>` + [...new Set(values)].sort().map((v) => `<option>${esc(v)}</option>`).join("");
-  el.value = cur;
-}
-function renderTrades() {
-  const v = document.getElementById("f-venue").value, a = document.getElementById("f-asset").value,
-        st = document.getElementById("f-strat").value;
-  const rows = allTrades.filter((t) => (!v || t.venue === v) && (!a || t.symbol === a) && (!st || t.strategy === st));
-  document.getElementById("trades-total").innerHTML = rows.length ? `${rows.length} · ${pnl(rows.reduce((x, t) => x + t.pnl_usd, 0))}` : "";
-  table("trades", ["Ativo", "Entrada → saída", "Custos", "Lucro", "Motivo"], rows.map((t) => `
-    <tr><td><b>${esc(t.symbol)}</b><br><span class="muted">${esc(t.venue)} · ${esc(t.strategy)}</span></td>
-    <td>${Number(t.entry_price).toPrecision(5)} → ${Number(t.exit_price).toPrecision(5)}<br><span class="muted">${time(t.exit_ts)}</span></td>
-    <td>${usd(t.fees_usd + (t.funding_usd || 0), 3)}</td>
-    <td>${pnl(t.pnl_usd)}<br><span class="muted">${pct(t.pnl_pct)}</span></td><td class="muted">${esc(t.reason)}</td></tr>`));
-}
-async function loadTrades() {
-  allTrades = (await api("/trades?limit=1000")).trades;
-  fillSelect("f-venue", allTrades.map((t) => t.venue));
-  fillSelect("f-asset", allTrades.map((t) => t.symbol));
-  fillSelect("f-strat", allTrades.map((t) => t.strategy));
-  renderTrades();
-}
-function renderPositions(positions) {
-  table("positions", ["Ativo", "Custo → valor", "Lucro", "Stop / alvo"], positions.map((p) => `
-    <tr><td><b>${esc(p.symbol)}</b><br><span class="muted">${esc(p.venue)} · ${esc(p.strategy)}</span></td>
-    <td>${usd(p.cost_usd)} → ${usd(p.mark_value)}</td><td>${pnl(p.unrealized_pnl)}</td>
-    <td>${Number(p.stop_price).toPrecision(4)} / ${Number(p.tp_price).toPrecision(4)}</td></tr>`));
-}
-
-// ─── secondary (collapsed) sections ───
-async function move(ev, kind) {
-  ev.preventDefault();
-  const input = document.getElementById(kind === "deposit" ? "dep" : "wd");
-  try { await api(`/funds/${kind}`, "POST", { amount_usd: Number(input.value), note: "dashboard" }); input.value = ""; }
-  catch (e) { toast(`✖ ${e.message}`, true); }
-  safe(loadSecondary); safe(refreshLive);
-  return false;
-}
-async function togglePause(market, paused) {
-  try { await api("/markets/pause", "POST", { market, paused }); } catch (e) { toast(`✖ ${e.message}`, true); }
-  safe(loadSecondary);
-}
-async function researchNow(ev) {
-  ev.preventDefault();
-  const el = document.getElementById("r-mint");
-  try { await api("/research", "POST", { mint: el.value.trim() }); el.value = ""; } catch (e) { toast(`✖ ${e.message}`, true); }
-  safe(loadSecondary);
-  return false;
-}
-async function loadSecondary() {
-  const [funds, r, m, res, dec] = await Promise.all([api("/funds"), api("/readiness"), api("/markets"), api("/research"), api("/decisions?limit=200")]);
-  table("funds", ["Quando", "Tipo", "Valor"], funds.movements.map((x) =>
-    `<tr><td>${time(x.ts)}</td><td>${x.kind === "deposit" ? "Depósito" : "Levantamento"}</td><td>${usd(x.amount_usd)}</td></tr>`));
-  document.getElementById("readiness").innerHTML = `<p>${r.ready ? '<b class="green">Todos os critérios cumpridos</b>' : '<b class="red">Ainda não</b>'}</p>` +
-    r.checks.map((c) => `<div class="note">${c.ok ? "✅" : "⬜"} ${esc(c.name)} (${esc(c.value)})</div>`).join("") + `<p class="note">${esc(r.note)}</p>`;
-  const paused = new Set(m.paused);
-  document.getElementById("markets").innerHTML = m.markets.map((x) => `
-    <div class="fi" style="justify-content:space-between"><span>${esc(x.symbol)} <span class="muted">${esc(x.venue)}</span>${paused.has(x.id) ? ' <span class="tag">pausado</span>' : ""}</span>
-    <button onclick="togglePause('${esc(x.id)}', ${!paused.has(x.id)})">${paused.has(x.id) ? "Retomar" : "Pausar"}</button></div>`).join("") || '<p class="note">Sem mercados ainda.</p>';
-  document.getElementById("research").innerHTML = res.briefs.map((x) => {
-    const b = x.brief, q = b.quant || {};
-    return `<div class="wcard"><h3><span>${esc(b.symbol)}</span><span>risco ${esc(b.risk_level)}</span></h3>
-      ${(q.flags || []).map((f) => `<div class="note red">⚠ ${esc(f)}</div>`).join("")}
-      ${b.llm?.summary ? `<div class="note">${esc(b.llm.summary)}</div>` : ""}<div class="note">${time(x.ts)}</div></div>`;
-  }).join("") || '<p class="note">Sem fichas ainda.</p>';
-  table("decisions", ["Quando", "Tipo", "Ativo", "Motivo"], dec.decisions.map((d) =>
-    `<tr><td>${time(d.ts)}</td><td class="k-${esc(d.kind)}">${esc(d.kind)}</td><td>${esc(d.symbol || "")}</td><td>${esc(d.reason)}</td></tr>`));
-}
-
-// ─── loops: live every 2.5s, the rest less often ───
-async function safe(fn) { try { await fn(); } catch (e) { console.warn(e); } }
-safe(refreshLive); safe(refreshLiveTrading); safe(loadWallets); safe(loadTrades); safe(loadSecondary);
-setInterval(() => safe(refreshLiveTrading), 10000);
-setTimeout(() => safe(loadChart), 500);
-setInterval(() => safe(refreshLive), 2500);
-setInterval(() => lastStatus && renderHead(lastStatus), 1000);
-setInterval(() => { safe(loadTrades); safe(loadChart); }, 20000);
-setInterval(() => safe(loadSecondary), 30000);
-setInterval(() => safe(loadWallets), 60000);
 
 // ─── model arena ───
 let lastArena = null;
@@ -446,68 +320,35 @@ async function loadArena() {
   const btn = document.getElementById("btn-arena");
   if (!btn.classList.contains("busy")) btn.textContent = a.running ? "Parar arena" : "Iniciar arena";
   const sel = document.getElementById("live-model");
-  if (document.activeElement !== sel) {
-    sel.innerHTML = a.models.map((m) => `<option ${m === a.live_model ? "selected" : ""}>${esc(m)}</option>`).join("");
-  }
-  table("arena-table", ["#", "Modelo", "Património", "Retorno", "Trades", "Acerto", "Aberto", "Última decisão"],
-    a.leaderboard.map((r, i) => `<tr><td>${i + 1}</td><td><b>${esc(r.model)}</b>${r.running ? "" : ' <span class="muted">(parado)</span>'}${r.kill_switch ? ' <span class="red">kill</span>' : ""}</td>
-      <td>${usd(r.equity)}</td><td><span class="${r.twr >= 0 ? "green" : "red"}">${pct(r.twr)}</span><br><span class="muted">BTC ${pct(r.hold_btc)}</span></td>
-      <td>${r.trades}</td><td>${r.win_rate === null ? "–" : pct(r.win_rate)}</td><td>${esc(r.open.join(", ")) || "–"}</td>
-      <td class="muted">${r.last_decision ? `${esc(r.last_decision.market)}: <b>${esc(r.last_decision.action)}</b> — ${esc(r.last_decision.reason || "")}` : "ainda sem decisões"}</td></tr>`));
+  if (document.activeElement !== sel) sel.innerHTML = a.models.map((m) => `<option ${m === a.live_model ? "selected" : ""}>${esc(m)}</option>`).join("");
+  table("arena-table", ["#", "Modelo", "Saldo", "Retorno", "Trades", "Última decisão"],
+    a.leaderboard.map((r, i) => `<tr><td>${i + 1}</td><td><b>${esc(r.model)}</b>${r.running ? "" : ' <span class="muted">(parado)</span>'}</td>
+      <td>${usd(r.equity)}</td><td><span class="${r.twr >= 0 ? "green" : "red"}">${pct(r.twr)}</span></td><td>${r.trades}</td>
+      <td class="muted">${r.last_decision ? `${esc(r.last_decision.market)}: <b>${esc(r.last_decision.action)}</b> — ${esc(r.last_decision.reason || "")}` : "–"}</td></tr>`));
 }
 function toggleArena(btn) {
   const on = !lastArena?.running;
-  run(btn, on ? "A iniciar arena…" : "A parar arena…", async () => { await api("/arena", "POST", { on }); await loadArena(); },
-      on ? "🏁 Arena iniciada — cada modelo decide na sua carteira simulada" : "⏸ Arena parada");
+  run(btn, on ? "A iniciar…" : "A parar…", async () => { await api("/arena", "POST", { on }); await loadArena(); },
+      on ? "🏁 Arena iniciada" : "⏸ Arena parada");
 }
 function setLiveModel(sel) {
   api("/live/model", "POST", { model: sel.value })
-    .then(() => toast(`✓ A conta real passa a ser decidida por ${sel.value} (no modo LLM)`))
+    .then(() => toast(`✓ No modo LLM, as decisões passam a ser de ${sel.value}`))
     .catch((e) => toast(`✖ ${e.message}`, true));
 }
 
-safe(loadArena);
-setInterval(() => safe(loadArena), 10000);
+// ─── advanced (old Solana paper + readiness) ───
+async function loadAdvanced() {
+  const [s, r, dec] = await Promise.all([api("/status"), api("/readiness"), api("/decisions?limit=100")]);
+  document.getElementById("old-paper").textContent = `${s.running ? "A correr" : "Parado"} · património ${usd(s.equity)} · ${s.closed_trades} trades · ciclo #${s.cycle}`;
+  document.getElementById("readiness").innerHTML = r.checks.map((c) => `<div class="note">${c.ok ? "✅" : "⬜"} ${esc(c.name)} (${esc(c.value)})</div>`).join("");
+  table("decisions", ["Quando", "Tipo", "Ativo", "Motivo"], dec.decisions.map((d) =>
+    `<tr><td>${time(d.ts)}</td><td class="k-${esc(d.kind)}">${esc(d.kind)}</td><td>${esc(d.symbol || "")}</td><td>${esc(d.reason)}</td></tr>`));
+}
 
-// ─── simulation of the real account ───
-let lastSim = null;
-async function loadSim() {
-  const s = await api("/shadow");
-  lastSim = s;
-  document.getElementById("sim-start").textContent = usd(s.start_usdc, 0);
-  const mode = document.getElementById("sim-mode");
-  mode.textContent = s.decision_mode === "llm" ? `🧠 ${s.model}` : "Regras";
-  document.getElementById("sim-eq").textContent = usd(s.equity);
-  document.getElementById("sim-cash").textContent = `cash ${usd(s.cash)} · em posição ${usd(s.exposure)}`;
-  document.getElementById("sim-pnl").innerHTML = pnl(s.pnl_usd);
-  const all = s.performance?.all;
-  document.getElementById("sim-vs").textContent = all ? `${pct(all.twr)} vs segurar BTC ${pct(all.hold_btc)}` : "";
-  const p = s.positions[0];
-  document.getElementById("sim-pos").textContent = p ? p.symbol : "nenhuma";
-  document.getElementById("sim-pos-s").innerHTML = p ? `${usd(p.cost_usd)} → ${usd(p.mark_value)} · stop ${Number(p.stop_price).toPrecision(5)} / alvo ${Number(p.tp_price).toPrecision(5)}` : "à espera de um sinal";
-  document.getElementById("sim-trades").textContent = `${s.trades.length} · ${s.win_rate === null ? "–" : pct(s.win_rate)}`;
-  const lc = s.last_cycle;
-  document.getElementById("sim-cycle").textContent = s.scanning ? "🔍 a analisar agora…" : lc ? `último ciclo #${lc.cycle} há ${ago(lc.finished)}` : "ainda sem ciclos";
-  const runBtn = document.getElementById("btn-sim-run");
-  if (!runBtn.classList.contains("busy")) runBtn.textContent = s.running ? "Pausar" : "Retomar";
-  const scanBtn = document.getElementById("btn-sim-scan");
-  if (!scanBtn.classList.contains("busy")) scanBtn.disabled = s.scanning;
-  document.getElementById("sim-feed").innerHTML = (lc ? `<div class="fi"><span class="w">${ago(lc.finished)}</span><span>⚙️ Ciclo #${lc.cycle}: ${lc.candidates} mercados, ${lc.signals} sinais, ${lc.entries} compras</span></div>` : "") +
-    s.decisions.map((d) => `<div class="fi"><span class="w">${ago(d.ts)}</span><span><span class="k-${esc(d.kind)}">${KIND[d.kind] || esc(d.kind)}</span> <b>${esc(d.symbol || "")}</b> — ${esc(d.reason)}</span></div>`).join("");
-  table("sim-trades-t", ["Ativo", "Entrada → saída", "Lucro"], s.trades.map((t) => `
-    <tr><td><b>${esc(t.symbol)}</b><br><span class="muted">${time(t.exit_ts)}</span></td>
-    <td>${Number(t.entry_price).toPrecision(6)} → ${Number(t.exit_price).toPrecision(6)}</td>
-    <td>${pnl(t.pnl_usd)}<br><span class="muted">${pct(t.pnl_pct)}</span></td></tr>`));
-}
-function simScan(btn) {
-  run(btn, "A pedir análise…", async () => { const r = await api("/shadow/scan", "POST"); setTimeout(() => safe(loadSim), 1500); return r; },
-      (r) => (r.started ? "🔍 Simulação a analisar o mercado agora" : "Já está uma análise a correr"));
-}
-function simToggle(btn) {
-  const on = !lastSim?.running;
-  run(btn, on ? "A retomar…" : "A pausar…", async () => { await api("/shadow", "POST", { on }); await loadSim(); },
-      on ? "▶ Simulação a correr (a cada 5 min)" : "⏸ Simulação pausada");
-}
-safe(loadSim);
-setInterval(() => safe(loadSim), 5000);
-
+safe(refresh); safe(loadWallets); safe(loadArena); safe(loadAdvanced);
+setInterval(() => safe(refresh), 2000);
+setInterval(renderFoot, 1000);
+setInterval(() => safe(loadArena), 15000);
+setInterval(() => safe(loadAdvanced), 30000);
+setInterval(() => safe(loadWallets), 60000);
