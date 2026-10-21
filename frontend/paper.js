@@ -724,7 +724,7 @@ function trainButton(model, r) {
   const until = r.train_boost_until && new Date(r.train_boost_until) > new Date() ? r.train_boost_until : null;
   const scan = r.ai_full_scan_until && new Date(r.ai_full_scan_until) > new Date() ? `<div class="gl ok">🧠 analisa as 29 moedas a cada hora até ${hhmm(r.ai_full_scan_until)}</div>` : "";
   const turbo = r.turbo_until && new Date(r.turbo_until) > new Date() ? r.turbo_until : null;
-  return scan + (turbo ? `<button class="tboost on" disabled>⚡ turbo até ${hhmm(turbo)} · a cada minuto · saída em até ${model.endsWith("_15m") ? 1 : 2}h</button>`
+  return scan + (turbo ? `<button class="tboost on" disabled>⚡ turbo ligado até a meia-noite · analisa sem parar · saída em até ${model.endsWith("_15m") ? 1 : 2}h</button>`
     : `<button class="tboost" onclick="event.stopPropagation(); trainBoost('${esc(model)}', this)">⚡ Turbo hoje</button>`);
 }
 function trainBoost(model, btn) {
