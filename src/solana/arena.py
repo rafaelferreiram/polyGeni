@@ -36,6 +36,7 @@ def build_bot(model: str, db_dir: str = ".", llm_fn=None, scout=None, broker_fac
     if model not in RULE_BOTS:
         decider = LLMDecider(model=model, llm_fn=llm_fn)
         decider.name = f"llm:{model}"
+        decider.record_fn = lambda: track_record(model)        # the AI sees its own reward and recent trades
     eng = PaperEngine(
         ledger, [scout or hl.HyperliquidScout()], _PerpsSafety(), [RULE_BOTS[model]()] if model in RULE_BOTS else [],
         DebateAgent(enabled=False), _risk(),
@@ -66,6 +67,52 @@ def score(model: str, market: str | None = None, days: float | None = None) -> t
     return sum(t["pnl_usd"] for t in trades) / (len(trades) + 3), len(trades)
 
 
+def reward(model: str) -> dict:
+    """The bots' reward: points = net profit of the last LAB_SCORE_DAYS in the lab, after its AI cost (1 point =
+    1 cent). It is not cosmetic — it decides (1) the Coordinator's priority, (2) position size: a bot with a losing
+    recent record trades the minimum ($10) until it recovers, and (3) the AI bot sees its own record before deciding."""
+    from src.solana import costs
+    d = cfg.LAB_SCORE_DAYS
+    eng = (_bots or {}).get(model)
+    since = (datetime.now(timezone.utc) - timedelta(days=d)).isoformat()
+    trades = [t for t in eng.ledger.closed_trades() if t["exit_ts"] >= since] if eng else []
+    pnl = sum(t["pnl_usd"] for t in trades)
+    ai = 0.0 if model in RULE_BOTS else costs.book().total(days=d, model=model)
+    exp, n = score(model, None, d)
+    streak = 0
+    for t in trades:                                  # newest first
+        if t["pnl_usd"] <= 0:
+            break
+        streak += 1
+    proven, losing = n >= 3 and exp > 0, n >= 3 and exp < 0
+    return {"points": round((pnl - ai) * 100), "trades": n, "wins": sum(t["pnl_usd"] > 0 for t in trades),
+            "pnl_usd": round(pnl, 4), "ai_usd": round(ai, 4), "expectancy": round(exp, 4), "streak": streak,
+            "tier": "positivo" if proven else "em observação" if losing else "em avaliação",
+            "size_usd": hl_min_order() if losing else cfg.LIVE_MAX_POSITION_USD}
+
+
+def hl_min_order() -> float:
+    from src.solana.hl_live import MIN_ORDER_USD
+    return MIN_ORDER_USD
+
+
+def size_for(strategy: str) -> float | None:
+    """Position size reward/penalty for the bot behind a strategy name ('rules', 'trend', 'llm:<model>')."""
+    model = strategy[4:] if strategy.startswith("llm:") else strategy
+    return reward(model)["size_usd"] if model in (_bots or {}) else None
+
+
+def track_record(model: str, n: int = 8) -> dict:
+    """What the AI bot is shown about itself before each decision (its incentive and its lessons)."""
+    eng = (_bots or {}).get(model)
+    r = reward(model)
+    last = [{"symbol": t["symbol"], "pnl_pct": round(t["pnl_pct"] * 100, 2), "why_exit": str(t.get("reason", ""))[:60]}
+            for t in (eng.ledger.closed_trades()[:n] if eng else [])]
+    return {"reward_points": r["points"], "tier": r["tier"], "win_streak": r["streak"], "recent_trades": last,
+            "rule": "points = net profit after AI cost; higher points = priority and full position size; "
+                    "losing record = minimum size until it recovers; paid analyses cost points"}
+
+
 def eligible_for_real(members: list) -> list:
     """Real money only for bots with evidence: REAL_TRUSTED_BOTS (backtest-validated rule bots), and every other bot
     (AI) once it has ≥ LIVE_MIN_LAB_TRADES lab trades and positive expectancy after its AI cost."""
@@ -85,7 +132,7 @@ def rank(market: str, members: list) -> list:
     configured order. Mean reversion and trend following win in different regimes; recent results tell which."""
     order = {m: i for i, m in enumerate(cfg.ARENA_MODELS)}
     d = cfg.LAB_SCORE_DAYS
-    return sorted(members, key=lambda m: (-score(m.model, market, d)[0], -score(m.model, None, d)[0], order.get(m.model, 99)))
+    return sorted(members, key=lambda m: (-score(m.model, market, d)[0], -reward(m.model)["points"], order.get(m.model, 99)))
 
 
 _bots: dict[str, PaperEngine] | None = None
@@ -174,7 +221,7 @@ def leaderboard() -> list[dict]:
             "ai_cost_usd": round(net_of_cost(model)[1], 4), "net_usd": round(net_of_cost(model)[2], 4),
             "pnl_usd": round(p.equity - led.contributed(), 2), "twr": perf.get("twr", 0.0), "hold_btc": perf.get("hold_btc"),
             "trades": len(trades), "win_rate": round(sum(t["pnl_usd"] > 0 for t in trades) / len(trades), 3) if trades else None,
-            "open": [x["symbol"] for x in led.positions()],
+            "open": [x["symbol"] for x in led.positions()], "reward": reward(model),
             "last_decision": next(({"market": k, **{x: v.get(x) for x in ("action", "reason", "model")}}
                                    for k, v in sorted(last.items(), key=lambda kv: -(kv[1].get("t") or 0))), None)
                              if eng.llm else _rules_last(led),

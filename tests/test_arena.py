@@ -107,3 +107,27 @@ def test_trend_strong_needs_a_rising_trend():
                close=100 * 1.002 ** i, volume=1) for i in range(300)]
     up[-1] = dict(up[-1], close=up[-1]["close"] * 1.01, high=up[-1]["close"] * 1.012)  # fresh breakout in a strong trend
     assert TrendStrong().signal(up) is not None
+
+
+def test_reward_points_priority_and_size_penalty(tmp_path, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    bots, _ = make_bots(tmp_path, {"claude-opus-5": "{}", "claude-haiku-5-5": "{}"})
+    monkeypatch.setattr(arena, "_bots", bots)
+    def trades(model, prices):
+        led = bots[model].ledger
+        for i, px in enumerate(prices):
+            ts = (datetime.now(timezone.utc) - timedelta(hours=10 - i)).isoformat(timespec="seconds")
+            led.append_fill(dict(order_id=f"{model}b{i}", ts=ts, venue="hyperliquid", side="buy", mint="hl:BTC", symbol="BTC",
+                                 strategy="x", qty=10, decimals=0, usd_gross=10, fee_usd=0, price=1, quote_price=1))
+            led.append_fill(dict(order_id=f"{model}s{i}", ts=ts, venue="hyperliquid", side="sell", mint="hl:BTC", symbol="BTC",
+                                 strategy="x", qty=10, decimals=0, usd_gross=10 * px, fee_usd=0, price=px, quote_price=px))
+    trades("claude-opus-5", (1.1, 1.1, 1.1))      # 3 wins: +$3
+    trades("claude-haiku-5-5", (0.9, 0.9, 0.9))   # 3 losses: −$3
+    win, lose = arena.reward("claude-opus-5"), arena.reward("claude-haiku-5-5")
+    assert win["points"] > 0 and win["tier"] == "positivo" and win["streak"] == 3 and win["size_usd"] == cfg.LIVE_MAX_POSITION_USD
+    assert lose["points"] < 0 and lose["tier"] == "em observação" and lose["size_usd"] == 10
+    assert arena.size_for("llm:claude-haiku-5-5") == 10 and arena.size_for("unknown") is None
+    from src.solana.llm_trader import TeamMember
+    order = [m.model for m in arena.rank("ETH", [TeamMember("claude-haiku-5-5"), TeamMember("claude-opus-5")])]
+    assert order == ["claude-opus-5", "claude-haiku-5-5"]          # the winner gets priority
+    assert arena.track_record("claude-haiku-5-5")["recent_trades"][0]["pnl_pct"] < 0

@@ -267,7 +267,7 @@ class RiskAgent:
         return p.day_start_equity > 0 and (p.day_start_equity - p.equity) / p.day_start_equity >= self.max_daily_loss_pct
 
     def evaluate(self, sig: Signal, mint: str, capital_pct: float, p: Portfolio,
-                 max_pos_pct: float | None = None, entry_cap_mult: int = 1) -> Vote:
+                 max_pos_pct: float | None = None, entry_cap_mult: int = 1, max_usd: float | None = None) -> Vote:
         d = {"equity": round(p.equity, 2), "cash": round(p.cash, 2), "exposure": round(p.exposure, 2)}
         if p.kill_switch:
             return Vote("risk", False, "kill switch active", d)
@@ -294,7 +294,7 @@ class RiskAgent:
         # margin: at 1x notional is capped by cash; with isolated leverage by equity x leverage, 3% kept for fees/slippage
         margin_room = p.cash * 0.98 if lev == 1 else eq * lev * 0.97 - p.exposure
         size = min(eq * (max_pos_pct or self.max_pos_pct), strategy_room, exposure_room, margin_room,
-                   self.max_position_usd or float("inf"))
+                   self.max_position_usd or float("inf"), max_usd or float("inf"))   # max_usd: the bot's reward size
         d.update(size_usd=round(size, 2), strategy_room=round(strategy_room, 2), exposure_room=round(exposure_room, 2))
         if size < self.min_trade_usd:
             return Vote("risk", False, f"size ${size:.2f} < min ${self.min_trade_usd:.2f} "

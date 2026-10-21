@@ -373,6 +373,8 @@ def get_live_engine() -> PaperEngine:
             profiles={hl.VENUE: {"max_pos_pct": 1.0, "stop_mult": cfg.MARKET_PROFILES.get(hl.VENUE, {}).get("stop_mult", 1.5)}},
             llm=team(), coordinator=_coordinate_real,
         )
+        from src.solana import arena
+        _live.size_policy = arena.size_for
     return _live
 
 
@@ -411,6 +413,8 @@ def get_shadow_engine() -> PaperEngine:
             profiles={hl.VENUE: {"max_pos_pct": 1.0, "stop_mult": cfg.MARKET_PROFILES.get(hl.VENUE, {}).get("stop_mult", 1.5)}},
             llm=team(), coordinator=_coordinate, bench_fn=bench_prices,
         )
+        from src.solana import arena
+        _shadow.size_policy = arena.size_for
         if ledger.get_state("running") is None:
             ledger.set_state("running", True)
     return _shadow

@@ -291,6 +291,7 @@ class PaperEngine:
         return stats
 
     rests_on_goal = True        # lab bots set False: they keep trading to keep measuring
+    size_policy = None          # strategy name -> max position USD (the bots' reward/penalty), set for team wallets
 
     def _goal_hit(self, p) -> bool:
         return p.day_start_equity > 0 and (p.equity - p.day_start_equity) / p.day_start_equity >= cfg.DAILY_GOAL_PCT
@@ -444,7 +445,8 @@ class PaperEngine:
                             approved=int(debate.approve), vetoed=int(not debate.approve))
                 p = self.portfolio()
                 risk = self.risk.evaluate(sig, c.mint, strat.capital_pct, p, profile.get("max_pos_pct"),
-                                          entry_cap_mult=2 if self.coffee() else 1)
+                                          entry_cap_mult=2 if self.coffee() else 1,
+                                          max_usd=self.size_policy(strat.name) if self.size_policy else None)
                 self._agent("risk", last_reason=f"{c.symbol}: {risk.reason}",
                             approved=int(risk.approve), vetoed=int(not risk.approve))
                 chain = [v for v in (safety, strat_vote, research_vote, debate, risk) if v is not None]

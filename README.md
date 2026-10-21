@@ -74,6 +74,9 @@ Same engine and agents; only the broker is real (`HyperliquidLiveBroker`, offici
 - **Leverage** `LIVE_LEVERAGE` (default 2x isolated, max 3x): with $18 the team can hold up to 3 positions of ~$12 at
   once instead of one. Each keeps its own stop and target on the exchange; daily loss (10%) and the kill switch work on
   equity, so the worst day is still capped.
+- **Rewards** (`arena.reward`): each bot earns points = net profit of the last 30 days in the lab after its own AI cost
+  (1 point = 1 cent). Points decide the Coordinator's priority and the position size (a bot with a losing record trades
+  the $10 minimum until it recovers), and the AI bot sees its points and recent trades in every prompt.
 - **Daily goal** `DAILY_GOAL_PCT` (default 2%): once an account is up 2% on the day (open positions included) its
   bots rest — no new entries until tomorrow, open positions still run to their stop/target (`DAILY_GOAL_REST=1`).
   Lab bots never rest (they keep measuring). The goal never loosens entry rules.

@@ -26,6 +26,9 @@ TRADER_SYSTEM = (
     "only when the expected move to target is at least 3x the round-trip cost, and prefer the suggested ATR "
     "stop/target. When in doubt, HOLD — not trading is a valid and often optimal decision. Use web search only "
     "for very recent, material news. A separate risk engine sets the size and can refuse your trade. "
+    "You are rewarded on net profit after your own AI cost (your_track_record): profitable trades raise your points, "
+    "priority and position size; losing trades and paid analyses lower them — so learn from your recent trades and "
+    "only BUY setups you expect to pay. "
     'Reply with ONLY JSON: {"action": "BUY"|"HOLD", "stop_pct": number, "tp_pct": number, '
     '"confidence": number 0-1, "reason": string, "next_check_min": number}. stop_pct/tp_pct are fractions '
     "(0.03 = 3%). next_check_min: if HOLD, how many minutes until this market is worth looking at again "
@@ -69,6 +72,7 @@ class LLMDecider:
                                                                        model=self.model, who=self.name))
         self.entry_system, self.exit_system = entry_system, exit_system
         self._seen: dict[tuple, object] = {}     # (kind, market) -> last candle t already decided on
+        self.record_fn = None                     # -> this bot's reward points and recent trades (set by the lab)
         self.last: dict[str, dict] = {}          # market -> last decision, for the UI
 
     @property
@@ -100,7 +104,8 @@ class LLMDecider:
             return None
         try:
             from src.solana.strategies import features
-            out = _json(self.llm_fn(json.dumps({"market": context, "indicators": features(candles),
+            record = self.record_fn() if self.record_fn else None
+            out = _json(self.llm_fn(json.dumps({"market": context, "indicators": features(candles), "your_track_record": record,
                                                 "round_trip_cost_pct": context.get("round_trip_cost_pct", 0.13),
                                                 "candles_1h_tohlcv": _candles_brief(candles, 24)},
                                                default=str), self.entry_system))

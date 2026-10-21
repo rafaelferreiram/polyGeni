@@ -555,6 +555,7 @@ function renderTeam() {
   const cb = document.getElementById("btn-coffee");
   cb.classList.toggle("on", !!coffee);
   cb.textContent = coffee ? `☕ até ${hhmm(coffee)}` : "☕ Café";
+  const rankOf = Object.fromEntries([...members].sort((x, y) => ((lab[y.model]?.reward?.points) ?? 0) - ((lab[x.model]?.reward?.points) ?? 0)).map((m, i) => [m.model, i + 1]));
   setHTML("team-grid", members.map((m) => {
     const L = look(m.model), r = lab[m.model] || {};
     const working = acc.running && (liveName === m.name || (r.state === "trabalhando" || r.state === "a trabalhar"));
@@ -571,6 +572,7 @@ function renderTeam() {
                  ["Posições", (m.open || []).length ? esc(m.open.join(", ")) : "nenhuma"],
                  ["Laboratório", `${usd(r.equity)} · ${pct(r.twr)} · ${r.trades ?? 0} trades${r.win_rate != null ? ` · acerto ${pct(r.win_rate)}` : ""}`],
                  ["Custo IA", isRules ? "grátis" : `${usd(r.ai_cost_usd ?? 0)} · líquido ${pnl(r.net_usd ?? 0)}`],
+                 ["Recompensa", r.reward ? `${r.reward.points} pts · ${esc(r.reward.tier)} · posição ${usd(r.reward.size_usd, 0)}` : null],
                  ["Café", coffee ? `☕ atento até ${hhmm(coffee)}` : null]])}
       <div class="wip"><b>Em andamento</b><br>${esc(working ? (r.live?.detail || "analisando os mercados…") : r.sleep_until ? `Dormindo até ${hhmm(r.sleep_until)} — ${r.sleep_reason || "sem sinais"}` : bubble)}</div>`;
     const open = [...new Set([...(m.open || []), ...(r.open || [])])];
@@ -583,11 +585,21 @@ function renderTeam() {
         <div><div class="nm">${esc(L.label)}</div><div class="rl">${esc(L.role)}</div></div></div>
       <span class="chip">${esc(chip)}</span>
       <div class="now">Última decisão: ${now}</div>
+      ${rewardLine(r.reward, rankOf[m.model])}
       <div class="stats"><span><b>${pnl(m.pnl_usd ?? 0)}</b>resultado</span><span><b>${m.trades ?? 0}</b>trades</span>
         <span><b>${isRules ? "grátis" : usd(r.ai_cost_usd ?? 0)}</b>custo IA</span></div>
       <div class="tip" role="tooltip">${tip}<div class="note" style="margin-top:6px">${esc(bubble)}</div></div>
     </div>`;
   }).join(""));
+}
+
+// reward: points = net profit of the last 30 days after AI cost; it buys priority and position size
+const TIER_PT = { positivo: "✅ positivo", "em observação": "⚠️ em observação", "em avaliação": "⏳ em avaliação" };
+function rewardLine(rw, rank) {
+  if (!rw) return "";
+  const medal = rw.points > 0 ? ["🥇", "🥈", "🥉"][rank - 1] || "" : "";
+  return `<div class="reward ${rw.points > 0 ? "up" : rw.points < 0 ? "down" : ""}" title="1 ponto = 1 centavo de lucro líquido (30 dias, já sem o custo da IA). Mais pontos = prioridade no Coordenador e posição cheia; recorde negativo = posição mínima até recuperar.">
+    ${medal} <b>${rw.points >= 0 ? "+" : ""}${rw.points} pts</b> · ${TIER_PT[rw.tier] || esc(rw.tier)}${rw.streak >= 2 ? ` · 🔥 ${rw.streak} seguidas` : ""} · posição ${usd(rw.size_usd, 0)}</div>`;
 }
 
 // ─── advanced (old Solana paper + readiness) ───
