@@ -161,6 +161,17 @@ function stationData(st, a) {
   return a.agents[st.key] || {};
 }
 
+// real numbers of the last finished cycle for each stage (from the engine, not illustrative)
+function stageMetric(key, a) {
+  const lc = a.last_cycle || {};
+  if (a.kill_switch?.active && key !== "guard") return '<span class="red">parado pelo kill switch</span>';
+  if (lc.skipped && key !== "guard") return `<span class="muted">${esc(lc.skipped)}</span>`;
+  const n = (v) => `<b>${v ?? 0}</b>`;
+  return { scout: `${n(lc.candidates)} mercados lidos`, decider: `${n(lc.signals)} sinais de compra`,
+           risk: `${n(lc.vetoes)} vetos · ${n(lc.entries)} aprovadas`, executor: `${n(lc.entries)} ordens enviadas`,
+           guard: `${n(a.positions.length)} posições vigiadas` }[key] || "";
+}
+
 function renderRoom(a) {
   const cycleStart = a.heartbeat ? new Date(a.heartbeat.ts).getTime() : 0;
   const liveAgent = a.live?.running && Date.now() - new Date(a.live.ts) < 30000 ? a.live.agent : null;
@@ -184,7 +195,8 @@ function renderRoom(a) {
         ${cls === "idle" ? '<span class="zz">z z</span>' : ""}
         <div class="head">${botFace(st.color, d.ico || st.ico)}
           <div><div class="nm">${esc(d.name || st.name)}</div><div class="rl">${esc(d.role || st.role)}</div></div></div>
-        <div class="state"><span class="dot"></span>${state}</div>
+        <div class="state"><span class="dot"></span>${state}${d.last_run ? ` · ${hhmm(d.last_run)}` : ""}</div>
+        <div class="metric">${stageMetric(st.key, a)}</div>
         <div class="bubble">${esc(bubble)}</div>
         <div class="tip" role="tooltip">${tip}</div>
       </div>`;
@@ -273,8 +285,10 @@ async function refresh() {
   const scanning = a.scanning || (a.live?.running && Date.now() - new Date(a.live.ts) < 60000);
   document.getElementById("scanbar").hidden = !scanning;
   if (scanning) document.getElementById("scan-text").textContent = `Analisando o mercado (ciclo #${a.cycle})…`;
-  document.getElementById("room-tag").textContent = KIND === "sim" ? "simulação" : `real · ${a.network}`;
-  document.getElementById("room-head").innerHTML = scanning ? '<span class="live-chip">analisando o mercado</span>' : "";
+  document.getElementById("room-tag").textContent = KIND === "sim" ? "simulação · ao vivo" : `real · ${a.network} · ao vivo`;
+  const lcx = a.last_cycle || {};
+  document.getElementById("room-head").innerHTML = lcx.finished ? `último ciclo <b>#${lcx.cycle}</b> terminou às <b>${hhmm(lcx.finished)}</b> (há ${ago(lcx.finished)})` : "";
+  if (scanning) document.getElementById("room-head").innerHTML = '<span class="live-chip">analisando o mercado agora</span>';
   if (!replay) renderRoom(a);
   renderTeam();
   renderThermo(a);

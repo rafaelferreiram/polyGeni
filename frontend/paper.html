@@ -96,6 +96,7 @@
     .rl { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .head > div:last-child, main > *, .two > * { min-width: 0; }   /* let long text shrink instead of widening the page */
     html, body { overflow-x: hidden; }
+    .metric { font-size: 12px; color: var(--muted); margin-top: 6px; } .metric b { color: var(--text); font-size: 14px; font-variant-numeric: tabular-nums; }
     .state { font-size: 11px; color: var(--muted); margin-top: 8px; display: flex; gap: 6px; align-items: center; }
     .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
     .zz { position: absolute; top: 6px; right: 10px; color: var(--muted); font-size: 11px; font-weight: 700; animation: zz 2.4s ease-in-out infinite; }
@@ -437,6 +438,7 @@
     </section>
     <section class="panel">
       <h2><span>Como uma decisão é feita <span class="tag" id="room-tag">–</span></span><span class="note" id="room-head"></span></h2>
+      <p class="note" style="margin:-6px 0 12px">Dados reais do último ciclo da conta selecionada: cada etapa mostra o que fez, quando, e os números. Durante um ciclo a etapa ativa acende; depois o ciclo é repassado passo a passo.</p>
       <div class="room">
         <div class="line" id="line"></div>
         <div class="room-foot"><span id="room-left"></span><span id="room-right"></span></div>
@@ -484,6 +486,6 @@
     </details>
   </main>
 
-  <script src="/static/paper.js?v=36"></script>
+  <script src="/static/paper.js?v=37"></script>
 </body>
 </html>
