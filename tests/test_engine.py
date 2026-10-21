@@ -319,3 +319,16 @@ def test_manual_buy_goes_through_risk_with_stop_and_target(ledger):
     eng.trip_kill_switch("test")
     with pytest.raises(ValueError, match="kill switch"):
         eng.manual_entry("OTHER", 8.0)
+
+
+def test_trade_stats_summarise_history():
+    from src.api.paper_routes import trade_stats
+    base = {"entry_ts": "2026-10-21T10:00:00+00:00", "exit_ts": "2026-10-21T14:00:00+00:00", "fees_usd": 0.01, "funding_usd": 0.0}
+    trades = [{**base, "symbol": "BTC", "strategy": "trend", "pnl_usd": 0.6, "reason": "take-profit hit"},
+              {**base, "symbol": "ETH", "strategy": "rules", "pnl_usd": -0.3, "reason": "stop-loss hit"},
+              {**base, "symbol": "BTC", "strategy": "trend", "pnl_usd": 0.3, "reason": "max holding time 24h reached"}]
+    s = trade_stats(trades)
+    assert s["trades"] == 3 and s["wins"] == 2 and s["profit_factor"] == 3.0 and s["avg_hold_h"] == 4.0
+    assert s["by_bot"]["trend"]["pnl_usd"] == 0.9 and list(s["by_coin"]) == ["BTC", "ETH"]
+    assert s["by_exit"]["alvo"]["trades"] == 1 and s["by_exit"]["tempo"]["trades"] == 1
+    assert trade_stats([]) == {"trades": 0}

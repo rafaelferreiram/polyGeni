@@ -744,6 +744,71 @@ def logs(after: int = 0, limit: int = 400):
     return {"lines": rows, "last": rows[-1]["seq"] if rows else after}
 
 
+def trade_stats(trades: list[dict]) -> dict:
+    """History analysis of closed round trips (P&L already net of fees and funding)."""
+    from datetime import datetime as dt
+    if not trades:
+        return {"trades": 0}
+    wins, losses = [t for t in trades if t["pnl_usd"] > 0], [t for t in trades if t["pnl_usd"] <= 0]
+    gross_win, gross_loss = sum(t["pnl_usd"] for t in wins), -sum(t["pnl_usd"] for t in losses)
+    hold = [(dt.fromisoformat(t["exit_ts"]) - dt.fromisoformat(t["entry_ts"])).total_seconds() / 3600 for t in trades]
+
+    def group(key):
+        g = {}
+        for t in trades:
+            k = key(t)
+            r = g.setdefault(k, {"trades": 0, "wins": 0, "pnl_usd": 0.0})
+            r["trades"] += 1
+            r["wins"] += t["pnl_usd"] > 0
+            r["pnl_usd"] = round(r["pnl_usd"] + t["pnl_usd"], 4)
+        return dict(sorted(g.items(), key=lambda kv: -kv[1]["pnl_usd"]))
+    return {"trades": len(trades), "wins": len(wins), "losses": len(losses), "win_rate": round(len(wins) / len(trades), 3),
+            "pnl_usd": round(sum(t["pnl_usd"] for t in trades), 4), "avg_win": round(gross_win / len(wins), 4) if wins else None,
+            "avg_loss": round(-gross_loss / len(losses), 4) if losses else None,
+            "profit_factor": round(gross_win / gross_loss, 2) if gross_loss else None,
+            "expectancy": round(sum(t["pnl_usd"] for t in trades) / len(trades), 4),
+            "fees_usd": round(sum(t["fees_usd"] + (t["funding_usd"] or 0) for t in trades), 4),
+            "avg_hold_h": round(sum(hold) / len(hold), 1),
+            "best": max(trades, key=lambda t: t["pnl_usd"]), "worst": min(trades, key=lambda t: t["pnl_usd"]),
+            "by_bot": group(lambda t: t["strategy"]), "by_coin": group(lambda t: t["symbol"]),
+            "by_exit": group(lambda t: "alvo" if "take-profit" in (t["reason"] or "") else "stop" if "stop" in (t["reason"] or "")
+                             else "tempo" if "holding time" in (t["reason"] or "") else "IA/outro")}
+
+
+@router.get("/account/stats")
+def account_stats(kind: str = "sim"):
+    return trade_stats(_account_engine(kind).ledger.closed_trades())
+
+
+@router.get("/account/transactions")
+def account_transactions(kind: str = "sim", limit: int = 100):
+    """Every money movement of the account, newest first: buys, sells, deposits, withdrawals."""
+    led = _account_engine(kind).ledger
+    rows = [{"ts": f["ts"], "type": "compra" if f["side"] == "buy" else "venda", "symbol": f["symbol"], "bot": f["strategy"],
+             "usd": round(f["usd_gross"], 4), "price": f["price"], "qty": f["qty"], "fee_usd": round(f["fee_usd"] or 0, 5)}
+            for f in led.fills(limit)]
+    rows += [{"ts": m["ts"], "type": "depósito" if m["kind"] == "deposit" else "saque", "symbol": "USDC", "bot": None,
+              "usd": m["amount_usd"], "price": None, "qty": None, "fee_usd": 0, "note": m["note"]} for m in led.cash_movements(limit)]
+    return {"rows": sorted(rows, key=lambda r: r["ts"], reverse=True)[:limit]}
+
+
+@router.get("/funding")
+def funding_info():
+    """Where to send money: the account's own address (public), its Arbitrum wallet balances and the safe steps."""
+    from src.solana import market_data as md
+    addr = cfg.HL_ACCOUNT_ADDRESS
+    out = {"address": addr, "network": "Arbitrum One", "token": "USDC", "min_deposit_usd": 5,
+           "hyperliquid_app": "https://app.hyperliquid.xyz/portfolio"}
+    try:
+        w = md.evm_wallet_balances(addr)
+        out.update(arbitrum_usdc=w.get("arbitrum_usdc"), arbitrum_eth=w.get("arbitrum_eth"))
+        from src.solana import hl_live         # unified account: the real total lives in the spot clearinghouse
+        out["hyperliquid"] = hl_live._broker(hl_live.get_live_engine()).account_value()
+    except Exception as e:
+        out["error"] = str(e)[:120]
+    return out
+
+
 @router.get("/news")
 def news_feed(coin: str | None = None, hours: float = 24):
     """Crypto news (CoinDesk, Cointelegraph, Decrypt, The Block) tagged with the coins they mention."""

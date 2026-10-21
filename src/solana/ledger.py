@@ -204,10 +204,11 @@ class Ledger:
         return rows[0]["ts"] if rows else None
 
     # ─── paper deposits / withdrawals (simulated money only) ───
-    def move_cash(self, kind: str, amount_usd: float, note: str = "") -> dict:
+    def move_cash(self, kind: str, amount_usd: float, note: str = "", check: bool = True) -> dict:
+        """check=False records what already happened on a real exchange (it is the truth, not a request)."""
         if amount_usd <= 0:
             raise ValueError("amount must be positive")
-        if kind == "withdraw" and amount_usd > self.cash() + 1e-9:
+        if check and kind == "withdraw" and amount_usd > self.cash() + 1e-9:
             raise ValueError(f"insufficient paper cash (${self.cash():.2f})")
         self._x("INSERT INTO cash_movements (ts,kind,amount_usd,note) VALUES (?,?,?,?)",
                 (now_iso(), kind, amount_usd, note))

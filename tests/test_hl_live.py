@@ -266,3 +266,19 @@ def test_order_size_rounds_up_one_lot_for_expensive_coins():
     assert hl_live._order_size(12, 83000, 5) == 0.00014              # BTC: normal floor
     with pytest.raises(RuntimeError):
         hl_live._order_size(12, 9000, 0)                             # one lot = $9,000 → refused
+
+
+def test_external_deposits_and_withdrawals_become_cash_movements(live):
+    ledger, info, ex, br = live
+    me = ADDR.lower()
+    updates = [{"time": 2_000, "hash": "0xa", "delta": {"type": "deposit", "usdc": "25.0"}},
+               {"time": 3_000, "hash": "0xb", "delta": {"type": "send", "user": "0xfriend", "destination": me, "amount": "5", "usdcValue": "5"}},
+               {"time": 4_000, "hash": "0xc", "delta": {"type": "accountClassTransfer", "usdc": "3", "toPerp": True}},
+               {"time": 5_000, "hash": "0xd", "delta": {"type": "withdraw", "usdc": "10", "fee": "1"}}]
+    info.post = lambda path, body: [u for u in updates if u["time"] >= body["startTime"]]
+    assert br.record_transfers() == []                        # first run only sets the starting point
+    ledger.set_state("transfers_since", 1_000)
+    done = br.record_transfers()
+    assert [(d["kind"], d["usd"]) for d in done] == [("deposit", 25.0), ("deposit", 5.0), ("withdraw", 10.0)]
+    assert ledger.contributed() == 20 + 25 + 5 - 10
+    assert br.record_transfers() == []                        # nothing twice

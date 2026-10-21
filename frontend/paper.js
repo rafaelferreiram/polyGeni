@@ -73,7 +73,7 @@ let acc = null;
 
 function setKind(k) {
   KIND = k;
-  setTimeout(() => { safe(loadChart); safe(loadEquityChart); }, 800);
+  setTimeout(() => { safe(loadChart); safe(loadEquityChart); safe(loadHistory); }, 800);
   setTimeout(() => safe(loadDaily), 0);
   try { localStorage.setItem("acct", k); } catch (e) { /* ignore */ }
   replay = null;
@@ -267,7 +267,7 @@ async function refresh() {
   document.getElementById("k-eq-l").textContent = KIND === "sim" ? "Saldo simulado" : "Saldo real na Hyperliquid";
   document.getElementById("k-eq").textContent = usd(KIND === "real" && a.exchange_balance !== undefined ? a.exchange_balance : a.equity);
   const avail = availableOf(a);
-  document.getElementById("k-eq-s").innerHTML = `<b class="green">${usd(avail.available)} disponível</b> · ${usd(avail.margin)} em margem<br>`
+  document.getElementById("k-eq-s").innerHTML = `<b class="green">${usd(avail.available)} disponível</b> · ${usd(avail.margin)} em margem · <a href="#fundos">➕ fundos</a><br>`
     + `${usd(a.exposure)} em posições (${a.positions.length}) · pode abrir mais ${usd(a.buying_power, 0)} a ${a.limits.leverage}x`;
   const P = a.profit || {};
   document.getElementById("k-pnl").innerHTML = pnl(netOf(P, "all"));
@@ -827,6 +827,72 @@ async function loadNews() {
 }
 setTimeout(() => safe(loadNews), 1500);
 setInterval(() => safe(loadNews), 120000);
+
+// ─── collapsible sections (remembered in this browser) ───
+let folded = [];
+try { folded = JSON.parse(localStorage.getItem("folded") || "[]"); } catch (e) { /* storage blocked */ }
+document.querySelectorAll("main section.panel").forEach((sec, i) => {
+  const h2 = sec.querySelector("h2");
+  if (!h2) return;
+  const key = sec.id || `sec${i}`;
+  const btn = document.createElement("button");
+  btn.className = "fold";
+  btn.textContent = "▾";
+  btn.setAttribute("aria-label", "Minimizar ou expandir");
+  btn.setAttribute("aria-expanded", "true");
+  btn.onclick = () => {
+    const on = sec.classList.toggle("collapsed");
+    btn.setAttribute("aria-expanded", String(!on));
+    folded = on ? [...new Set([...folded, key])] : folded.filter((k) => k !== key);
+    try { localStorage.setItem("folded", JSON.stringify(folded)); } catch (e) { /* ignore */ }
+  };
+  h2.appendChild(btn);
+  if (folded.includes(key)) { sec.classList.add("collapsed"); btn.setAttribute("aria-expanded", "false"); }
+});
+
+// ─── history analysis + transactions ───
+const BOT_PT = (s) => (s === "manual" ? "Manual" : botName(s));
+async function loadHistory() {
+  const [s, tx] = await Promise.all([api(`/account/stats?kind=${KIND}`), api(`/account/transactions?kind=${KIND}`)]);
+  document.getElementById("stats-tag").textContent = s.trades ? `${s.trades} trades fechados · ${KIND === "sim" ? "simulação" : "real"}` : "ainda sem trades fechados";
+  const k = (label, v, sub) => `<div class="goal"><div class="k">${label}</div><div class="v">${v}</div><div class="s">${sub}</div></div>`;
+  setHTML("stats-kpis", s.trades ? [
+    k("Resultado", pnl(s.pnl_usd), `${s.wins} ganhos · ${s.losses} perdas · acerto ${pct(s.win_rate)}`),
+    k("Média por trade", pnl(s.expectancy), `ganho médio ${s.avg_win == null ? "–" : pnl(s.avg_win)} · perda média ${s.avg_loss == null ? "–" : pnl(s.avg_loss)}`),
+    k("Fator de lucro", s.profit_factor ?? "∞", "ganhos ÷ perdas (acima de 1 = lucrativo)"),
+    k("Duração média", `${s.avg_hold_h}h`, `taxas + funding pagos ${usd(s.fees_usd, 3)}`),
+    k("Melhor / pior", `${pnl(s.best.pnl_usd)} / ${pnl(s.worst.pnl_usd)}`, `${esc(s.best.symbol)} / ${esc(s.worst.symbol)}`),
+  ].join("") : '<div class="empty">Quando os primeiros trades fecharem, aparecem aqui o acerto, o fator de lucro e o resultado por bot, moeda e tipo de saída.</div>');
+  const grp = (id, g, name) => table(id, ["", "Trades", "Acerto", "Resultado"], Object.entries(g || {}).map(([key, r]) =>
+    `<tr><td><b>${esc(name(key))}</b></td><td>${r.trades}</td><td>${pct(r.wins / r.trades)}</td><td>${pnl(r.pnl_usd)}</td></tr>`));
+  grp("stats-bot", s.by_bot, BOT_PT); grp("stats-coin", s.by_coin, (x) => x); grp("stats-exit", s.by_exit, (x) => x);
+  document.getElementById("tx-tag").textContent = `${tx.rows.length} movimentos`;
+  table("tx-table", ["Quando", "Tipo", "Ativo", "Valor", "Preço", "Taxa", "Bot / nota"], tx.rows.map((r) => `<tr>
+    <td>${time(r.ts)}</td><td class="${r.type === "compra" || r.type === "depósito" ? "green" : "red"}">${r.type}</td><td><b>${esc(r.symbol)}</b></td>
+    <td>${usd(r.usd)}</td><td>${r.price ? fmtPx(r.price) : "–"}</td><td>${r.fee_usd ? usd(r.fee_usd, 4) : "–"}</td>
+    <td class="muted">${esc(r.bot ? BOT_PT(r.bot) : r.note || "")}</td></tr>`));
+}
+safe(loadHistory);
+setInterval(() => safe(loadHistory), 30000);
+
+// ─── add funds: address, QR, balances ───
+async function loadFunding() {
+  const f = await api("/funding");
+  document.getElementById("fund-addr").textContent = f.address;
+  if (window.qrcode && !document.getElementById("fund-qr").innerHTML) {
+    const q = qrcode(0, "M"); q.addData(f.address); q.make();
+    document.getElementById("fund-qr").innerHTML = q.createSvgTag({ cellSize: 4, margin: 0, scalable: true });
+  }
+  document.getElementById("fund-bal").innerHTML = `<div>USDC na MetaMask (Arbitrum)<b>${f.arbitrum_usdc == null ? "–" : Number(f.arbitrum_usdc).toFixed(2)}</b></div>
+    <div>ETH para taxas<b>${f.arbitrum_eth == null ? "–" : Number(f.arbitrum_eth).toFixed(5)}</b></div>
+    <div>Na Hyperliquid<b>${usd(f.hyperliquid)}</b></div>`;
+}
+function copyAddr(btn) {
+  navigator.clipboard.writeText(document.getElementById("fund-addr").textContent)
+    .then(() => toast("📋 Endereço copiado — envie só USDC na rede Arbitrum One"), () => toast("✖ não foi possível copiar", true));
+}
+safe(loadFunding);
+setInterval(() => safe(loadFunding), 120000);
 
 // ─── connections: exchange, data, AI and RPC providers ───
 async function loadHealth() {

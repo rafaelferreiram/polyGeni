@@ -327,9 +327,41 @@ class HyperliquidLiveBroker(Broker):
                 total += self.ledger.add_funding(self.venue, p["mint"], p["entry_order_id"], rate, 1.0, paid / rate)
         return total
 
+    def record_transfers(self) -> list[dict]:
+        """Deposits, withdrawals and transfers made outside the bot (e.g. adding funds) become cash movements in the
+        ledger, so they count as contributions — not profit — and never look like an unexplained balance drift."""
+        since = self.ledger.get_state("transfers_since")
+        if since is None:              # first run: everything before is already in the opening balance
+            self.ledger.set_state("transfers_since", int(time.time() * 1000))
+            return []
+        _, info = self._connect()
+        rows = info.post("/info", {"type": "userNonFundingLedgerUpdates", "user": self.address, "startTime": since + 1}) or []
+        me, done = self.address.lower(), []
+        for r in sorted(rows, key=lambda x: x["time"]):
+            d = r.get("delta", {})
+            amount = float(d.get("usdc") or d.get("usdcValue") or d.get("amount") or 0)
+            src, dst = str(d.get("user", "")).lower(), str(d.get("destination", "")).lower()
+            if d.get("type") == "deposit" or (dst == me and src != me):
+                kind = "deposit"
+            elif d.get("type") == "withdraw" or (src == me and dst and dst != me):
+                kind = "withdraw"
+            else:
+                continue                       # spot <-> perp moves inside the same account
+            if amount > 0:
+                self.ledger.move_cash(kind, amount, f"{d.get('type')} on Hyperliquid ({r.get('hash', '')[:12]})", check=False)
+                self.ledger.log_decision("funds", reason=f"{'💵 depósito' if kind == 'deposit' else '🏧 saque'} de ${amount:.2f} registado")
+                done.append({"kind": kind, "usd": amount, "time": r["time"]})
+        if rows:
+            self.ledger.set_state("transfers_since", max(r["time"] for r in rows))
+        return done
+
     def sync(self) -> list[str]:
         """Exchange is the truth: record native exits, flag untracked positions and equity drift."""
         problems = []
+        try:
+            self.record_transfers()
+        except Exception as e:           # never let the transfer log break the safety sync
+            logger.warning(f"transfer history: {e}")
         ex_pos = self.exchange_positions()
         mine = {p["mint"]: p for p in self.ledger.positions() if p.get("venue") == self.venue}
         for mint, p in mine.items():
@@ -501,6 +533,7 @@ def arm() -> dict:
     drift = value - (eng.ledger.cash() + sum(p["cost_usd"] for p in eng.ledger.positions()))
     if abs(drift) > 0.01:
         eng.ledger.move_cash("deposit" if drift > 0 else "withdraw", abs(drift), f"sync with {network()} account")
+    eng.ledger.set_state("transfers_since", int(time.time() * 1000))   # later deposits/withdrawals are tracked
     eng.ledger.set_state("armed", {"armed": True, "ts": now_iso(), "network": network()})
     eng.ledger.log_decision("arm", cycle=eng.cycle, reason=f"live trading armed on {network()} (balance ${value:.2f})")
     return {"armed": True, "network": network(), "balance": value}
