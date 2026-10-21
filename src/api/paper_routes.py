@@ -586,6 +586,10 @@ def account(kind: str = "sim"):
         "sleep": (led.get_state("sleep") or {}) if cfg.BOT_SELF_PAUSE else {}, "coffee_until": eng.coffee(), "market_temp": _market_temp(),
         "profit": profit(eng),
         "equity": round(p.equity, 4), "cash": round(p.cash, 4), "exposure": round(p.exposure, 4),
+        # what is still free: equity minus the margin the open positions hold (notional / leverage)
+        "available": round(p.equity - p.exposure / cfg.LIVE_LEVERAGE, 4),
+        "margin_used": round(p.exposure / cfg.LIVE_LEVERAGE, 4),
+        "buying_power": round(max(0.0, min(p.equity, cfg.LIVE_MAX_CAPITAL_USD) * cfg.LIVE_LEVERAGE * 0.97 - p.exposure), 4),
         "pnl_usd": round(p.equity - led.contributed(), 4), "contributed": led.contributed(),
         "performance": performance(led.equity_history(100_000)),
         "positions": led.positions(), "trades": trades[:100],
@@ -603,7 +607,9 @@ def account(kind: str = "sim"):
         out["config"] = st
         if not st["problems"]:
             try:
-                out["exchange_balance"] = hl_live._broker(eng).account_value()
+                br = hl_live._broker(eng)
+                out["exchange_balance"] = br.account_value()
+                out["exchange"] = br.balances()          # collateral / margin used / available, from the exchange
             except Exception as e:
                 out["exchange_error"] = str(e)[:200]
     return out

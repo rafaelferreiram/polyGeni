@@ -177,6 +177,18 @@ class HyperliquidLiveBroker(Broker):
             return cash + upnl
         return sum(float(info.user_state(self.address, dex)["marginSummary"]["accountValue"]) for dex in ("", "xyz"))
 
+    def balances(self) -> dict:
+        """Collateral split as the exchange sees it: total, held as margin by open positions, and free to use."""
+        _, info = self._connect()
+        stable = ("USDC", "USDT0", "USDH", "USDE")
+        if self.abstraction() in ("unifiedAccount", "portfolioMargin"):
+            bal = [b for b in info.spot_user_state(self.address).get("balances", []) if b["coin"] in stable]
+            total, hold = sum(float(b["total"]) for b in bal), sum(float(b["hold"]) for b in bal)
+            return {"collateral": round(total, 4), "margin_used": round(hold, 4), "available": round(total - hold, 4)}
+        s = info.user_state(self.address)
+        return {"collateral": float(s["marginSummary"]["accountValue"]), "margin_used": float(s["marginSummary"]["totalMarginUsed"]),
+                "available": float(s.get("withdrawable") or 0)}
+
     def exchange_positions(self) -> dict[str, float]:
         _, info = self._connect()
         out = {}

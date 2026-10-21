@@ -266,7 +266,9 @@ async function refresh() {
   // KPIs
   document.getElementById("k-eq-l").textContent = KIND === "sim" ? "Saldo simulado" : "Saldo real na Hyperliquid";
   document.getElementById("k-eq").textContent = usd(KIND === "real" && a.exchange_balance !== undefined ? a.exchange_balance : a.equity);
-  document.getElementById("k-eq-s").textContent = `caixa ${usd(a.cash)} · em posição ${usd(a.exposure)}`;
+  const avail = availableOf(a);
+  document.getElementById("k-eq-s").innerHTML = `<b class="green">${usd(avail.available)} disponível</b> · ${usd(avail.margin)} em margem<br>`
+    + `${usd(a.exposure)} em posições (${a.positions.length}) · pode abrir mais ${usd(a.buying_power, 0)} a ${a.limits.leverage}x`;
   const P = a.profit || {};
   document.getElementById("k-pnl").innerHTML = pnl(netOf(P, "all"));
   const all = a.performance?.all;
@@ -663,6 +665,11 @@ async function loadDaily() {
 safe(loadDaily);
 setInterval(() => safe(loadDaily), 30000);
 
+// free collateral: the exchange's own numbers on the real account, the ledger's on the simulation
+const availableOf = (a) => (KIND === "real" && a.exchange
+  ? { available: a.exchange.available, margin: a.exchange.margin_used }
+  : { available: a.available, margin: a.margin_used });
+
 // ─── status bar: the few things to see at a glance, always on screen ───
 function renderStatusBar(a) {
   const ks = a.kill_switch || {};
@@ -675,6 +682,7 @@ function renderStatusBar(a) {
     ["Conta", KIND === "sim" ? "🧪 simulação" : `💰 real · ${a.network}`],
     ["Estado", ks.active ? '<span class="red">🛑 kill switch</span>' : a.running ? (a.scanning ? '<span class="green">⚡ analisando</span>' : '<span class="green">● ligada</span>') : "⏸ parada"],
     ["Saldo", usd(KIND === "real" && a.exchange_balance !== undefined ? a.exchange_balance : a.equity)],
+    ["Disponível", `<span class="green">${usd(availableOf(a).available)}</span>`],
     ["Hoje", today == null ? "–" : pnl(today)],
     ["Posições", `${a.positions.length}`],
     ["Próxima análise", !a.running ? "–" : a.scanning ? "agora" : secs > 0 ? `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}` : "instantes"],
