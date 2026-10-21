@@ -357,11 +357,12 @@ def test_manual_exit_closes_a_position_and_records_it(ledger):
 
 def test_protected_stop_breakeven_then_trails():
     from src.solana.engine import protected_stop
-    pos = {"stop_price": 98.0, "tp_price": 103.0, "qty": 1.0, "cost_usd": 100.0}
-    assert protected_stop(pos, 101.0) is None                     # not halfway yet: keep the original stop
-    assert abs(protected_stop(pos, 101.6) - 100.6) < 1e-9         # halfway: stop above entry, 1 ATR below the price
-    assert abs(protected_stop(pos, 102.9) - 101.9) < 1e-9         # and it keeps trailing up
-    assert protected_stop({**pos, "stop_price": 102.0}, 102.9) is None   # never lowers the stop
+    pos = {"stop_price": 98.0, "tp_price": 106.0, "qty": 1.0, "cost_usd": 100.0}
+    assert protected_stop(pos, 100.4) is None                     # small move: keep the original stop
+    assert abs(protected_stop(pos, 101.0) - 100.5) < 1e-9         # quick win (+1%): lock half of the gain
+    assert abs(protected_stop(pos, 103.2) - 101.6) < 1e-9         # halfway: the higher of half the gain and 1 ATR trail
+    assert abs(protected_stop(pos, 105.0) - 103.0) < 1e-9         # and it keeps trailing up
+    assert protected_stop({**pos, "stop_price": 104.0}, 105.0) is None   # never lowers the stop
 
 
 def test_no_reentry_on_the_same_signal_candle(ledger):
