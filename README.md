@@ -558,7 +558,10 @@ scale: recommendations, the "ready to add money?" checklist and a linear project
 - `scripts/kairos_tunnel.sh install` runs a Cloudflare quick tunnel to `127.0.0.1:8000` 24/7 (launchd `com.kairos.tunnel`);
   `scripts/kairos_tunnel.sh url` prints its address. The Vercel project `kairos-bots` (https://kairos-bots.vercel.app) is a
   single `vercel.json` rewrite to that address. The quick-tunnel address changes when cloudflared restarts (e.g. reboot):
-  add `VERCEL_TOKEN` to `.env` and run `scripts/kairos_tunnel.sh sync` to point Vercel at the new one.
+  `scripts/kairos_tunnel.sh install` also installs `com.kairos.tunnel-sync`, which runs `sync` every 2 minutes and
+  redeploys the Vercel rewrite when the address changes. It needs `VERCEL_TOKEN=...` in `.env` (create one at
+  vercel.com/account/tokens). **Secrets live only in `.env` (git-ignored); never commit keys.** The token is passed to
+  curl from a private temp file, so it never shows in the process list. Vercel itself stores no secret: it only forwards.
 - From outside this Mac every page needs a login (`KAIROS_LOGIN_USER`, default `root`; `KAIROS_LOGIN_HASH` = pbkdf2 of the
   password, see `src/api/auth.py`), sessions last 7 days, 5 wrong passwords lock login for 15 minutes, and the session is
   read-only: buying, selling, Start/Stop and the kill switch only work on the Mac.

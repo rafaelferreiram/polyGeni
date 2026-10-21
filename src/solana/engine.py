@@ -707,7 +707,9 @@ def scheduler() -> BackgroundScheduler:
     """One background scheduler shared by the paper loop and the live loop (separate jobs)."""
     global _scheduler
     if _scheduler is None:
-        _scheduler = BackgroundScheduler()
+        # many jobs share the pool (account cycles, lab round, turbo ticks): a job that starts late still runs
+        _scheduler = BackgroundScheduler(executors={"default": {"type": "threadpool", "max_workers": 20}},
+                                         job_defaults={"misfire_grace_time": 300, "coalesce": True})
         _scheduler.start()
     return _scheduler
 
