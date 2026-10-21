@@ -425,6 +425,21 @@
     #rank-sort, #rank-who { margin-left: 10px; text-transform: none; letter-spacing: 0; vertical-align: middle; }
     #rank-table td.pos { font-size: 18px; width: 36px; text-align: center; } #rank-table tr.me1 td { background: rgba(111,211,160,.06); }
     .tb { cursor: pointer; }
+    /* Palmeiras atmosphere: titulares on the pitch, reserves on the bench */
+    .squad { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 12px; font-size: 14px; margin-top: 4px; }
+    .squad span:last-child { color: rgba(255,255,255,.7); font-size: 12.5px; margin-left: auto; }
+    .squad .ico { font-size: 18px; }
+    .squad.pitch { color: #fff; border: 1px solid #1f7a45;
+      background: repeating-linear-gradient(90deg, #0b5a30 0 48px, #0d6636 48px 96px); box-shadow: inset 0 0 0 2px rgba(255,255,255,.08); }
+    .squad.bench { color: var(--text); border: 1px dashed var(--border); background: var(--surface-2); margin-top: 14px; }
+    .squad.bench span:last-child { color: var(--muted); }
+    .tb.tit { border-color: #1f9d55 !important; box-shadow: 0 0 0 1px rgba(31,157,85,.35), 0 8px 24px rgba(0,100,55,.18); }
+    .tb.res { border-style: dashed !important; }
+    .tb .shirt { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); font-size: 10px; font-weight: 800; letter-spacing: .08em;
+      padding: 2px 8px; border-radius: 99px; white-space: nowrap; pointer-events: none; }
+    .tb.tit .shirt { background: #006437; color: #fff; } .tb.res .shirt { background: var(--surface-2); color: var(--muted); border: 1px solid var(--border); }
+    .tb { padding-top: 30px !important; }
+    button.promote { background: #006437 !important; color: #fff !important; border-color: #1f9d55 !important; font-weight: 700; }
     .bm-back { position: fixed; inset: 0; z-index: 60; background: rgba(4,7,6,.72); backdrop-filter: blur(4px); display: grid; place-items: center; padding: 24px; }
     .bm-back[hidden] { display: none; }
     .bm { position: relative; width: min(920px, 100%); height: min(88vh, 780px); display: flex; flex-direction: column;
@@ -733,6 +748,6 @@
 
   <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <script src="https://unpkg.com/qrcode-generator@1.4.4/qrcode.js"></script>
-  <script src="/static/paper.js?v=94"></script>
+  <script src="/static/paper.js?v=96"></script>
 </body>
 </html>

@@ -743,6 +743,20 @@ def account_coffee(req: Coffee):
             "scan_started": {k: _scan_in_background(k) for k, on in running.items() if on}}
 
 
+class Promote(BaseModel):
+    bot: str
+
+
+@router.post("/arena/promote", dependencies=LOCAL)
+def arena_promote(req: Promote):
+    """The user promotes a reserve to titular from its modal (12+ lab wins, win rate ≥ 35%)."""
+    from src.solana import arena
+    try:
+        return arena.promote(req.bot)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
 class BotCoffee(BaseModel):
     bot: str
     hours: float = 4

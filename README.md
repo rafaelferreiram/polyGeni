@@ -131,6 +131,9 @@ the others must first show ≥ 10 profitable lab trades.
   its latest trades with dates, amounts and exit reasons. Turbo/coffee buttons are there too.
 - **Real account**: at most 5 positions at a time and no daily trade cap (`LIVE_MAX_POSITIONS=5`,
   `LIVE_MAX_ENTRIES_PER_DAY` high in `.env`); the 10% daily loss stop and the kill switch stay.
+- **Promote from the modal** (`POST /api/paper/arena/promote`): a reserve with ≥ 12 lab wins and win rate ≥ 35%
+  (`PROMOTE_MIN_WINS`, `PROMOTE_MIN_WIN_RATE`) can be made titular by the user (a warning shows if its lab result is
+  negative). Promotions are stored in `lineage.json`. The team view shows titulares "em campo" and reserves "no banco".
 - **Daily quota for titulares** (`DAILY_MIN_TRADES=5`): each titular should complete at least 5 buy+sell round trips a
   day on the real account. Behind pro rata (Lisbon day), it loosens its entry one notch per trade behind (max 2: e.g.
   São Marcos RSI 30→35→40 and a narrower band, Endrick a shorter breakout window, Evair less whale buying needed) and

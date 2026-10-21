@@ -123,6 +123,8 @@ def green_light(model: str) -> dict:
     GREEN_LIGHT_PROFIT_FACTOR."""
     if model in cfg.REAL_TRUSTED_BOTS and model not in LAB_ONLY_BOTS:
         return {"ok": True, "trusted": True}
+    if model in evolution.load().get("promoted", []):        # promoted by the user from the bot's modal
+        return {"ok": True, "trusted": True, "promoted": True}
     eng = (_bots or {}).get(model)
     trades = eng.ledger.closed_trades() if eng else []
     wins = [t["pnl_usd"] for t in trades if t["pnl_usd"] > 0]
@@ -214,6 +216,31 @@ def _schedule_turbo(model: str, eng):
     if sch.get_job(job_id) is None:
         sch.add_job(tick, "interval", seconds=cfg.TURBO_CYCLE_SEC, id=job_id, max_instances=1, coalesce=True,
                     next_run_time=datetime.now())
+
+
+def can_promote(model: str) -> dict:
+    """The user's manual promotion rule: a reserve with ≥ PROMOTE_MIN_WINS winning lab trades and win rate ≥
+    PROMOTE_MIN_WIN_RATE may be made titular from its modal (the automatic green light stays stricter)."""
+    eng = bots().get(model)
+    trades = eng.ledger.closed_trades() if eng else []
+    wins = sum(t["pnl_usd"] > 0 for t in trades)
+    wr = wins / len(trades) if trades else 0.0
+    ok = (bool(eng) and not is_titular(model) and model not in LAB_ONLY_BOTS
+          and wins >= cfg.PROMOTE_MIN_WINS and wr >= cfg.PROMOTE_MIN_WIN_RATE)
+    return {"ok": ok, "wins": wins, "trades": len(trades), "win_rate": round(wr, 3),
+            "need_wins": cfg.PROMOTE_MIN_WINS, "need_win_rate": cfg.PROMOTE_MIN_WIN_RATE}
+
+
+def promote(model: str) -> dict:
+    c = can_promote(model)
+    if not c["ok"]:
+        raise ValueError(f"ainda não dá: precisa de {c['need_wins']} vitórias e acerto ≥ {c['need_win_rate']:.0%} "
+                         f"(tem {c['wins']} e {c['win_rate']:.0%})")
+    data = evolution.load()
+    data.setdefault("promoted", []).append(model)
+    evolution.save(data)
+    bots()[model].ledger.log_decision("evolution", reason=f"⬆️ promovido a titular pelo painel: {c['wins']} vitórias, acerto {c['win_rate']:.0%}")
+    return {"promoted": model, **c}
 
 
 def coffee(model: str, hours: float = 4) -> dict:
@@ -454,7 +481,7 @@ def leaderboard() -> list[dict]:
             "review_boost": led.get_state("review_boost"),
             "learned": learning.summary(learning.record(led, model)),
             "lineage": evolution.load()["bots"].get(model), "born_at": led.get_state("born_at"),
-            "last_verdict": led.get_state("last_verdict"), "quota": quota_today(model),
+            "last_verdict": led.get_state("last_verdict"), "quota": quota_today(model), "can_promote": can_promote(model),
             "last_decision": next(({"market": k, **{x: v.get(x) for x in ("action", "reason", "model")}}
                                    for k, v in sorted(last.items(), key=lambda kv: -(kv[1].get("t") or 0))), None)
                              if eng.llm else _rules_last(led),
