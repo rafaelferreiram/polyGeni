@@ -168,9 +168,10 @@ class MeanReversionATR:
             return None
         closes = [c["close"] for c in candles]
         window = closes[-self.period:]
-        lower = mean(window) - self.k * pstdev(window)
+        relax = getattr(self, "relax", 0)                 # daily quota: titular behind its minimum of trades
+        lower = mean(window) - (self.k - 0.25 * relax) * pstdev(window)
         r = rsi(closes, self.rsi_period)
-        if not (closes[-1] < lower and r < self.rsi_max) or _crowded(candles, self.max_funding):
+        if not (closes[-1] < lower and r < self.rsi_max + 5 * relax) or _crowded(candles, self.max_funding):
             return None
         trend = ema(closes[-3 * self.trend_ema:], self.trend_ema) if self.trend else None
         if trend is not None and closes[-1] <= trend:
@@ -198,7 +199,8 @@ class TrendFollow:
             return None
         closes = [c["close"] for c in candles]
         f, s = ema(closes[-3 * self.fast:], self.fast), ema(closes[-3 * self.slow:], self.slow)
-        prior_high = max(c["high"] for c in candles[-self.breakout - 1:-1])
+        lookback = max(6, self.breakout - 6 * getattr(self, "relax", 0))     # daily quota: shorter breakout window
+        prior_high = max(c["high"] for c in candles[-lookback - 1:-1])
         if not (closes[-1] > f > s and closes[-1] > prior_high) or _crowded(candles, self.max_funding):
             return None
         stop, tp, a = _atr_stops(candles, self.stop_atr, self.tp_atr)
@@ -224,7 +226,7 @@ class TrendStrong(TrendFollow):
 
     def signal(self, candles: list[dict]) -> Signal | None:
         closes = [c["close"] for c in candles]
-        if (len(closes) < self.slow + 25 or ema(closes[-150:], self.fast) / ema(closes[-174:-24], self.fast) - 1 < self.min_slope
+        if (len(closes) < self.slow + 25 or ema(closes[-150:], self.fast) / ema(closes[-174:-24], self.fast) - 1 < self.min_slope * (1 - 0.4 * getattr(self, "relax", 0))
                 or closes[-1] <= closes[-73]):
             return None
         return super().signal(candles)
@@ -286,7 +288,8 @@ class WhaleFollow:
         if len(closes) < 210:
             return None
         up = closes[-1] > ema(closes[-600:], 200) and closes[-1] > ema(closes[-150:], 50)
-        strong = wf.get("pressure") == "comprando" and h.get("net_usd", 0) >= 2 * wf.get("threshold_usd", 1e12)
+        need = 2 - 0.5 * getattr(self, "relax", 0)          # daily quota: a bit less whale buying is enough
+        strong = wf.get("pressure") == "comprando" and h.get("net_usd", 0) >= need * wf.get("threshold_usd", 1e12)
         self.last[market] = {"action": "BUY" if up and strong else "HOLD", "model": self.name, "t": candles[-1]["t"],
                              "reason": (f"baleias compraram ${h.get('net_usd', 0):,.0f} líquidos em 1h numa alta" if up and strong
                                         else "sem compra forte de baleias numa alta")}
@@ -314,7 +317,8 @@ class CopyTop(WhaleFollow):
         if len(closes) < 210:
             return None
         up = closes[-1] > ema(closes[-600:], 200)
-        crowd = t.get("long", 0) >= 2 and t.get("new_longs_1h", 0) >= 1 and t.get("long", 0) > t.get("short", 0)
+        fresh = t.get("new_longs_1h", 0) >= 1 or getattr(self, "relax", 0) >= 1      # daily quota: no fresh entry needed
+        crowd = t.get("long", 0) >= 2 and fresh and t.get("long", 0) > t.get("short", 0)
         self.last[market] = {"action": "BUY" if up and crowd else "HOLD", "model": self.name, "t": candles[-1]["t"],
                              "reason": (f"{t.get('long')} dos top {t.get('of')} traders comprados, {t.get('new_longs_1h')} entraram na última hora"
                                         if up and crowd else f"top traders: {t.get('long', 0)} comprados, {t.get('new_longs_1h', 0)} novas entradas")}

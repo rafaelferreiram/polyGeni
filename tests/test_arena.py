@@ -264,3 +264,40 @@ def test_titular_rule_bot_gets_its_reviews_by_the_chosen_model_and_reserves_one_
     assert arena.coffee("trend")["accounts"] == []
     with pytest.raises(ValueError, match="1 café por dia"):
         arena.coffee("trend")
+
+
+def test_evolution_retires_a_weak_reserve_and_breeds_an_improved_champion(tmp_path, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    from src.solana import evolution, hl_live, learning
+    monkeypatch.setattr(evolution, "PATH", str(tmp_path / "lineage.json"))
+    monkeypatch.setattr(cfg, "ARENA_MODELS", ["trend4h"])
+    monkeypatch.setattr(arena, "build_bot", lambda m, **kw: _fresh(tmp_path, m))
+    monkeypatch.setattr(evolution, "_refresh_accounts", lambda: None)
+    monkeypatch.setattr(arena, "_bots", None)
+    monkeypatch.setattr(arena, "is_titular", lambda m: False)
+    eng = arena.bots()["trend4h"]
+    born = datetime.now(timezone.utc) - timedelta(hours=21)
+    eng.ledger.set_state("born_at", born.isoformat(timespec="seconds"))
+    t = lambda h, pnl, why: {"pnl_usd": pnl, "reason": why, "strategy": "trend4h", "order_id": f"exit-o{h}",
+                             "entry_ts": (born + timedelta(hours=h - 0.5)).isoformat(), "exit_ts": (born + timedelta(hours=h)).isoformat()}
+    trades = [t(h, -0.1, "max holding time 2h reached") for h in (1, 2, 3)] + [t(4, 0.1, "take-profit hit")]
+    monkeypatch.setattr(type(eng.ledger), "closed_trades", lambda self: trades if self is eng.ledger else [])
+    [ev] = evolution.check()
+    assert ev["retired"] == "trend4h" and ev["label"] == evolution.CHAMPIONS[0] and ev["verdict"]["win_rate"] == 0.25
+    data = evolution.load()
+    child = data["bots"][ev["born"]]
+    assert data["active"] == [ev["born"]] and child["base"] == "trend4h" and child["gen"] == 2
+    assert child["params"]["no_fast_exit"] and child["params"]["max_hold_h"] >= 12      # learned from losing time exits
+    assert ev["born"] in arena.bots() and "trend4h" not in arena.bots()
+    from src.solana.strategies import RULE_BOTS
+    assert RULE_BOTS[ev["born"]]().name == ev["born"]
+    assert evolution.check() == []                   # the newborn has its own 20h before its first cut
+
+
+def _fresh(tmp_path, model):
+    from src.solana.ledger import Ledger
+    from src.solana.engine import PaperEngine
+    from src.solana.agents import DebateAgent, ExecutorAgent, RiskAgent, SafetyAgent
+    from src.solana.broker import PaperBroker
+    led = Ledger(str(tmp_path / f"{model}.db"), 100.0)
+    return PaperEngine(led, [], SafetyAgent(), [], DebateAgent(enabled=False), RiskAgent(), ExecutorAgent(PaperBroker(led)))

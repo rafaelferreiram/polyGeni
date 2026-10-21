@@ -15,3 +15,5 @@ build/
 !.claude/skills/
 .session_secret
 .tunnel_synced
+lineage.json
+lineage.json.tmp

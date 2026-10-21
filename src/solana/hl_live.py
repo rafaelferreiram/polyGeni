@@ -439,7 +439,9 @@ def team() -> list:
     from src.solana.llm_trader import TeamMember
     from src.solana.strategies import LAB_ONLY_BOTS
     # lab-only bots (shorts, 15-minute twins) never propose for the real account or its simulation
-    return [TeamMember(m, lab_lookup=arena.lab_decider) for m in cfg.ARENA_MODELS if m not in LAB_ONLY_BOTS]
+    from src.solana import evolution
+    evolution.register()                           # evolved strategies must exist before members are built
+    return [TeamMember(m, lab_lookup=arena.lab_decider) for m in evolution.active_models() if m not in LAB_ONLY_BOTS]
 
 
 def _coordinate(market, members):

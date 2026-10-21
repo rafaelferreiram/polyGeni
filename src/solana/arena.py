@@ -8,7 +8,7 @@ import re
 from datetime import datetime, timedelta, timezone
 
 from src.solana import config as cfg
-from src.solana import learning
+from src.solana import evolution, learning
 from src.solana import hyperliquid as hl
 from src.solana.agents import DebateAgent, ExecutorAgent, RiskAgent, Vote
 from src.solana.engine import PaperEngine, bench_prices
@@ -195,7 +195,7 @@ def turbo(model: str) -> dict:
 def fast_exit_hold(strategy: str) -> float | None:
     """Max hours a position may stay open for a bot trained with turbo (None = its normal hold)."""
     eng = (_bots or {}).get(strategy)
-    if not eng or not eng.ledger.get_state("fast_exits", False) or is_titular(strategy):
+    if not eng or not eng.ledger.get_state("fast_exits", False) or is_titular(strategy) or evolution.no_fast_exit(strategy):
         return None              # titulares keep their strategy's own exits (a forced 2h exit cost Evair money)
     return cfg.TURBO_FAST_MAX_HOLD_H if strategy in FAST_BOTS else cfg.TURBO_MAX_HOLD_H
 
@@ -281,7 +281,7 @@ def eligible_for_real(members: list) -> list:
 def rank(market: str, members: list) -> list:
     """Coordinator: best RECENT lab record (LAB_SCORE_DAYS) on this market first, then recent overall, then the
     configured order. Mean reversion and trend following win in different regimes; recent results tell which."""
-    order = {m: i for i, m in enumerate(cfg.ARENA_MODELS)}
+    order = {m: i for i, m in enumerate(evolution.active_models())}
     d = cfg.LAB_SCORE_DAYS
     return sorted(members, key=lambda m: (-score(m.model, market, d)[0], -reward(m.model)["points"], order.get(m.model, 99)))
 
@@ -292,7 +292,8 @@ _bots: dict[str, PaperEngine] | None = None
 def bots() -> dict[str, PaperEngine]:
     global _bots
     if _bots is None:
-        _bots = {m: build_bot(m) for m in cfg.ARENA_MODELS}
+        evolution.register()                  # evolved reserves (successors) are strategies too
+        _bots = {m: build_bot(m) for m in evolution.active_models()}
     return _bots
 
 
@@ -401,11 +402,25 @@ def set_running(on: bool):
             eng.ledger.set_state("paused_reason", None)
         eng.ledger.log_decision("arena", reason=f"arena {'started' if on else 'stopped'} {now_iso()}")
     sch = paper_engine.scheduler()
+    if on and sch.get_job("evolution") is None:
+        from datetime import datetime as _dt
+        sch.add_job(evolution.check, "interval", seconds=600, id="evolution", max_instances=1, coalesce=True,
+                    next_run_time=_dt.now() + timedelta(minutes=2))
     if on and sch.get_job("arena_round") is None:
         from datetime import datetime
         sch.add_job(run_round, "interval", seconds=cfg.ARENA_CYCLE_SEC, id="arena_round", max_instances=1,
                     coalesce=True, next_run_time=datetime.now())
     return {"running": on, "llm_bots_need_key": not cfg.ANTHROPIC_API_KEY}
+
+
+def quota_today(model: str) -> dict | None:
+    """Titulares: completed trades (buy + sell) today on the real account vs the daily minimum."""
+    if not is_titular(model) or not cfg.DAILY_MIN_TRADES:
+        return None
+    from src.solana import hl_live
+    start = datetime.now(cfg.TZ).replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc).isoformat()
+    done = sum(t["strategy"] == model and t["exit_ts"] >= start for t in hl_live.get_live_engine().ledger.closed_trades())
+    return {"done": done, "target": cfg.DAILY_MIN_TRADES}
 
 
 def leaderboard() -> list[dict]:
@@ -438,6 +453,8 @@ def leaderboard() -> list[dict]:
             "coffee_until": led.get_state("coffee_until"), "coffee_day": led.get_state("coffee_day"),
             "review_boost": led.get_state("review_boost"),
             "learned": learning.summary(learning.record(led, model)),
+            "lineage": evolution.load()["bots"].get(model), "born_at": led.get_state("born_at"),
+            "last_verdict": led.get_state("last_verdict"), "quota": quota_today(model),
             "last_decision": next(({"market": k, **{x: v.get(x) for x in ("action", "reason", "model")}}
                                    for k, v in sorted(last.items(), key=lambda kv: -(kv[1].get("t") or 0))), None)
                              if eng.llm else _rules_last(led),

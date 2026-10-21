@@ -181,6 +181,34 @@ class PaperEngine:
             self.ledger.log_decision("reconcile", cycle=self.cycle, reason=msg)
         return issues
 
+    def _quota_levels(self) -> dict[str, int]:
+        """Titulares behind their daily minimum of completed trades: 1 = one trade behind pro rata, 2 = two or more.
+        The level is handed to the rule object (it loosens its entry a notch per level) and returned per strategy."""
+        from src.solana import arena
+        if not cfg.DAILY_MIN_TRADES:
+            return {}
+        now = datetime.now(cfg.TZ)
+        start = now.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc).isoformat()
+        expected = cfg.DAILY_MIN_TRADES * (now.hour * 60 + now.minute) / 1440
+        closed = [t for t in self.ledger.closed_trades() if t["exit_ts"] >= start]
+        model = self.ledger.get_state("model")
+        levels, prev = {}, self.ledger.get_state("quota_levels") or {}
+        for strat in self._deciders():
+            who = strat.name if strat.name in (arena._bots or {}) or strat.name in cfg.REAL_TRUSTED_BOTS else (model or strat.name)
+            rule = getattr(strat, "_rules", None) or strat
+            if not arena.is_titular(who):
+                rule.relax = 0
+                continue
+            done = sum(t["strategy"] == strat.name for t in closed)
+            behind = expected - done
+            levels[strat.name] = rule.relax = 0 if behind < 1 else 1 if behind < 2 else 2
+            if levels[strat.name] != prev.get(strat.name, 0):
+                self.ledger.log_decision("quota", strategy=strat.name, reason=(
+                    f"⏱ cota do dia: {done} de {cfg.DAILY_MIN_TRADES} operações completas — entrada um pouco mais solta (nível {levels[strat.name]}) e alvo mais perto"
+                    if levels[strat.name] else f"✅ cota do dia em dia: {done} de {cfg.DAILY_MIN_TRADES} operações completas"))
+        self.ledger.set_state("quota_levels", levels)
+        return levels
+
     def _learn_ledger(self, strategy: str):
         """Where a bot's experience lives: its lab ledger (the accounts learn from the same bot's lab record)."""
         from src.solana import arena
@@ -486,6 +514,7 @@ class PaperEngine:
         from src.solana import trainer
         trainer.set_breadth(breadth)
         held = {x["mint"] for x in self.ledger.positions()}
+        quota = self._quota_levels()
         for c, candles, safety, profile in ready:
             if c.mint in held:          # already holding it: its stop/target and exit review handle it — no AI tokens
                 continue
@@ -517,11 +546,16 @@ class PaperEngine:
                 if (c.mint, strat.name, candles[-1]["t"]) in entered:
                     self._agent(strat.name, last_reason=f"{c.symbol}: sinal já usado neste candle")
                     continue
+                if quota.get(strat.name):            # behind its daily minimum: closer target, quicker round trip
+                    sig.tp_pct *= 0.6
+                    sig.reason = f"{sig.reason} · cota do dia (nível {quota[strat.name]})"
                 tags = learning.situation(candles, c.symbol)
                 if cfg.SELF_LEARNING:
                     rec = learning.record(self._learn_ledger(strat.name), strat.name)
-                    if avoided := learning.avoid(rec, tags):
-                        why = ", ".join(f"'{t}' ({rec[t]['wins']}/{rec[t]['n']} ganhos, ${rec[t]['pnl']:+.2f})" for t in avoided)
+                    from src.solana import evolution
+                    if avoided := learning.avoid(rec, tags, evolution.inherited_avoid(strat.name)):
+                        why = ", ".join(f"'{t}' ({rec[t]['wins']}/{rec[t]['n']} ganhos, ${rec[t]['pnl']:+.2f})" if t in rec
+                                        else f"'{t}' (lição herdada)" for t in avoided)
                         self.ledger.log_decision("veto", cycle=self.cycle, mint=c.mint, symbol=c.symbol, strategy=strat.name,
                                                  signals={"tags": tags}, reason=f"aprendizado: evita {why}")
                         stats["vetoes"] += 1

@@ -48,18 +48,28 @@ def record(ledger, strategy: str | None = None) -> dict[str, dict]:
     return out
 
 
-def bad(r: dict) -> bool:
-    return r["n"] >= cfg.LEARN_MIN_TRADES and r["wins"] / r["n"] < cfg.LEARN_MAX_WIN_RATE and r["pnl"] < 0
+def _total(rec: dict[str, dict]) -> int:
+    return sum(r["n"] for t, r in rec.items() if t.startswith("moeda ")) or 1
 
 
-def avoid(rec: dict[str, dict], tags: list[str]) -> list[str]:
-    """The situations in `tags` this bot has learned to stay out of."""
-    return [t for t in tags if t in rec and bad(rec[t])]
+def bad(r: dict, total: int | None = None) -> bool:
+    """A losing situation — and a specific one: a label on most of the bot's trades ('alta', its own setup) is the
+    strategy itself, not a situation to avoid (avoiding it would mean never trading; evolution judges the strategy)."""
+    return (r["n"] >= cfg.LEARN_MIN_TRADES and r["wins"] / r["n"] < cfg.LEARN_MAX_WIN_RATE and r["pnl"] < 0
+            and (total is None or r["n"] <= total / 2))
+
+
+def avoid(rec: dict[str, dict], tags: list[str], inherited=()) -> list[str]:
+    """The situations in `tags` this bot has learned to stay out of — its own record first; lessons inherited from its
+    predecessor count until it has its own LEARN_MIN_TRADES trades in that situation."""
+    total = _total(rec)
+    return [t for t in tags if (t in rec and bad(rec[t], total)) or (t in inherited and rec.get(t, {}).get("n", 0) < cfg.LEARN_MIN_TRADES)]
 
 
 def summary(rec: dict[str, dict]) -> dict:
     """What a bot has learned: situations it avoids, where it does best, how many trade-situations it has seen."""
     good = [(t, r) for t, r in rec.items() if r["n"] >= cfg.LEARN_MIN_TRADES and r["wins"] / r["n"] >= 0.6 and r["pnl"] > 0]
-    return {"avoid": [{"tag": t, **r} for t, r in sorted(rec.items(), key=lambda kv: kv[1]["pnl"]) if bad(r)][:5],
+    total = _total(rec)
+    return {"avoid": [{"tag": t, **r} for t, r in sorted(rec.items(), key=lambda kv: kv[1]["pnl"]) if bad(r, total)][:5],
             "best": [{"tag": t, **r} for t, r in sorted(good, key=lambda kv: -kv[1]["pnl"])][:3],
             "seen": sum(r["n"] for t, r in rec.items() if t.startswith("moeda "))}
