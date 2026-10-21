@@ -17,3 +17,14 @@ def test_whale_orders_are_grouped_by_tx_and_split_into_buy_and_sell_flow():
     assert s["pressure"] == "comprando"
     assert {"wallet": "0xwhale", "net_usd": -30_000} in s["top_wallets"]
     assert whales.summary("TST", now=now + 5 * 3600)["1h"]["n"] == 0                           # rolls off after the window
+
+
+def test_top_wallets_aggregate_across_coins():
+    whales._trades.clear()
+    for c in ("AAA", "BBB"):
+        whales._thresholds[c] = 25_000
+    whales.ingest([fill("AAA", "B", 100, 500, "0x1", users=("0xwhale", "0xm")),
+                   fill("BBB", "A", 100, 300, "0x2", users=("0xm", "0xwhale"))], now=1_000)
+    w = whales.top_wallets(now=1_000)[0]
+    assert w["wallet"] == "0xwhale" and w["buy_usd"] == 50_000 and w["sell_usd"] == 30_000 and w["net_usd"] == 20_000
+    assert w["coins"] == [("AAA", 50_000), ("BBB", -30_000)]

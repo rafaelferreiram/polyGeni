@@ -68,3 +68,22 @@ def test_mean_reversion_atr_needs_uptrend_when_trend_filter_on():
         flat_then_dip.append(dict(t=flat_then_dip[-1]["t"] + 3600, open=last, high=last, low=last * f, close=last * f, volume=100))
     assert MeanReversionATR(trend_ema=100).signal(flat_then_dip) is None   # no uptrend → no trade
     assert MeanReversionATR(trend=False, trend_ema=100).signal(flat_then_dip) is not None
+
+
+def test_resample_builds_complete_4h_bars():
+    from src.solana.strategies import resample
+    hourly = [{"t": 3600 * i, "open": i, "high": i + 0.5, "low": i - 0.5, "close": i + 0.1, "volume": 1} for i in range(1, 10)]
+    bars = resample(hourly, 4)                     # hours 1-3 are a partial bucket; 4-7 complete; 8-9 partial
+    assert len(bars) == 1 and bars[0]["open"] == 4 and bars[0]["close"] == 7.1 and bars[0]["high"] == 7.5 and bars[0]["volume"] == 4
+
+
+def test_whale_follower_buys_only_on_strong_whale_buying_in_an_uptrend():
+    from src.solana.strategies import WhaleFollow
+    up = [{"t": 3600 * i, "open": 100 * 1.002 ** i, "high": 100 * 1.002 ** i * 1.002, "low": 100 * 1.002 ** i * 0.998,
+           "close": 100 * 1.002 ** i, "volume": 1} for i in range(300)]
+    buying = {"pressure": "comprando", "threshold_usd": 25_000, "1h": {"net_usd": 80_000}}
+    w = WhaleFollow()
+    assert w.decide(up, {"symbol": "X", "whale_flow": buying}) is not None
+    assert w.decide(up, {"symbol": "X", "whale_flow": {**buying, "1h": {"net_usd": 30_000}}}) is None   # not 2x size
+    down = [dict(c, close=c["close"] * (0.99 ** i)) for i, c in enumerate(up)]
+    assert w.decide(down, {"symbol": "X", "whale_flow": buying}) is None                            # no uptrend

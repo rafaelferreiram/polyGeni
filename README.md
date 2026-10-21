@@ -63,6 +63,10 @@ Same engine and agents; only the broker is real (`HyperliquidLiveBroker`, offici
   the kill switch. One ledger per network (`live_testnet.db`, `live_mainnet.db`) so test money never mixes with real money. "Fechar tudo" flattens and disarms; testnet has a "test order" button.
 
 ### One wallet, a team of bots
+The team (named after Palmeiras players): **São Marcos** (`rules`, buys dips in an uptrend), **Endrick** (`trend`,
+24h-breakout day trades), **Gabriel Jesus** (`trend4h`, trend following on 4h candles), **Evair** (`whales`, buys when
+whales are strong net buyers in an uptrend) and **Valdivia** (Claude Haiku AI). São Marcos and Endrick trade real money;
+the others must first show ≥ 10 profitable lab trades.
 - **Team:** `ARENA_MODELS` (default `rules`, Fable 5.1, Opus 5.5, Opus 5, Sonnet 5.5, Haiku 5.5). Each bot runs in the
   **lab** with its own $20 paper wallet and the real account's exact limits — that is how each model is measured.
 - **Shared wallet:** in "Equipa IA" mode every bot proposes for the same wallet (simulation or real); the

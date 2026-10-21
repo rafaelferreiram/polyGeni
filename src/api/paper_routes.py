@@ -816,6 +816,12 @@ def news_feed(coin: str | None = None, hours: float = 24):
     return {"status": news.status(), "items": news.latest(coin, min(hours, 72), 60)}
 
 
+@router.get("/news/trending")
+def news_trending(hours: float = 12):
+    from src.solana import news
+    return news.trending(min(hours, 48))
+
+
 @router.get("/candles")
 def candles(coin: str):
     """1h candles of a market the bots watch (shared hourly cache — no extra exchange load)."""
@@ -844,7 +850,7 @@ def whales_board():
     return {"status": {**whales.status(), "watching": len(whales.watching())},
             "coins": {c: whales.summary(c) for c in ours},                 # the coins our bots trade
             "market": [{"coin": c, **s} for c, s in market[:12]],          # whales elsewhere in crypto (not traded yet)
-            "recent": whales.recent(20)}
+            "recent": whales.recent(20), "wallets": whales.top_wallets(8)}
 
 
 @router.get("/health")

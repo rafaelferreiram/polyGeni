@@ -76,6 +76,29 @@ def latest(coin: str | None = None, hours: float = 24, limit: int = 30) -> list[
     return rows[:limit]
 
 
+def trending(hours: float = 12, top: int = 5) -> dict:
+    """What the crypto press is talking about: coins ranked by recency-weighted mentions, and the top headlines
+    (newest first among those that mention the hottest coins)."""
+    now, since = time.time(), time.time() - hours * 3600
+    with _lock:
+        rows = [i for i in _items if i["ts"] >= since]
+    score, count = {}, {}
+    for i in rows:
+        w = 1.0 + max(0.0, 1 - (now - i["ts"]) / (hours * 3600))          # newer stories weigh up to 2x
+        for c in i["coins"]:
+            score[c] = score.get(c, 0) + w
+            count[c] = count.get(c, 0) + 1
+    hot = sorted(score, key=lambda c: -score[c])[:top]
+    picked, seen = [], set()
+    for c in hot:                                                       # best headline per hot coin
+        h = next((i for i in rows if c in i["coins"] and i["title"] not in seen), None)
+        if h:
+            seen.add(h["title"])
+            picked.append(h)
+    return {"coins": [{"coin": c, "mentions": count[c]} for c in hot], "headlines": picked[:top],
+            "mentions": count, "total": len(rows)}
+
+
 def for_llm(coin: str) -> list[str]:
     """Headlines of the last 12h that mention the coin (what the AI bot reads before deciding)."""
     return [f"{i['source']}: {i['title']}" for i in latest(coin, hours=12, limit=5)]

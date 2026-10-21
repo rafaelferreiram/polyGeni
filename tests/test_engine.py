@@ -268,7 +268,7 @@ def test_live_log_records_cycles_agents_and_decisions(ledger):
     assert "ciclo #1 começou" in msgs and "entry" in msgs
     assert any(l["level"] == "TRADE" for l in lines)
     assert logbuf.label("./live_mainnet.db") == "real" and logbuf.label("shadow.db") == "sim"
-    assert logbuf.label("arena_trend.db") == "lab:tendência"
+    assert logbuf.label("arena_trend.db") == "lab:endrick"
 
 
 def test_bots_never_sleep_by_default(ledger):

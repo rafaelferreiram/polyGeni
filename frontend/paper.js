@@ -313,7 +313,8 @@ async function refresh() {
 
 // ─── open positions: how each trade is doing between its stop and its target ───
 const fmtPx = (v) => (v == null ? "–" : `$${Number(v) >= 100 ? Number(v).toFixed(2) : Number(v).toPrecision(4)}`);
-const botName = (s) => (s?.startsWith("llm:") ? look(s.slice(4)).label : s === "trend" ? "Tendência" : "Quedas");
+const STRAT_MODEL = { trend: "trend", trend4h: "trend4h", whales: "whales", rules: "rules", mean_reversion_atr: "rules" };
+const botName = (s) => (s === "manual" ? "Manual" : look(s?.startsWith("llm:") ? s.slice(4) : STRAT_MODEL[s] || "rules").label);
 function renderPositions(a) {
   const ps = a.positions || [];
   document.getElementById("pos-tag").textContent = KIND === "sim" ? "conta simulada" : "conta real";
@@ -332,6 +333,22 @@ function renderPositions(a) {
       <div class="ends"><span>🛑 stop ${fmtPx(p.stop_price)}</span><span>entrada ${fmtPx(p.entry_price)} · agora ${fmtPx(now)}</span><span>🎯 ${fmtPx(p.tp_price)}</span></div>
     </div>`;
   }).join("") : `<div class="empty">Nenhuma posição aberta agora — os bots estão procurando a próxima entrada (veja o radar abaixo).</div>`);
+}
+
+// will this coin become a trade? Real-account rules applied to what the radar sees right now
+function radarVerdict(r) {
+  const a = acc, held = a.positions.some((p) => p.symbol === r.symbol);
+  const slots = (a.limits.max_positions || 3) - a.positions.length;
+  const whale = lastWhales?.coins?.[r.symbol]?.pressure;
+  const news = newsMentions[r.symbol] ? ` · 📰 ${newsMentions[r.symbol]}` : "";
+  if (held) return `📦 já em carteira${news}`;
+  if (a.kill_switch?.active) return "🛑 não: kill switch";
+  if (a.goals?.hit && a.goals?.rest) return "😴 não hoje: meta batida";
+  if (r.status === "pronto") return slots > 0 ? `✅ <b>sim</b>, no próximo ciclo (${esc(r.ready_by === "quedas" ? "São Marcos" : "Endrick")})${whale === "vendendo" ? " · ⚠️ baleias vendendo" : ""}${news}`
+                                              : `⏸ pronto, mas sem vaga (${a.positions.length} posições)${news}`;
+  if (r.status === "perto") return `👀 se ${r.up && r.dip_pct > -1.5 ? `cair até ${fmtPx(r.dip_at)}` : `romper ${fmtPx(r.break_at)}`}${whale === "comprando" ? " · 🐋 baleias comprando" : ""}${news}`;
+  if (r.status === "aguardando") return `⏳ ainda não (longe da linha)${news}`;
+  return `🚫 não: em baixa${news}`;
 }
 
 // ─── daily goals: what the bots aim for today vs what they did ───
@@ -381,8 +398,9 @@ function renderRadar(a) {
     <td>${r.up ? `abaixo de <b>${fmtPx(r.dip_at)}</b><br><span class="muted">${r.dip_pct}% de distância${r.rsi >= 30 ? " · RSI precisa cair" : ""}</span>` : '<span class="muted">só em alta</span>'}</td>
     <td>${r.strong ? `acima de <b>${fmtPx(r.break_at)}</b><br><span class="muted">+${Math.max(r.break_pct, 0).toFixed(2)}% de distância</span>` : '<span class="muted">precisa de tendência forte</span>'}</td>
     <td>${(() => { const s = lastWhales?.coins?.[r.symbol]; return s && s["1h"].n ? `${WHALE_PT[s.pressure]}<br><span class="muted">${kusd(s["1h"].net_usd)} líquido 1h</span>` : '<span class="muted">—</span>'; })()}</td>
-    <td><span class="st-chip ${r.status === "pronto" ? "pronto" : r.status === "perto" ? "perto" : ""}">${STATUS_PT[r.status] || esc(r.status)}</span>${r.ready_by ? `<br><span class="muted">sinal do bot ${esc(r.ready_by === "quedas" ? "Quedas" : "Tendência")}</span>` : ""}</td></tr>`);
-  table("radar-table", ["Moeda", "Preço", "Tendência", "📐 Compra na queda", "📈 Compra no rompimento", "🐋 Baleias 1h", "Status"], rows);
+    <td>${radarVerdict(r)}</td>
+    <td><span class="st-chip ${r.status === "pronto" ? "pronto" : r.status === "perto" ? "perto" : ""}">${STATUS_PT[r.status] || esc(r.status)}</span>${r.ready_by ? `<br><span class="muted">sinal do bot ${esc(r.ready_by === "quedas" ? "São Marcos" : "Endrick")}</span>` : ""}</td></tr>`);
+  table("radar-table", ["Moeda", "Preço", "Tendência", "📐 Compra na queda", "📈 Compra no rompimento", "🐋 Baleias 1h", "Vai comprar?", "Status"], rows);
 }
 
 // ─── thermometer: market temperature (from the bots' own scan) and our performance vs simply holding BTC ───
@@ -535,17 +553,20 @@ async function loadWallets() {
 
 // ─── team of bots (one shared wallet) + lab results ───
 const MODEL_LOOK = {
-  "rules": { label: "Quedas", color: "#a3b1ab", ico: "📐", role: "compra quando cai numa alta" },
-  "trend": { label: "Tendência", color: "#67e8f9", ico: "📈", role: "compra quando dispara" },
+  // the team is named after Palmeiras players
+  "rules": { label: "São Marcos", color: "#a3b1ab", ico: "🧤", role: "paciente: compra quedas numa alta" },
+  "trend": { label: "Endrick", color: "#67e8f9", ico: "⚡", role: "rompimentos rápidos, day trade de 24h" },
+  "trend4h": { label: "Gabriel Jesus", color: "#fbbf24", ico: "🎯", role: "tendências maiores, velas de 4h" },
+  "whales": { label: "Evair", color: "#60a5fa", ico: "🐋", role: "segue as baleias quando compram forte" },
   "claude-fable-5-1": { label: "Fable 5.1", color: "#f5c451", ico: "✨" },
   "claude-opus-5-5": { label: "Opus 5.5", color: "#fb923c", ico: "🎼" },
   "claude-opus-5": { label: "Opus 5", color: "#f97362", ico: "🎻" },
   "claude-sonnet-5-5": { label: "Sonnet 5.5", color: "#60a5fa", ico: "📜" },
-  "claude-haiku-5-5": { label: "Haiku 5.5", color: "#34d399", ico: "🍃" },
+  "claude-haiku-5-5": { label: "Valdivia", color: "#34d399", ico: "🧠", role: "o cérebro: IA (Haiku) lê indicadores, baleias e notícias" },
 };
 const ACTION_PT = { BUY: "🟢 comprar", HOLD: "⏸ esperar", SELL: "🔵 vender", sleep: "😴 dormindo", wake: "⏰ acordou",
                     entry: "🟢 comprou", exit: "🔵 vendeu", veto: "🟡 bloqueado" };
-const FREE = new Set(["rules", "trend"]);   // deterministic bots: no AI cost
+const FREE = new Set(["rules", "trend", "trend4h", "whales"]);   // deterministic bots: no AI cost
 const look = (m) => ({ role: "IA analisa e decide", ...(MODEL_LOOK[m] || { label: m, color: "#9fe8c7", ico: "🤖" }) });
 let lastArena = null;
 
@@ -749,6 +770,10 @@ async function loadWhales() {
     <td>${hhmm(new Date(t.ts * 1000).toISOString())}</td><td><b>${esc(t.coin)}</b></td>
     <td class="${t.side === "compra" ? "green" : "red"}">${t.side}</td><td>${kusd(t.usd)}</td>
     <td class="muted">${t.wallet ? `<a href="https://hypurrscan.io/address/${esc(t.wallet)}" target="_blank" rel="noopener">${short(t.wallet)}</a>` : "–"}</td></tr>`));
+  table("whale-wallets", ["Carteira", "Comprou", "Vendeu", "Líquido", "Moedas", "Ordens"], (w.wallets || []).map((x) => `<tr>
+    <td><a href="https://hypurrscan.io/address/${esc(x.wallet)}" target="_blank" rel="noopener">${short(x.wallet)}</a></td>
+    <td class="green">${kusd(x.buy_usd)}</td><td class="red">${kusd(x.sell_usd)}</td><td>${x.net_usd >= 0 ? "🟢" : "🔴"} ${kusd(x.net_usd)}</td>
+    <td class="muted">${x.coins.map(([c, v]) => `${esc(c)} ${v >= 0 ? "+" : "−"}${kusd(Math.abs(v))}`).join(" · ")}</td><td>${x.n}</td></tr>`));
   if (acc) renderRadar(acc);
 }
 safe(loadWhales);
@@ -791,7 +816,7 @@ async function loadChart() {
   const pos = acc.positions.find((p) => p.symbol === coin);
   if (pos) { line(pos.entry_price, "#e8eeeb", "entrada"); line(pos.stop_price, "#f87171", "stop"); line(pos.tp_price, "#34d399", "alvo"); }
   const r = (acc.market_temp?.watch || []).find((x) => x.symbol === coin);
-  if (r && !pos) { if (r.up) line(r.dip_at, "#a3b1ab", "Quedas compra abaixo", 2); if (r.strong) line(r.break_at, "#67e8f9", "Tendência compra acima", 2); }
+  if (r && !pos) { if (r.up) line(r.dip_at, "#a3b1ab", "São Marcos compra abaixo", 2); if (r.strong) line(r.break_at, "#67e8f9", "Endrick compra acima", 2); }
   document.getElementById("chart-legend").innerHTML = `<span><span style="color:#7dd3fc">━</span> EMA50</span><span><span style="color:#fbbf24">━</span> EMA200 (preço acima = tendência de alta)</span>` +
     (pos ? `<span>posição aberta: entrada ${fmtPx(pos.entry_price)} · stop ${fmtPx(pos.stop_price)} · alvo ${fmtPx(pos.tp_price)}</span>`
          : r ? `<span>linhas tracejadas = onde os bots comprariam · ${esc(STATUS_PT[r.status] || r.status)}</span>` : "");
@@ -814,13 +839,21 @@ setTimeout(() => { safe(loadChart); safe(loadEquityChart); }, 2500);
 setInterval(() => safe(loadChart), 60000);
 setInterval(() => safe(loadEquityChart), 60000);
 
-// ─── news: crypto outlets, tagged by coin ───
+// ─── news: what the crypto press talks about now (top 5), or every story on demand ───
+let newsAll = false, newsMentions = {};
+function newsCoin(c) { document.getElementById("news-coin").value = c; newsAll = true; safe(loadNews); }
 async function loadNews() {
   const sel = document.getElementById("news-coin");
   if (sel.options.length === 1 && acc) sel.innerHTML += acc.limits.markets.map((m) => `<option>${esc(m)}</option>`).join("");
-  const r = await api(`/news${sel.value ? `?coin=${encodeURIComponent(sel.value)}` : ""}`);
+  const t = await api("/news/trending?hours=12");
+  newsMentions = t.mentions || {};
+  document.getElementById("news-all").textContent = newsAll ? "Só as 5 em alta" : "Ver todas";
+  setHTML("news-hot", t.coins.length ? `<span class="note">🔥 Em alta nas notícias (12h):</span>` +
+    t.coins.map((c) => `<span class="h" onclick="newsCoin('${esc(c.coin)}')"><b>${esc(c.coin)}</b> ${c.mentions} notícia${c.mentions > 1 ? "s" : ""}</span>`).join("") : "");
+  const r = newsAll ? await api(`/news${sel.value ? `?coin=${encodeURIComponent(sel.value)}` : ""}`) : { status: { ok: true }, items: t.headlines };
   const tag = document.getElementById("news-tag");
-  tag.textContent = r.status.ok ? `${r.items.length} nas últimas 24h` : "sem dados";
+  tag.textContent = newsAll ? `${r.items.length} nas últimas 24h` : `top ${r.items.length} de ${t.total} notícias (12h)`;
+  if (!newsAll) sel.value = "";
   setHTML("news", r.items.length ? r.items.map((i) => `<div class="ni"><span class="w">há ${ago(new Date(i.ts * 1000).toISOString())}</span>
     <span><a href="${esc(i.url)}" target="_blank" rel="noopener">${esc(i.title)}</a>${i.coins.map((c) => `<span class="coin-tag">${esc(c)}</span>`).join("")}
     <br><span class="src">${esc(i.source)}</span></span></div>`).join("") : '<div class="empty">Sem notícias para este filtro nas últimas 24h.</div>');

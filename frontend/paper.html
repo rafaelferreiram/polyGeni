@@ -240,6 +240,9 @@
     .st-chip.pronto { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); }
     .st-chip.perto { color: var(--yellow); border-color: rgba(251,191,36,.5); }
     .legend b { color: var(--text); }
+    .hot { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+    .hot .h { background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 5px 12px; font-size: 13px; cursor: pointer; }
+    .hot .h b { color: var(--accent); }
     .three { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-top: 14px; }
     .funds { display: grid; grid-template-columns: 180px 1fr; gap: 18px; align-items: start; }
     @media (max-width: 600px) { .funds { grid-template-columns: 1fr; } }
@@ -442,7 +445,7 @@
       <h2><span>Radar de oportunidades <span class="tag">o que os bots estão vigiando</span></span>
         <span class="ctrls"><span class="note" id="radar-head"></span><button id="radar-all" onclick="radarAll = !radarAll; renderRadar(acc)">Ver todas</button></span></h2>
       <div class="tbl radar-tbl"><table id="radar-table"></table></div>
-      <div class="legend"><span>📐 <b>Quedas</b> compra se o preço cair abaixo da linha <i>e</i> o RSI ficar abaixo de 30</span><span>📈 <b>Tendência</b> compra se romper a máxima de 24h numa tendência forte</span><span>🧠 <b>IA</b> só é consultada quando há uma queda numa alta</span></div>
+      <div class="legend"><span>🧤 <b>São Marcos</b> compra se o preço cair abaixo da linha <i>e</i> o RSI ficar abaixo de 30</span><span>⚡ <b>Endrick</b> compra se romper a máxima de 24h numa tendência forte</span><span>🎯 <b>Gabriel Jesus</b> o mesmo em velas de 4h</span><span>🐋 <b>Evair</b> compra quando baleias compram forte numa alta</span><span>🧠 <b>Valdivia</b> (IA) só é consultado quando há uma queda numa alta</span></div>
       <div class="legend"><span>✅ <b>pronto</b> = há sinal agora → o Coordenador escolhe o bot, o Risk confere vagas e limites, o Executor compra com stop e alvo → aparece em <b>Posições abertas</b></span><span>👀 <b>perto</b> = a menos de ~1,5% da linha de compra</span><span>⏳ <b>aguardando</b> = em alta, mas longe da linha</span><span>⬇ <b>sem tendência</b> = em baixa: os bots não compram</span></div>
     </section>
     <section class="panel" id="grafico">
@@ -459,12 +462,16 @@
           <div class="note" style="margin:14px 0 8px">No resto do mercado cripto · moedas que os bots ainda não operam</div><div class="flows" id="whale-market"></div></div>
         <div><div class="note" style="margin-bottom:8px">Últimas ordens de baleia</div><div class="tbl"><table id="whale-recent"></table></div></div>
       </div>
+      <div class="note" style="margin:16px 0 8px">🐋 Carteiras baleia mais ativas (4h) — clique para ver a carteira no Hypurrscan</div>
+      <div class="tbl"><table id="whale-wallets"></table></div>
       <div class="legend"><span>🐋 baleia = ordem a mercado ≥ $25 mil e ≥ 0,02% do volume diário da moeda</span><span>🟢 comprando / 🔴 vendendo = mais de 30% de diferença entre compras e vendas</span><span>🧠 o bot de IA recebe este fluxo antes de decidir</span></div>
     </section>
 
     <section class="panel" id="noticias">
       <h2><span>📰 Notícias <span class="tag" id="news-tag">–</span></span>
-        <span class="ctrls"><select id="news-coin" aria-label="Moeda" onchange="loadNews()"><option value="">Todas as moedas</option></select></span></h2>
+        <span class="ctrls"><select id="news-coin" aria-label="Moeda" onchange="newsAll = true; loadNews()"><option value="">Todas as moedas</option></select>
+          <button id="news-all" onclick="newsAll = !newsAll; loadNews()">Ver todas</button></span></h2>
+      <div class="hot" id="news-hot"></div>
       <div class="news" id="news"></div>
       <div class="legend"><span>Fontes: CoinDesk, Cointelegraph, Decrypt, The Block (atualiza a cada 5 min)</span><span>🧠 o bot de IA lê as manchetes das últimas 12h da moeda antes de decidir</span><span>X.com não incluído: a API do X não tem leitura gratuita</span></div>
     </section>
@@ -487,7 +494,7 @@
         <button onclick="startBoost(this)">Ativar</button>
         <span class="note" id="boost-status"></span>
       </div>
-      <div class="legend"><span>🏆 Recompensa: 1 ponto = 1 centavo de lucro líquido (30 dias) → mais pontos = prioridade e posição cheia; prejuízo = posição mínima</span><span>🛡️ Na conta real: Quedas e Tendência já operam; bots de IA só depois de 10 trades com lucro no laboratório</span><span>👆 Passe o mouse num bot para ver detalhes</span></div>
+      <div class="legend"><span>🏆 Recompensa: 1 ponto = 1 centavo de lucro líquido (30 dias) → mais pontos = prioridade e posição cheia; prejuízo = posição mínima</span><span>🛡️ Na conta real: São Marcos e Endrick já operam; Gabriel Jesus, Evair e Valdivia só depois de 10 trades com lucro no laboratório</span><span>👆 Passe o mouse num bot para ver detalhes</span></div>
     </section>
     <section class="panel" id="logs">
       <h2><span>Logs ao vivo <span class="live-chip" id="log-live">ao vivo</span></span>
@@ -583,6 +590,6 @@
 
   <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <script src="https://unpkg.com/qrcode-generator@1.4.4/qrcode.js"></script>
-  <script src="/static/paper.js?v=48"></script>
+  <script src="/static/paper.js?v=50"></script>
 </body>
 </html>

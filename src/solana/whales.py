@@ -103,6 +103,25 @@ def recent(limit: int = 15) -> list[dict]:
             for c, ts, s, u, w in rows[:limit]]
 
 
+def top_wallets(limit: int = 8, now: float | None = None) -> list[dict]:
+    """The most active whale wallets of the last 4h across every coin watched: what they bought and sold."""
+    now = now or time.time()
+    agg: dict[str, dict] = {}
+    with _lock:
+        rows = [(coin, *r) for coin, q in _trades.items() for r in q if r[0] >= now - WINDOW_S]
+    for coin, ts, side, usd, wallet in rows:
+        if not wallet:
+            continue
+        a = agg.setdefault(wallet, {"wallet": wallet, "buy_usd": 0.0, "sell_usd": 0.0, "n": 0, "coins": {}, "last": 0})
+        a["buy_usd" if side == "B" else "sell_usd"] += usd
+        a["n"] += 1
+        a["coins"][coin] = a["coins"].get(coin, 0) + (usd if side == "B" else -usd)
+        a["last"] = max(a["last"], ts)
+    out = sorted(agg.values(), key=lambda a: -(a["buy_usd"] + a["sell_usd"]))[:limit]
+    return [{**a, "buy_usd": round(a["buy_usd"]), "sell_usd": round(a["sell_usd"]), "net_usd": round(a["buy_usd"] - a["sell_usd"]),
+             "coins": sorted(((c, round(v)) for c, v in a["coins"].items()), key=lambda cv: -abs(cv[1]))[:4]} for a in out]
+
+
 def status() -> dict:
     return dict(_status)
 

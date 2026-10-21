@@ -230,8 +230,74 @@ class TrendStrong(TrendFollow):
         return super().signal(candles)
 
 
+def resample(candles: list[dict], hours: int = 4) -> list[dict]:
+    """1h candles -> N-hour candles (aligned to UTC multiples of N hours; a partial first bucket is dropped)."""
+    out, cur = [], None
+    for c in candles:
+        bucket = c["t"] // (hours * 3600)
+        if cur is None or cur["b"] != bucket:
+            if cur and cur["n"] == hours:
+                out.append({k: cur[k] for k in ("t", "open", "high", "low", "close", "volume")})
+            cur = {"b": bucket, "n": 0, "t": bucket * hours * 3600, "open": c["open"], "high": c["high"], "low": c["low"],
+                   "close": c["close"], "volume": 0.0}
+        cur.update(high=max(cur["high"], c["high"]), low=min(cur["low"], c["low"]), close=c["close"],
+                   volume=cur["volume"] + c.get("volume", 0), n=cur["n"] + 1)
+    if cur and cur["n"] == hours:
+        out.append({k: cur[k] for k in ("t", "open", "high", "low", "close", "volume")})
+    return out
+
+
+class Trend4h:
+    """Bigger swings: trend following on 4h candles built from the 1h feed (EMA20 > EMA50, 24h breakout, stop 2 ATR,
+    target 3 ATR of the 4h bars, closed within 48h). Lab bot until it proves itself; an earlier 4h study showed ~7x
+    the profit per trade of 1h with far fewer trades."""
+    name = "trend4h"
+    capital_pct = 1.0
+    max_hold_h = 48
+
+    def signal(self, candles: list[dict]) -> Signal | None:
+        bars = resample(candles, 4)
+        sig = TrendFollow(fast=20, slow=50, breakout=6, stop_atr=2.0, tp_atr=3.0).signal(bars)
+        if sig:
+            sig.strategy = self.name
+            sig.reason = "4h: " + sig.reason.replace("24h breakout", "6-bar (24h) breakout")
+        return sig
+
+
+class WhaleFollow:
+    """Follows the money: in an uptrend (price above EMA200 and EMA50), buy when whales were clearly net buyers in
+    the last hour (≥ 2x the coin's whale size, pressure 'comprando'). Stop 2 ATR, target 3 ATR, closed within 24h.
+    No history exists to backtest whale flow, so this bot lives in the lab until it has a record."""
+    name = "whales"
+    capital_pct = 1.0
+    max_hold_h = 24
+    enabled = True
+
+    def __init__(self):
+        self.last: dict[str, dict] = {}
+
+    def signal(self, candles):                       # needs the whale context: only via decide()
+        return None
+
+    def decide(self, candles: list[dict], context: dict) -> Signal | None:
+        market, wf = context.get("symbol", "?"), context.get("whale_flow") or {}
+        h = wf.get("1h") or {}
+        closes = [c["close"] for c in candles]
+        if len(closes) < 210:
+            return None
+        up = closes[-1] > ema(closes[-600:], 200) and closes[-1] > ema(closes[-150:], 50)
+        strong = wf.get("pressure") == "comprando" and h.get("net_usd", 0) >= 2 * wf.get("threshold_usd", 1e12)
+        self.last[market] = {"action": "BUY" if up and strong else "HOLD", "model": self.name, "t": candles[-1]["t"],
+                             "reason": (f"baleias compraram ${h.get('net_usd', 0):,.0f} líquidos em 1h numa alta" if up and strong
+                                        else "sem compra forte de baleias numa alta")}
+        if not (up and strong) or _crowded(candles, 0.0001):
+            return None
+        stop, tp, a = _atr_stops(candles, 2.0, 3.0)
+        return Signal(self.name, closes[-1], stop, tp, self.last[market]["reason"], {"atr": a, "whale_net_1h": h.get("net_usd")})
+
+
 # deterministic bots (no LLM, no API cost): model name -> strategy
-RULE_BOTS = {"rules": MeanReversionATR, "trend": TrendStrong}
+RULE_BOTS = {"rules": MeanReversionATR, "trend": TrendStrong, "trend4h": Trend4h, "whales": WhaleFollow}
 
 
 def features(candles: list[dict]) -> dict:

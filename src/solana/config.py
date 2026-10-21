@@ -124,7 +124,7 @@ HL_LIVE_MARKETS = [m for m in os.getenv("HL_LIVE_MARKETS", HL_BROAD).split(",") 
 # ─── Model arena: one paper bot per LLM, same markets and risk limits, separate portfolios ───
 # "rules" = deterministic baseline bot (no LLM, no API cost) that every model must beat
 # default: free rules bot + the cheap Haiku; add Sonnet/Opus/Fable when capital makes their cost worthwhile
-ARENA_MODELS = [m for m in os.getenv("ARENA_MODELS", "rules,trend,claude-haiku-5-5").split(",") if m]
+ARENA_MODELS = [m for m in os.getenv("ARENA_MODELS", "rules,trend,trend4h,whales,claude-haiku-5-5").split(",") if m]
 WHALES_ENABLED = os.getenv("WHALES_ENABLED", "1") == "1"      # live whale-trade feed (WebSocket, read-only)
 WHALE_MIN_USD = float(os.getenv("WHALE_MIN_USD", "25000"))    # whale = ≥ this and ≥ 0.02% of the coin's daily volume
 # daily goal: once the account is up DAILY_GOAL_PCT on the day, the bots rest (no new entries) until tomorrow and keep
