@@ -68,7 +68,8 @@ PAPER_STRATEGIES = [s for s in os.getenv("PAPER_STRATEGIES", "mean_reversion_atr
 
 # Optional LLM debate (veto-only). Disabled without a key.
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-DEBATE_MODEL = os.getenv("DEBATE_MODEL", "claude-opus-5-5")
+# veto-only reviewer of every rules signal: Haiku (≈ $0.001/call) — Opus with web search cost ≈ $0.10/call
+DEBATE_MODEL = os.getenv("DEBATE_MODEL", "claude-haiku-5-5")
 # JSON list of remote MCP servers the debate LLM may use for fresh context, e.g.
 # [{"url": "https://mcp.example.com/mcp", "name": "market", "authorization_token": "..."}]
 DEBATE_MCP_SERVERS = os.getenv("DEBATE_MCP_SERVERS", "")

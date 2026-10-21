@@ -214,7 +214,7 @@ class DebateAgent:
 
     def __init__(self, llm_fn=None, enabled: bool | None = None):
         self.enabled = bool(cfg.ANTHROPIC_API_KEY) if enabled is None else enabled
-        self.llm_fn = llm_fn or anthropic_llm
+        self.llm_fn = llm_fn or (lambda prompt: anthropic_llm(prompt, who="debate"))
 
     def review(self, c: Candidate, sig: Signal, context: dict) -> Vote:
         if not self.enabled:
