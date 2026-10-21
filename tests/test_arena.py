@@ -213,7 +213,7 @@ def test_short_bot_is_lab_only():
     assert not g["ok"] and "conta real não faz short" in g["missing"]
 
 
-def test_fifteen_minute_twins_are_lab_only_and_named_for_their_exits():
+def test_fifteen_minute_twins_can_earn_real_money_and_are_named_for_their_exits():
     from src.solana import hl_live
     from src.solana.engine import _max_hold
     from src.solana.strategies import FAST_BOTS, RULE_BOTS
@@ -221,8 +221,8 @@ def test_fifteen_minute_twins_are_lab_only_and_named_for_their_exits():
         s = RULE_BOTS[m]()
         assert s.name == m and s.max_hold_h == 6 and _max_hold(m, 72) == 6
         g = arena.green_light(m)
-        assert not g["ok"] and "versão de 15 min: só laboratório" in g["missing"]
-    assert all(t.model not in FAST_BOTS for t in hl_live.team())
+        assert "versão de 15 min: só laboratório" not in g.get("missing", [])     # same green light as everyone
+    assert {"whales_15m", "copy_15m"} <= {t.model for t in hl_live.team()}
 
 
 def test_turbo_runs_the_bot_every_minute_until_midnight(tmp_path, monkeypatch):

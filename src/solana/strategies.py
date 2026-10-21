@@ -344,7 +344,7 @@ class ShortFade:
 
 def fast(cls, label: str, hold_h: float = 6):
     """A 15-minute twin of a rule bot for the lab: same rules counted in 15m bars (so EMAs, breakouts and ATR stops
-    are 4x shorter), positions closed within hold_h. Lab-only: it adds experience/data, never trades real money."""
+    are 4x shorter), positions closed within hold_h. Same green light as every bot to reach real money."""
     def init(self, *a, **kw):
         cls.__init__(self, *a, **kw)
         self.name, self.max_hold_h = label, hold_h          # dataclass parents set their own name on the instance
@@ -361,8 +361,8 @@ CopyTop15 = fast(CopyTop, "copy_15m")
 RULE_BOTS = {"rules": MeanReversionATR, "trend": TrendStrong, "trend4h": Trend4h, "whales": WhaleFollow, "copy": CopyTop,
              "short": ShortFade, "trend4h_15m": Trend4h15, "whales_15m": WhaleFollow15, "copy_15m": CopyTop15}
 SHORT_BOTS = {"short"}          # lab only: the real account (and its simulation) never short
-FAST_BOTS = {"trend4h_15m", "whales_15m", "copy_15m"}      # 15-minute lab twins (experience only)
-LAB_ONLY_BOTS = SHORT_BOTS | FAST_BOTS
+FAST_BOTS = {"trend4h_15m", "whales_15m", "copy_15m"}      # 15-minute twins: quick trades, they decide on 15m candles
+LAB_ONLY_BOTS = SHORT_BOTS
 
 
 def features(candles: list[dict]) -> dict:

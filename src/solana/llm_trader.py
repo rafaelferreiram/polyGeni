@@ -193,6 +193,10 @@ class TeamMember:
         if not candles:
             return None
         if self._rules:
+            from src.solana.strategies import FAST_BOTS
+            if self.model in FAST_BOTS and context.get("venue") == "hyperliquid":   # 15-minute bots read 15m candles
+                from src.solana import hyperliquid as hl
+                candles = hl.candles(market, "15m")[:-1]
             sig = self._rules.decide(candles, context) if hasattr(self._rules, "decide") else self._rules.signal(candles)
             self.last[market] = {"action": "BUY" if sig else "HOLD", "reason": sig.reason if sig else "sem sinal",
                                  "model": self.model, "t": candles[-1]["t"]}

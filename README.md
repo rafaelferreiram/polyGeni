@@ -106,9 +106,9 @@ the others must first show ≥ 10 profitable lab trades.
   it is measured live in the lab only; it is excluded from the real/simulation team, can never get a green light, and
   the live broker refuses any short instrument. Removed from the team at the user's request (enable with `short` in
   `ARENA_MODELS`).
-- **15-minute twins, lab only** (`trend4h_15m`, `whales_15m`, `copy_15m`: "Gabriel Jesus/Evair/Veiga 15m"): the same rules
-  on 15m candles, positions closed within 6h — many more trades for experience and comparison. They never join the
-  real/simulation team and can never get a green light. (No 15m AI twin: 4x the AI cost.)
+- **15-minute bots** (`whales_15m`, `copy_15m`: "Evair/Veiga 15m"): the same rules on 15m candles, positions closed
+  within 6h (1h with turbo) — quick trades. They need the same green light as every bot to reach real money, and on the
+  real/simulation account they decide on 15m candles too. (Gabriel Jesus 15m was retired; no 15m AI twin: 4x the AI cost.)
 - **Open positions**: click one for its details (bought at, held for, invested/now, P&L $ and %, stop/target, why it
   was bought) and to sell it now at market (`POST /api/paper/account/close`; the exchange stop/target are cancelled).
 - **Lab → real money (green light)**: the lab runs every bot with $100 of paper capital, up to 8 positions and 48
