@@ -690,18 +690,24 @@ function renderTeam() {
 
 // ─── AI turbo: a stronger model for N cycles, then back to Haiku ───
 function startBoost(btn) {
-  const bot = document.getElementById("boost-bot").value;
+  const bots = [...document.querySelectorAll("#boost-bots input[data-bot]:checked")].map((i) => i.dataset.bot);
   const model = document.getElementById("boost-model").value, cycles = +document.getElementById("boost-cycles").value;
-  if (!bot) return toast("Nenhum titular disponível", true);
-  run(btn, "Ativando…", () => api("/arena/boost", "POST", { bot, model, cycles }),
-      `🚀 Sinais do ${look(bot).label} revisados por ${look(model).label} por ${cycles} ciclo(s) (~${Math.round(cycles * 5)} min); depois volta ao Haiku. Só gasta quando ele dá sinal.`);
+  if (!bots.length) return toast("Marque pelo menos um titular", true);
+  const names = bots.map((b) => look(b).label).join(", ");
+  run(btn, "Ativando…", async () => { for (const bot of bots) await api("/arena/boost", "POST", { bot, model, cycles }); },
+      `🚀 Sinais de ${names} revisados por ${look(model).label} por ${cycles} ciclo(s) (~${Math.round(cycles * 5)} min); depois volta ao Haiku. Só gasta quando há sinal.`);
 }
 const reviewOn = (r) => r?.review_boost?.until && new Date(r.review_boost.until) > new Date() ? r.review_boost : null;
 function renderBoost() {
   const tit = (lastArena?.leaderboard || []).filter((r) => r.green_light?.ok);
-  const sel = document.getElementById("boost-bot"), keep = sel.value;
-  const opts = tit.map((r) => `<option value="${esc(r.model)}">${esc(look(r.model).label)}</option>`).join("");
-  if (sel.innerHTML !== opts) { sel.innerHTML = opts; if (tit.some((r) => r.model === keep)) sel.value = keep; }
+  const box = document.getElementById("boost-bots"), key = tit.map((r) => r.model).join(",");
+  if (box.dataset.key !== key) {               // rebuild only when the titulares change, so ticks survive refreshes
+    const keep = new Set([...box.querySelectorAll("input[data-bot]:checked")].map((i) => i.dataset.bot));
+    box.dataset.key = key;
+    box.innerHTML = `<label><input type="checkbox" id="boost-all" onchange="document.querySelectorAll('#boost-bots input[data-bot]').forEach((i) => i.checked = this.checked)"> Todos</label>` +
+      tit.map((r) => `<label><input type="checkbox" data-bot="${esc(r.model)}" ${keep.has(r.model) ? "checked" : ""}
+        onchange="document.getElementById('boost-all').checked = [...document.querySelectorAll('#boost-bots input[data-bot]')].every((i) => i.checked)"> ${esc(look(r.model).label)}</label>`).join("");
+  }
   const on = tit.filter(reviewOn);
   document.getElementById("boost-status").innerHTML = on.length
     ? on.map((r) => `<b>${esc(look(r.model).label)}</b>: ${esc(look(r.review_boost.model).label)} até ${hhmm(r.review_boost.until)}`).join(" · ")
