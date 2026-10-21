@@ -148,11 +148,11 @@ class TeamMember:
     capital_pct = 1.0
 
     def __init__(self, model: str, lab_lookup=None, llm_fn=None):
-        from src.solana.strategies import MeanReversionATR
+        from src.solana.strategies import RULE_BOTS
         self.model = model
-        self.name = "rules" if model == "rules" else f"llm:{model}"
-        self._rules = MeanReversionATR() if model == "rules" else None
-        self._llm = None if model == "rules" else LLMDecider(model=model, llm_fn=llm_fn)
+        self.name = model if model in RULE_BOTS else f"llm:{model}"
+        self._rules = RULE_BOTS[model]() if model in RULE_BOTS else None
+        self._llm = None if model in RULE_BOTS else LLMDecider(model=model, llm_fn=llm_fn)
         self.lab_lookup = lab_lookup          # model -> lab bot's LLMDecider (or None)
         self.last: dict[str, dict] = {}
 
@@ -167,7 +167,7 @@ class TeamMember:
         if self._rules:
             sig = self._rules.signal(candles)
             self.last[market] = {"action": "BUY" if sig else "HOLD", "reason": sig.reason if sig else "sem sinal",
-                                 "model": "rules", "t": candles[-1]["t"]}
+                                 "model": self.model, "t": candles[-1]["t"]}
             if sig:
                 sig.strategy = self.name
             return sig

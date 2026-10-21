@@ -207,6 +207,24 @@ class TrendFollow:
                       {"ema_fast": f, "ema_slow": s, "atr": a, "prior_high": prior_high})
 
 
+class TrendStrong(TrendFollow):
+    """Trend following only in a strong trend: the 50h EMA rose > min_slope in the last 24h. Out-of-sample on 29
+    coins (2026-10-21) it lost in the calmer first half and won clearly in the trending second half — the opposite of
+    mean reversion — so it runs as its own lab bot and the Coordinator picks whichever is working lately."""
+    min_slope: float = 0.01
+    name: str = "trend"
+
+    def signal(self, candles: list[dict]) -> Signal | None:
+        closes = [c["close"] for c in candles]
+        if len(closes) < self.slow + 25 or ema(closes[-150:], self.fast) / ema(closes[-174:-24], self.fast) - 1 < self.min_slope:
+            return None
+        return super().signal(candles)
+
+
+# deterministic bots (no LLM, no API cost): model name -> strategy
+RULE_BOTS = {"rules": MeanReversionATR, "trend": TrendStrong}
+
+
 def features(candles: list[dict]) -> dict:
     """Indicators handed to the LLM bots so they reason on the same facts as the rules (no raw-candle guessing)."""
     if len(candles) < 30:

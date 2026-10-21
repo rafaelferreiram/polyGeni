@@ -175,6 +175,21 @@ ATR stops), the round-trip cost and the lesson "no dip-buying in downtrends"; AI
 after `LIVE_MIN_LAB_TRADES` lab trades with positive expectancy. Still below buy-and-hold in absolute return over
 a bull window — better risk-adjusted, not yet "beats the market".
 
+### Which strategy, and when (29 coins, 208 days, 1h, fees + funding, per-coin, 2026-10-21)
+| Strategy | 1st half | 2nd half | Total |
+|---|---:|---:|---:|
+| Mean reversion (buy dips in uptrend) | +$2.61 / 101 trades | −$4.70 / 157 | −$2.08 |
+| Trend following (breakout) | −$9.77 / 387 | +$12.40 / 721 | +$2.63 |
+| Strong trend only (EMA50 +1%/day) | −$8.36 / 244 | +$24.34 / 435 | +$15.98 |
+| Both combined | −$1.80 / 473 | +$9.90 / 853 | +$8.10 |
+
+No strategy wins in both halves: mean reversion works in calm markets, trend following in strong trends. So both run
+as free lab bots (`rules` = dips, `trend` = strong trend) and the Coordinator gives each market to the bot with the best
+**last 30 days** in the lab (`LAB_SCORE_DAYS`); a new bot reaches real money only after ≥ 10 profitable lab trades.
+Arbitrage is not used: cross-exchange gaps on liquid coins are smaller than two taker fees, and funding/basis trades
+need shorts and capital on two venues — not worth it on $20. CoinAPI (`COINAPI_KEY`) is configured but the account has
+no credits yet; CoinMarketCap context is used by the morning/evening routine.
+
 ### Backtest (walk-forward, out-of-sample Jun→Oct 2026, net of costs)
 Params (incl. a SMA200 regime filter on/off) are chosen in-sample on the previous fold and traded on the next.
 

@@ -89,3 +89,19 @@ def test_real_wallet_only_trusts_bots_with_lab_evidence(tmp_path, monkeypatch):
                              symbol="BTC", strategy="x", qty=10, decimals=0, usd_gross=10 * px, fee_usd=0, price=px, quote_price=px))
     team = [TeamMember("rules"), TeamMember("claude-opus-5"), TeamMember("claude-haiku-5-5")]
     assert [m.model for m in arena.eligible_for_real(team)] == ["rules", "claude-opus-5"]
+    # the trend bot is free but unproven: no lab trades yet -> it stays out of the real wallet
+    assert "trend" not in [m.model for m in arena.eligible_for_real([TeamMember("trend")])]
+    # the Coordinator follows RECENT results: those 2026-10-0x trades are older than a 1-day window
+    monkeypatch.setattr(cfg, "LAB_SCORE_DAYS", 1)
+    assert arena.score("claude-opus-5", "BTC", 1) == (0.0, 0) and arena.score("claude-opus-5", "BTC")[1] == 2
+
+
+def test_trend_strong_needs_a_rising_trend():
+    from src.solana.strategies import TrendStrong
+    flat = [dict(t=i, open=100, high=100.5, low=99.5, close=100.0, volume=1) for i in range(300)]
+    flat[-1] = dict(t=299, open=100, high=102, low=100, close=102.0, volume=1)          # breakout without a trend
+    assert TrendStrong().signal(flat) is None
+    up = [dict(t=i, open=100 * 1.002 ** i, high=100 * 1.002 ** i * 1.002, low=100 * 1.002 ** i * 0.998,
+               close=100 * 1.002 ** i, volume=1) for i in range(300)]
+    up[-1] = dict(up[-1], close=up[-1]["close"] * 1.01, high=up[-1]["close"] * 1.012)  # fresh breakout in a strong trend
+    assert TrendStrong().signal(up) is not None

@@ -394,7 +394,8 @@ async function loadWallets() {
 
 // ─── team of bots (one shared wallet) + lab results ───
 const MODEL_LOOK = {
-  "rules": { label: "Regras", color: "#a3b1ab", ico: "📐" },
+  "rules": { label: "Regras · quedas", color: "#a3b1ab", ico: "📐" },
+  "trend": { label: "Regras · tendência", color: "#67e8f9", ico: "📈" },
   "claude-fable-5-1": { label: "Fable 5.1", color: "#f5c451", ico: "✨" },
   "claude-opus-5-5": { label: "Opus 5.5", color: "#fb923c", ico: "🎼" },
   "claude-opus-5": { label: "Opus 5", color: "#f97362", ico: "🎻" },
@@ -403,6 +404,7 @@ const MODEL_LOOK = {
 };
 const ACTION_PT = { BUY: "🟢 comprar", HOLD: "⏸ esperar", SELL: "🔵 vender", sleep: "😴 dormindo", wake: "⏰ acordou",
                     entry: "🟢 comprou", exit: "🔵 vendeu", veto: "🟡 bloqueado" };
+const FREE = new Set(["rules", "trend"]);   // deterministic bots: no AI cost
 const look = (m) => MODEL_LOOK[m] || { label: m, color: "#9fe8c7", ico: "🤖" };
 let lastArena = null;
 
@@ -438,7 +440,7 @@ function renderTeam() {
     const last = m.last || (r.last_decision ? { action: r.last_decision.action, reason: r.last_decision.reason, market: r.last_decision.market } : null);
     const bubble = r.needs_key ? "Coloque a ANTHROPIC_API_KEY no .env para eu começar a decidir."
       : last ? `${last.market ? last.market + ": " : ""}${ACTION_PT[last.action] || last.action || ""} — ${(last.reason || "").replace(/^(a dormir|dormindo) [^:]*: /, "")}` : r.sleep_reason || "Ainda sem decisões.";
-    const isRules = m.model === "rules";
+    const isRules = FREE.has(m.model);
     const tip = `<b>${esc(L.label)}</b> · ${isRules ? "regras fixas, grátis" : "decide com IA (Claude)"}
       ${tipRows([["Modelo", esc(m.model)], ["Status", esc(state)],
                  ["Mercado", last?.market ? esc(last.market) : null],
@@ -454,7 +456,7 @@ function renderTeam() {
       <div class="bubble">${esc(bubble)}</div>
       <div class="meta"><span>Na carteira<br><b>${m.trades ?? 0} trades ${pnl(m.pnl_usd ?? 0)}</b></span>
         <span>Laboratório<br><b>${usd(r.equity)} · ${pct(r.twr)}</b></span>
-        <span>Custo IA<br><b>${m.model === "rules" ? "grátis" : usd(r.ai_cost_usd ?? 0)}</b></span>
+        <span>Custo IA<br><b>${FREE.has(m.model) ? "grátis" : usd(r.ai_cost_usd ?? 0)}</b></span>
         <span>Líquido<br><b>${pnl(r.net_usd ?? 0)}</b></span></div>
       <div class="tip" role="tooltip">${tip}</div>
     </div>`;

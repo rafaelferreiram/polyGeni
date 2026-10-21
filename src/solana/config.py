@@ -119,7 +119,8 @@ HL_LIVE_MARKETS = [m for m in os.getenv("HL_LIVE_MARKETS", HL_BROAD).split(",") 
 # ─── Model arena: one paper bot per LLM, same markets and risk limits, separate portfolios ───
 # "rules" = deterministic baseline bot (no LLM, no API cost) that every model must beat
 # default: free rules bot + the cheap Haiku; add Sonnet/Opus/Fable when capital makes their cost worthwhile
-ARENA_MODELS = [m for m in os.getenv("ARENA_MODELS", "rules,claude-haiku-5-5").split(",") if m]
+ARENA_MODELS = [m for m in os.getenv("ARENA_MODELS", "rules,trend,claude-haiku-5-5").split(",") if m]
+LAB_SCORE_DAYS = float(os.getenv("LAB_SCORE_DAYS", "30"))   # Coordinator ranks bots on their last N days in the lab
 ARENA_START_USDC = _f("ARENA_START_USDC", 20.0)     # each bot gets what the real account would have
 # self-pause: a bot with nothing to do sleeps (up to BOT_MAX_SLEEP_MIN) and wakes early if price moves
 BOT_MAX_SLEEP_MIN = _i("BOT_MAX_SLEEP_MIN", 120)

@@ -294,7 +294,7 @@
       <h2><span>Equipe de bots <span class="tag">uma carteira, vários bots</span></span>
         <span class="ctrls"><span class="note" id="team-head"></span><button id="btn-coffee" onclick="giveCoffee(this)" title="Mantém os bots das contas simulada e real acordados e atentos durante 4 horas (as regras de compra não mudam)">☕ Café</button><button id="btn-scan" onclick="scanNow(this)">🔍 Analisar agora</button></span></h2>
       <div class="team" id="team-grid"></div>
-      <p class="note" style="margin-top:12px">Cada bot pensa uma vez por hora em cada mercado. O Coordenador executa na carteira a proposta do bot com melhor histórico nesse mercado (medido no laboratório, onde cada bot tem $20 simulados).</p>
+      <p class="note" style="margin-top:12px">Cada bot pensa uma vez por hora em cada mercado. Um compra quedas, outro segue tendências fortes, a IA analisa. O Coordenador executa na carteira a proposta do bot que mais lucrou nesse mercado nos últimos 30 dias do laboratório (cada bot tem $20 simulados); bot novo só usa dinheiro real depois de provar lucro.</p>
     </section>
 
     <section class="panel">
@@ -345,6 +345,6 @@
     </details>
   </main>
 
-  <script src="/static/paper.js?v=22"></script>
+  <script src="/static/paper.js?v=23"></script>
 </body>
 </html>

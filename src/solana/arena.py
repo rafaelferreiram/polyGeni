@@ -5,6 +5,7 @@ Coordinator uses to decide which bot's proposal executes on the shared (real) wa
 """
 import logging
 import re
+from datetime import datetime, timedelta, timezone
 
 from src.solana import config as cfg
 from src.solana import hyperliquid as hl
@@ -12,6 +13,7 @@ from src.solana.agents import DebateAgent, ExecutorAgent, RiskAgent, Vote
 from src.solana.engine import PaperEngine, bench_prices
 from src.solana.ledger import Ledger, now_iso
 from src.solana.llm_trader import LLMDecider
+from src.solana.strategies import RULE_BOTS
 
 logger = logging.getLogger("solana.arena")
 
@@ -29,19 +31,18 @@ def _slug(model: str) -> str:
 
 def build_bot(model: str, db_dir: str = ".", llm_fn=None, scout=None, broker_factory=None, candles_fn=None) -> PaperEngine:
     from src.solana.hl_live import _risk          # identical limits to the real account
-    from src.solana.strategies import default_strategies
     ledger = Ledger(f"{db_dir}/arena_{_slug(model)}.db", cfg.ARENA_START_USDC)
     decider = None
-    if model != "rules":
+    if model not in RULE_BOTS:
         decider = LLMDecider(model=model, llm_fn=llm_fn)
         decider.name = f"llm:{model}"
     eng = PaperEngine(
-        ledger, [scout or hl.HyperliquidScout()], _PerpsSafety(), default_strategies() if model == "rules" else [],
+        ledger, [scout or hl.HyperliquidScout()], _PerpsSafety(), [RULE_BOTS[model]()] if model in RULE_BOTS else [],
         DebateAgent(enabled=False), _risk(), ExecutorAgent((broker_factory or hl.HyperliquidPaperBroker)(ledger)),
         candles_fn=candles_fn or {hl.VENUE: hl.candles}, bench_fn=bench_prices if candles_fn is None else None,
         llm=decider, profiles={hl.VENUE: {"max_pos_pct": 1.0, "stop_mult": cfg.MARKET_PROFILES.get(hl.VENUE, {}).get("stop_mult", 1.5)}},
     )
-    ledger.set_state("decision_mode", "rules" if model == "rules" else "llm")
+    ledger.set_state("decision_mode", "rules" if model in RULE_BOTS else "llm")
     ledger.set_state("model", model)
     return eng
 
@@ -52,18 +53,20 @@ def lab_decider(model: str):
     return eng.llm if eng else None
 
 
-def score(model: str, market: str | None = None) -> tuple[float, int]:
-    """Shrunk expectancy per trade (USD) of a lab bot, on one market or overall: sum(pnl) / (n + 3)."""
+def score(model: str, market: str | None = None, days: float | None = None) -> tuple[float, int]:
+    """Shrunk expectancy per trade (USD) of a lab bot, on one market or overall: sum(pnl) / (n + 3).
+    With `days`, only recent trades count — that is how the Coordinator follows the market regime."""
     eng = (_bots or {}).get(model)
     if not eng:
         return 0.0, 0
-    trades = [t for t in eng.ledger.closed_trades() if market is None or t["symbol"] == market]
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat() if days else ""
+    trades = [t for t in eng.ledger.closed_trades() if (market is None or t["symbol"] == market) and t["exit_ts"] >= since]
     return sum(t["pnl_usd"] for t in trades) / (len(trades) + 3), len(trades)
 
 
 def eligible_for_real(members: list) -> list:
-    """Real money only for bots with evidence: the rules bot (validated in study_v2) and AI bots with
-    ≥ LIVE_MIN_LAB_TRADES lab trades and positive expectancy."""
+    """Real money only for bots with evidence: the rules bot (validated in study_v2), and every other bot (trend,
+    AI) once it has ≥ LIVE_MIN_LAB_TRADES lab trades and positive expectancy after its AI cost."""
     ok = []
     for m in members:
         if m.model == "rules":
@@ -76,9 +79,11 @@ def eligible_for_real(members: list) -> list:
 
 
 def rank(market: str, members: list) -> list:
-    """Coordinator: best lab track record on this market first, then overall, then the configured order."""
+    """Coordinator: best RECENT lab record (LAB_SCORE_DAYS) on this market first, then recent overall, then the
+    configured order. Mean reversion and trend following win in different regimes; recent results tell which."""
     order = {m: i for i, m in enumerate(cfg.ARENA_MODELS)}
-    return sorted(members, key=lambda m: (-score(m.model, market)[0], -score(m.model)[0], order.get(m.model, 99)))
+    d = cfg.LAB_SCORE_DAYS
+    return sorted(members, key=lambda m: (-score(m.model, market, d)[0], -score(m.model, None, d)[0], order.get(m.model, 99)))
 
 
 _bots: dict[str, PaperEngine] | None = None
@@ -96,12 +101,12 @@ def net_of_cost(model: str) -> tuple[float, float, float]:
     from src.solana import costs
     eng = bots().get(model)
     pnl = (eng.portfolio().equity - eng.ledger.contributed()) if eng else 0.0
-    cost = costs.book().total(model=model) if model != "rules" else 0.0
+    cost = costs.book().total(model=model) if model not in RULE_BOTS else 0.0
     return pnl, cost, pnl - cost
 
 
 def _pause_if_unprofitable(model: str, eng) -> bool:
-    if model == "rules" or not eng.ledger.get_state("running", False):
+    if model in RULE_BOTS or not eng.ledger.get_state("running", False):
         return False
     pnl, cost, net = net_of_cost(model)
     if net < -cfg.LLM_BOT_MAX_NET_LOSS_USD:
