@@ -510,6 +510,11 @@ def set_running(on: bool):
             eng.ledger.set_state("paused_reason", None)
         eng.ledger.log_decision("arena", reason=f"arena {'started' if on else 'stopped'} {now_iso()}")
     sch = paper_engine.scheduler()
+    if on and sch.get_job("chatter") is None:
+        from datetime import datetime as _dtc
+        from src.solana import teamchat
+        sch.add_job(teamchat.chatter, "interval", seconds=900, id="chatter", max_instances=1, coalesce=True,
+                    next_run_time=_dtc.now() + timedelta(minutes=1))
     if on and sch.get_job("evolution") is None:
         from datetime import datetime as _dt
         sch.add_job(evolution.check, "interval", seconds=600, id="evolution", max_instances=1, coalesce=True,

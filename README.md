@@ -134,6 +134,13 @@ the others must first show ≥ 10 profitable lab trades.
 - **💬 Vestiário** (`teamchat.py`, `team_chat.db`, `GET /api/paper/team/chat`): the bots' group chat and shared memory
   — buys, sells with results, passes to a teammate, situations skipped, team lessons, cuts and newborns. Real-account and
   lab decisions only (the simulation would echo the real account); repeated messages throttled to one per 30 min.
+- **Personalities and talk**: every bot speaks like its player (São Marcos calm, Endrick fast, Evair follows whales…),
+  thanks a teammate for a pass, answers a teammate's win or loss by @name, and every 15 min (`teamchat.chatter`) tips a
+  teammate — titular or reserve — about a coin close to that teammate's buy rule.
+- **Margin of error** (`edge.py`): before a buy, the chance of a winning trade in this situation (own + team realized
+  trades on specific labels, Bayesian prior) with a ±margin and the expected value from real average win/loss. The bot
+  skips only when confident the situation is clearly worse than its usual and loses money; otherwise it buys and says
+  its odds (also in the chat).
 - **Safe restarts**: on shutdown the app waits (up to 90s, launchd `ExitTimeOut` 120) for any account cycle or manual
   order to finish — a restart once cut a real buy in half (on the exchange, not in the books, no stop).
 - **Rate limits**: order books cached 20s per coin and shared by all lab bots; turbo analyses every 2 min.

@@ -57,6 +57,53 @@ def meta(k: str, v: str | None = None) -> str | None:
     return row[0] if row else None
 
 
+# ─── personalities: each bot talks like its player ───
+NAMES = {"rules": "São Marcos", "trend": "Endrick", "trend4h": "Gabriel Jesus", "whales": "Evair", "whales2": "Dudu",
+         "copy": "Veiga", "whales_15m": "Evair 15m", "copy_15m": "Veiga 15m", "trend4h_15m": "Gabriel Jesus 15m"}
+VOICE = {   # family -> (buy, win, loss, tip, cheer, calm)
+    "rules": ("Calma, pessoal. Esperei a queda certa e entrei em {s}.", "Paciência paga. {s} fechado no verde.",
+              "Faz parte, {s} não respeitou. Sigo esperando a próxima queda limpa.", "@{to}, de olho em {s} pra você: {d}",
+              "Boa, @{to}! Defesa e ataque juntos 🧤", "Respira, @{to}. Ninguém ganha todas — foco no próximo."),
+    "trend": ("Rompeu, eu vou! Partiu {s} 🚀", "É gol! {s} no verde ⚡", "Tomei um drible em {s}. Bola pra frente!",
+              "@{to}, olha {s}: {d}", "Que jogada, @{to}! ⚡", "Levanta a cabeça, @{to}, o jogo é longo!"),
+    "trend4h": ("Tendência firme no 4h, entrei em {s}.", "Com raça! {s} fechou bem.", "{s} virou contra mim. Vou ajustar.",
+                "@{to}, {s} tá com cara de ser sua: {d}", "Isso, @{to}! 💪", "Vamos juntos, @{to}, a gente vira."),
+    "whales": ("As baleias entraram pesado em {s}, eu vou junto 🐋", "Matador! {s} no verde.", "As baleias me enganaram em {s}.",
+               "@{to}, vi {s} no radar, é sua: {d} 🐋", "Golaço, @{to}! 🐋", "Acontece, @{to}. As baleias também erram."),
+    "copy": ("Os craques do top 10 entraram em {s}, copiei.", "Camisa 10 entrega: {s} no verde.", "Os craques erraram em {s}, eu junto.",
+             "@{to}, anota aí {s}: {d}", "Bonito, @{to}! 🎯", "Bola pra frente, @{to}."),
+}
+VOICE["whales2"] = VOICE["whales"]
+
+
+def name(model: str) -> str:
+    try:
+        from src.solana import evolution
+        lab = evolution.load()["bots"].get(model)
+        if lab:
+            return lab["label"]
+    except Exception:
+        pass
+    return NAMES.get(model, model)
+
+
+def _family(model: str) -> str:
+    try:
+        from src.solana import evolution
+        model = evolution.base_of(model)
+    except Exception:
+        pass
+    return model.removesuffix("_15m")
+
+
+def _voice(model: str, i: int) -> str:
+    return VOICE.get(_family(model), VOICE["trend4h"])[i]
+
+
+def _pick(seed: str, options: list):
+    return options[sum(map(ord, seed)) % len(options)] if options else None
+
+
 def _exit_pt(reason: str) -> str:
     r = reason or ""
     return ("bateu o alvo 🎯" if "take-profit" in r else "parou no stop 🛑" if "stop-loss" in r
@@ -70,15 +117,23 @@ def from_decision(source: str, model: str | None, kind: str, symbol: str | None,
         where = "💰 conta real" if source == "real" else "🧪 simulação" if source == "sim" else None
         sig = signals or {}
         if kind == "entry" and symbol:
-            setup = (reason.split(";")[0] if any(w in reason for w in ("baleias", "top", "recebida", "queda", "rompeu", "adotada"))
-                     else ", ".join((sig.get("tags") or [])[:3]) or reason[:60])
-            post(author, "entry", f"Comprei {symbol}{f' ({where})' if where else ''}: {setup}", symbol, throttle=False)
+            odds = reason.split("· chance")[-1].split(",")[0].strip() if "· chance" in reason else None
+            line = _voice(author, 0).format(s=symbol)
+            if "recebida de" in reason:
+                giver = reason.split("recebida de ")[-1].split(":")[0]
+                line = f"Valeu pelo passe, @{name(giver)}! Entrei em {symbol}."
+            post(author, "entry", f"{line}{f' ({where})' if where else ''}{f' · chance {odds}' if odds else ''}", symbol, throttle=False)
         elif kind == "exit" and symbol:
             pnl = sig.get("pnl_usd")
             res = f" · {'+' if pnl >= 0 else '−'}${abs(pnl):.2f}" if isinstance(pnl, (int, float)) else ""
-            post(author, "exit", f"Vendi {symbol}{f' ({where})' if where else ''}: {_exit_pt(reason)}{res}", symbol, throttle=False)
+            win = isinstance(pnl, (int, float)) and pnl > 0
+            post(author, "exit", f"{_voice(author, 1 if win else 2).format(s=symbol)} ({_exit_pt(reason)}{res}){f' · {where}' if where else ''}",
+                 symbol, throttle=False)
+            _react(author, symbol, win)
         elif kind == "handoff" and symbol:
-            post(author, "handoff", reason.replace("📨 ", ""), symbol, throttle=False)
+            to = (signals or {}).get("to")
+            why = reason.split(": ", 1)[-1]
+            post(author, "handoff", f"@{name(to) if to else '?'}, essa é mais a sua: {symbol} — {why}", symbol, throttle=False)
         elif kind == "veto" and symbol and ("aprendizado" in reason or "rede do time" in reason):
             post(author, "lesson", f"Pulei {symbol}: {reason.replace('aprendizado: ', '')}", symbol)
         elif kind == "evolution":
@@ -87,6 +142,34 @@ def from_decision(source: str, model: str | None, kind: str, symbol: str | None,
             post(author, "quota", reason)
     except Exception:
         pass        # the chat must never break trading
+
+
+def _react(author: str, symbol: str, win: bool):
+    """A teammate answers a sell now and then (one in three), cheering a win or calming a loss — by name."""
+    from src.solana import arena
+    mates = [m for m in (arena._bots or {}) if m != author]
+    seed = f"{author}{symbol}{int(time.time() // 600)}"
+    if not mates or sum(map(ord, seed)) % 3:
+        return
+    mate = _pick(seed, mates)
+    post(mate, "chat", _voice(mate, 4 if win else 5).format(to=name(author)), symbol, throttle=False)
+
+
+def chatter():
+    """Scheduler job: bots tip each other about coins close to a teammate's buy rule (the 'Próximas trades' of each)."""
+    from src.api.paper_routes import _market_temp, _opportunities
+    from src.solana import arena
+    bots = list((arena._bots or {}).items())
+    watch = _market_temp().get("watch") or []
+    for target, eng in bots:
+        held = {p["symbol"] for p in eng.ledger.positions()}
+        opp = next((o for o in _opportunities(target, watch, held) if o["status"] in ("pronto", "perto") and not o["held"]), None)
+        if not opp:
+            continue
+        mates = [m for m, _ in bots if m != target]
+        tipper = _pick(f"{target}{opp['symbol']}{int(time.time() // 3600)}", mates)
+        if tipper:
+            post(tipper, "tip", _voice(tipper, 3).format(to=name(target), s=opp["symbol"], d=opp["detail"]), opp["symbol"])
 
 
 def team_lessons(avoid: list[dict]):

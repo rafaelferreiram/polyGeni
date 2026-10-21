@@ -588,6 +588,22 @@ class PaperEngine:
                                                  signals={"tags": tags, "to": mate[0]},
                                                  reason=f"📨 passou {c.symbol} para {mate[0]}: {mate[1]}")
                         continue
+                if cfg.EDGE_CHECK:                      # margin of error: odds of this trade from every memory we have
+                    from src.solana import arena, edge as edge_mod
+                    mine = self._learn_ledger(strat.name)
+                    pay = edge_mod.payoff(mine.closed_trades(), edge_mod.payoff(
+                        [t for e in list((arena._bots or {}).values()) for t in e.ledger.closed_trades()]))
+                    done = mine.closed_trades()
+                    base = sum(t["pnl_usd"] > 0 for t in done) / len(done) if len(done) >= 10 else None
+                    est = edge_mod.estimate(tags, learning.record(mine, strat.name), learning.team_record(), *pay, baseline=base)
+                    if est["skip"]:
+                        self.ledger.log_decision("veto", cycle=self.cycle, mint=c.mint, symbol=c.symbol, strategy=strat.name,
+                                                 signals={"tags": tags, "edge": est},
+                                                 reason=f"margem de erro: {edge_mod.describe(est)} — nem no melhor caso compensa")
+                        stats["vetoes"] += 1
+                        continue
+                    sig.reason = f"{sig.reason} · {edge_mod.describe(est)}"
+                    sig.indicators = {**(sig.indicators or {}), "edge": est}
                 stats["signals"] += 1
                 self._agent(strat.name, last_reason=f"{c.symbol}: {sig.reason}", approved=1)
                 strat_vote = Vote(strat.name, True, sig.reason, sig.indicators)

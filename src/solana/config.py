@@ -161,6 +161,9 @@ LEARN_DAYS = _i("LEARN_DAYS", 30)
 LEARN_MIN_TRADES = _i("LEARN_MIN_TRADES", 6)
 LEARN_MAX_WIN_RATE = _f("LEARN_MAX_WIN_RATE", 0.35)
 MAX_TITULARES = _i("MAX_TITULARES", 6)
+# margin of error before a buy (edge.py): skip only when confident (this much evidence) that even the optimistic odds lose
+EDGE_CHECK = os.getenv("EDGE_CHECK", "1") == "1"
+EDGE_MIN_EVIDENCE = _i("EDGE_MIN_EVIDENCE", 30)
 # daily quota: a titular behind DAILY_MIN_TRADES completed trades (Lisbon day, pro rata) loosens its entry a notch or two
 # and aims at a closer target, so it completes buy+sell round trips; size, stops and the account limits do not change
 DAILY_MIN_TRADES = _i("DAILY_MIN_TRADES", 5)

@@ -614,6 +614,7 @@ async function loadArena() {
   renderTeam();
   renderBoost();
   renderRanking();
+  renderChat(false);          // names for @mentions come with the arena
 }
 
 // ─── ranking: the bots compete in the lab (same rules, same fake money) ───
@@ -876,7 +877,7 @@ function adviceCard(r) {
 
 // ─── 💬 Vestiário: the bots' group chat ───
 let chatMsgs = [], chatSince = 0, chatBy = "";
-const CHAT_KINDS = { trade: ["entry", "exit"], handoff: ["handoff"], learn: ["lesson", "network", "evolution", "quota"] };
+const CHAT_KINDS = { trade: ["entry", "exit"], handoff: ["handoff", "tip", "chat"], learn: ["lesson", "network", "evolution", "quota"] };
 function chatFilter(btn) {
   chatBy = btn.dataset.c;
   document.querySelectorAll("#chat-filter button").forEach((b) => b.classList.toggle("on", b === btn));
@@ -889,6 +890,11 @@ async function loadChat() {
   chatSince = chatMsgs[chatMsgs.length - 1].id;
   renderChat(false);
 }
+// @Name -> highlighted (names come from the team, so "@São Marcos" works with its space)
+function mentions(html) {
+  const names = (lastArena?.leaderboard || []).map((r) => look(r.model).label).sort((a, b) => b.length - a.length);
+  return names.reduce((h, n) => h.split(`@${esc(n)}`).join(`<b class="mention">@${esc(n)}</b>`), html);
+}
 function renderChat(force) {
   const box = document.getElementById("chat");
   const atBottom = force || box.scrollHeight - box.scrollTop - box.clientHeight < 60;
@@ -896,8 +902,8 @@ function renderChat(force) {
   box.innerHTML = shown.length ? shown.map((m) => {
     const net = m.author === "rede", L = net ? { label: "Rede do time", color: "#34d399", ico: "📡" } : look(m.author);
     const res = m.kind === "exit" ? (/\+\$/.test(m.text) ? " win" : /−\$/.test(m.text) ? " loss" : "") : "";
-    return `<div class="msg ${m.kind}${res}" style="--c:${L.color}">${net ? "" : `<div class="av">${botFace(L.color, L.ico)}</div>`}
-      <div class="bub"><div class="who">${esc(L.ico || "")} ${esc(L.label)}<small>${hhmm(m.ts)}</small></div>${esc(m.text)}</div></div>`;
+    return `<div class="msg k-${m.kind}${res}" style="--c:${L.color}">${net ? "" : `<div class="av">${botFace(L.color, L.ico)}</div>`}
+      <div class="bub"><div class="who">${esc(L.ico || "")} ${esc(L.label)}<small>${hhmm(m.ts)}</small></div>${mentions(esc(m.text))}</div></div>`;
   }).join("") : '<div class="empty">Ninguém falou ainda — as mensagens aparecem quando os bots comprarem, venderem, passarem oportunidades ou aprenderem algo.</div>';
   if (atBottom) box.scrollTop = box.scrollHeight;
 }
