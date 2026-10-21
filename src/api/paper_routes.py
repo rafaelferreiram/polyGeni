@@ -719,12 +719,27 @@ def account_coffee(req: Coffee):
     from src.solana import arena, hl_live
     hours = max(0.5, min(req.hours, 12))
     # one cup for the whole house: simulation and real share the team, so both stay awake together
-    for eng in [_account_engine("sim"), _account_engine("real"), *arena.bots().values()]:
+    titulares = [e for m, e in arena.bots().items() if arena.is_titular(m)]   # reserves: 1 cup a day on their own card
+    for eng in [_account_engine("sim"), _account_engine("real"), *titulares]:
         until = eng.give_coffee(hours)
     threading.Thread(target=arena.run_round, daemon=True).start()
     running = {"sim": _account_engine("sim").ledger.get_state("running", False), "real": hl_live.is_armed()}
     return {"coffee_until": until, "hours": hours, "accounts": ["sim", "real"],
             "scan_started": {k: _scan_in_background(k) for k, on in running.items() if on}}
+
+
+class BotCoffee(BaseModel):
+    bot: str
+    hours: float = 4
+
+
+@router.post("/arena/coffee", dependencies=LOCAL)
+def arena_coffee(req: BotCoffee):
+    from src.solana import arena
+    try:
+        return arena.coffee(req.bot, req.hours)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
 
 
 @router.post("/account/kill-switch/reset", dependencies=LOCAL)

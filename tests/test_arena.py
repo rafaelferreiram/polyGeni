@@ -140,6 +140,9 @@ def test_model_boost_runs_n_cycles_then_returns_to_default(tmp_path, monkeypatch
     bots, _ = make_bots(tmp_path, {"claude-haiku-5-5": "{}"})
     monkeypatch.setattr(arena, "_bots", bots)
     eng = bots["claude-haiku-5-5"]
+    with pytest.raises(ValueError, match="titulares"):                # reserves can't pick a model
+        arena.boost("claude-haiku-5-5", "claude-sonnet-5-5", 2)
+    monkeypatch.setattr(arena, "is_titular", lambda m: True)
     arena.boost("claude-haiku-5-5", "claude-sonnet-5-5", 2)
     models = []
     for _ in range(3):                                   # one lab round each
@@ -239,3 +242,25 @@ def test_turbo_runs_the_bot_every_minute_until_midnight(tmp_path, monkeypatch):
     assert r["until"].endswith(":00:00+00:00")      # Lisbon midnight
     from src.solana.engine import _max_hold
     assert _max_hold("claude-haiku-5-5", 48) == cfg.TURBO_MAX_HOLD_H and arena.fast_exit_hold("rules") is None
+
+
+def test_titular_rule_bot_gets_its_reviews_by_the_chosen_model_and_reserves_one_coffee_a_day(tmp_path, monkeypatch):
+    from src.solana.agents import DebateAgent
+    from tests.conftest import candidate
+    from src.solana.strategies import Signal
+    bots, _ = make_bots(tmp_path, {"claude-haiku-5-5": "{}"})
+    bots["trend"] = bots.pop("claude-haiku-5-5")            # reuse the engine as a rule bot's lab engine
+    bots["trend"].llm = None
+    monkeypatch.setattr(arena, "_bots", bots)
+    monkeypatch.setattr(arena, "is_titular", lambda m: m == "trend")
+    arena.boost("trend", "claude-opus-5-5", 3)
+    assert arena.reviewer_model("trend") == "claude-opus-5-5" and arena.reviewer_model("whales") is None
+    seen = []
+    d = DebateAgent(llm_fn=lambda prompt, model=None: seen.append(model) or '{"veto": false}', enabled=True,
+                    model_for=arena.reviewer_model)
+    d.review(candidate(), Signal("trend", 1.0, 0.05, 0.1, "x"), {})
+    assert seen == ["claude-opus-5-5"]
+    monkeypatch.setattr(arena, "is_titular", lambda m: False)  # now a reserve: one coffee per day, lab only
+    assert arena.coffee("trend")["accounts"] == []
+    with pytest.raises(ValueError, match="1 café por dia"):
+        arena.coffee("trend")

@@ -136,7 +136,7 @@ function scanNow(btn) {
 function giveCoffee(btn) {
   if (!acc?.running) return toast("Clique em ▶ Start primeiro", true);
   run(btn, "Preparando o café…", () => api("/account/coffee", "POST", { kind: KIND, hours: 4 }),
-      (r) => `☕ Equipe com cafeína até ${hhmm(r.coffee_until)} nas contas simulada e real — modo day trade, até 24 compras por dia`);
+      (r) => `☕ Titulares com cafeína até ${hhmm(r.coffee_until)} nas contas simulada e real — modo day trade, até 24 compras por dia`);
 }
 
 function setMode(mode, btn) {
@@ -677,10 +677,10 @@ function renderTeam() {
       ${boostable ? `onclick="trainBoost('${esc(m.model)}', this.querySelector('.tboost'))" title="toque para turbinar o treino de hoje"` : ""}>
       ${coffee && cls !== "off" ? '<span class="cup" title="com cafeína: sem pausas">☕</span>' : ""}
       <div class="head">${botFace(L.color, L.ico)}
-        <div><div class="nm">${esc(L.label)}${r.model_now && r.model_now !== m.model ? ` <small class="green">🚀 ${esc(look(r.model_now).label)}</small>` : ""}</div><div class="rl">${esc(L.role)}</div></div></div>
+        <div><div class="nm">${esc(L.label)}${r.model_now && r.model_now !== m.model ? ` <small class="green">🚀 ${esc(look(r.model_now).label)}</small>` : reviewOn(r) ? ` <small class="green">🚀 ${esc(look(reviewOn(r).model).label)}</small>` : ""}</div><div class="rl">${esc(L.role)}</div></div></div>
       <span class="chip">${esc(chip)}</span>
       <div class="now">Última decisão: ${now}</div>
-      ${rewardLine(r.reward, rankOf[m.model])}${greenLine(r.green_light)}${trainButton(m.model, r)}
+      ${rewardLine(r.reward, rankOf[m.model])}${greenLine(r.green_light)}${trainButton(m.model, r)}${coffeeButton(m.model, r)}
       <div class="stats"><span><b>${pnl(m.pnl_usd ?? 0)}</b>resultado</span><span><b>${m.trades ?? 0}</b>trades</span>
         <span><b>${isRules ? "grátis" : usd(r.ai_cost_usd ?? 0)}</b>custo IA</span></div>
       <div class="tip" role="tooltip">${tip}<div class="note" style="margin-top:6px">${esc(bubble)}</div></div>
@@ -690,16 +690,36 @@ function renderTeam() {
 
 // ─── AI turbo: a stronger model for N cycles, then back to Haiku ───
 function startBoost(btn) {
+  const bot = document.getElementById("boost-bot").value;
   const model = document.getElementById("boost-model").value, cycles = +document.getElementById("boost-cycles").value;
-  run(btn, "Ativando…", () => api("/arena/boost", "POST", { bot: "claude-haiku-5-5", model, cycles }),
-      `🚀 Bot de IA usando ${look(model).label} por ${cycles} ciclo(s); depois volta ao Haiku. Só gasta quando há oportunidade.`);
+  if (!bot) return toast("Nenhum titular disponível", true);
+  run(btn, "Ativando…", () => api("/arena/boost", "POST", { bot, model, cycles }),
+      `🚀 Sinais do ${look(bot).label} revisados por ${look(model).label} por ${cycles} ciclo(s) (~${Math.round(cycles * 5)} min); depois volta ao Haiku. Só gasta quando ele dá sinal.`);
 }
+const reviewOn = (r) => r?.review_boost?.until && new Date(r.review_boost.until) > new Date() ? r.review_boost : null;
 function renderBoost() {
-  const r = (lastArena?.leaderboard || []).find((x) => x.model === "claude-haiku-5-5");
-  const b = r?.boost || {};
-  document.getElementById("boost-status").innerHTML = b.model && b.cycles_left >= 0 && r.model_now !== "claude-haiku-5-5"
-    ? `ativo: <b>${esc(look(b.model).label)}</b> · ${b.cycles_left} de ${b.total} ciclos restantes`
-    : b.model ? `agendado: <b>${esc(look(b.model).label)}</b> por ${b.total} ciclos (começa no próximo ciclo)` : "modelo atual: Haiku 5.5 (padrão)";
+  const tit = (lastArena?.leaderboard || []).filter((r) => r.green_light?.ok);
+  const sel = document.getElementById("boost-bot"), keep = sel.value;
+  const opts = tit.map((r) => `<option value="${esc(r.model)}">${esc(look(r.model).label)}</option>`).join("");
+  if (sel.innerHTML !== opts) { sel.innerHTML = opts; if (tit.some((r) => r.model === keep)) sel.value = keep; }
+  const on = tit.filter(reviewOn);
+  document.getElementById("boost-status").innerHTML = on.length
+    ? on.map((r) => `<b>${esc(look(r.model).label)}</b>: ${esc(look(r.review_boost.model).label)} até ${hhmm(r.review_boost.until)}`).join(" · ")
+    : "todos os titulares com o modelo padrão (Haiku 5.5)";
+}
+// ☕ per bot: titulares any time (wakes the accounts too); reserves once per Lisbon day, in the lab
+const lisbonDay = () => new Date().toLocaleDateString("en-CA", { timeZone: "Europe/Lisbon" });
+function coffeeButton(model, r) {
+  if (!r) return "";
+  const until = r.coffee_until && new Date(r.coffee_until) > new Date() ? r.coffee_until : null;
+  if (until) return `<button class="tcoffee on" disabled>☕ com café até ${hhmm(until)}</button>`;
+  if (!r.green_light?.ok && r.coffee_day === lisbonDay()) return `<button class="tcoffee" disabled>☕ café de hoje já usado</button>`;
+  return `<button class="tcoffee" onclick="event.stopPropagation(); botCoffee('${esc(model)}', this)">☕ ${r.green_light?.ok ? "Café" : "Café (1 por dia)"}</button>`;
+}
+function botCoffee(model, btn) {
+  if (REMOTE) return;
+  run(btn, "Preparando…", () => api("/arena/coffee", "POST", { bot: model, hours: 4 }),
+      (r) => `☕ ${look(model).label} com café até ${hhmm(r.coffee_until)}${r.accounts.length ? " — contas simulada e real acordadas" : " no laboratório"}`);
 }
 
 // reward: points = net profit of the last 30 days after AI cost; it buys priority and position size

@@ -215,6 +215,25 @@ def _schedule_turbo(model: str, eng):
                     next_run_time=datetime.now())
 
 
+def coffee(model: str, hours: float = 4) -> dict:
+    """☕ for one bot: no self-pause and twice the daily entries for a few hours. A titular also wakes both accounts
+    (it trades there); a reserve gets it in the lab only, at most once per Lisbon day."""
+    eng = bots().get(model)
+    if not eng:
+        raise ValueError(f"bot {model} não existe")
+    hours = max(0.5, min(hours, 12))
+    today = datetime.now(cfg.TZ).date().isoformat()
+    if not is_titular(model):
+        if eng.ledger.get_state("coffee_day") == today:
+            raise ValueError("reserva: só 1 café por dia — amanhã tem mais")
+        eng.ledger.set_state("coffee_day", today)
+        return {"coffee_until": eng.give_coffee(hours), "accounts": []}
+    from src.solana import hl_live
+    for e in (eng, hl_live.get_shadow_engine(), hl_live.get_live_engine()):
+        until = e.give_coffee(hours)
+    return {"coffee_until": until, "accounts": ["sim", "real"]}
+
+
 def ai_full_scan(model: str, hours: float = 24) -> dict:
     """Training for the AI bot: it analyses every coin on every closed candle (no pre-filter) for a while.
     Costs real AI money (~29 calls/hour with Haiku ≈ $0.03/h); the monthly AI allowance still caps it."""
@@ -295,13 +314,32 @@ def _ai_cost(model: str, days: float | None = None) -> float:
 BOOST_MODELS = ("claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5", "claude-opus-5", "claude-fable-5-1")
 
 
+def is_titular(model: str) -> bool:
+    return bool(green_light(model).get("ok"))
+
+
+def reviewer_model(strategy: str) -> str | None:
+    """Model the user picked to review this titular's signals on the accounts, while it lasts (None = default)."""
+    eng = (_bots or {}).get(strategy)
+    b = (eng.ledger.get_state("review_boost") if eng else None) or {}
+    return b["model"] if b.get("until", "") > datetime.now(timezone.utc).isoformat() else None
+
+
 def boost(model: str, to: str, cycles: int) -> dict:
-    """Run an AI bot with a stronger model for N cycles (then it returns to its own model, e.g. Haiku)."""
+    """Titulares only: a stronger model for N account cycles. An AI bot decides with it; a rule bot gets its signals
+    reviewed by it (the reviewer that can veto a buy). Then it returns to the default (Haiku)."""
     eng = bots().get(model)
-    if not eng or not eng.llm:
-        raise ValueError(f"{model} não é um bot de IA")
+    if not eng:
+        raise ValueError(f"bot {model} não existe")
     if to not in BOOST_MODELS or not 1 <= int(cycles) <= 288:
         raise ValueError("modelo ou número de ciclos inválido (1–288)")
+    if not is_titular(model):
+        raise ValueError("só titulares podem usar outro modelo — reservas têm 1 café por dia e o turbo")
+    if not eng.llm:
+        until = (datetime.now(timezone.utc) + timedelta(seconds=int(cycles) * cfg.LIVE_CYCLE_SEC)).isoformat(timespec="seconds")
+        eng.ledger.set_state("review_boost", {"model": to, "until": until, "cycles": int(cycles)})
+        eng.ledger.log_decision("boost", reason=f"🚀 sinais revisados por {to} por {cycles} ciclo(s) da conta")
+        return eng.ledger.get_state("review_boost")
     eng.ledger.set_state("boost", {"model": to, "cycles_left": int(cycles), "total": int(cycles)})
     eng.llm._seen.clear()          # re-decide every market of this candle with the new model
     eng.ledger.log_decision("boost", reason=f"🚀 {to} por {cycles} ciclo(s); depois volta a {model}")
@@ -396,6 +434,8 @@ def leaderboard() -> list[dict]:
             "model_now": eng.llm.model if eng.llm else None, "boost": led.get_state("boost") or {},
             "green_light": green_light(model), "train_boost_until": led.get_state("train_boost_until"),
             "ai_full_scan_until": led.get_state("ai_full_scan_until"), "turbo_until": led.get_state("turbo_until"),
+            "coffee_until": led.get_state("coffee_until"), "coffee_day": led.get_state("coffee_day"),
+            "review_boost": led.get_state("review_boost"),
             "last_decision": next(({"market": k, **{x: v.get(x) for x in ("action", "reason", "model")}}
                                    for k, v in sorted(last.items(), key=lambda kv: -(kv[1].get("t") or 0))), None)
                              if eng.llm else _rules_last(led),

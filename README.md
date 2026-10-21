@@ -125,6 +125,10 @@ the others must first show ≥ 10 profitable lab trades.
 - **At most 6 titulares** (`MAX_TITULARES`): when more bots qualify for real money, only the best 6 (reward points,
   then lab profit) trade it. Gabriel Jesus 15m was retired (15-minute breakouts lost to fees). The turbo does not switch
   on the AI bot's paid every-coin scan; that stays a separate choice.
+- **Titulares vs reservas — perks**: titulares can get ☕ coffee any time (their card or the team ☕ button: 4h of day-trade
+  mode on both accounts) and a better **model for N account cycles** (`POST /api/paper/arena/boost`): their signals are
+  reviewed by Sonnet/Opus/Fable instead of Haiku, then it goes back. Reserves get **1 coffee per Lisbon day** in the lab
+  (`POST /api/paper/arena/coffee`) and the ⚡ turbo; no model choice.
 - **🏆 Ranking**: the bots compete in the lab (same rules, same paper money) by net profit after AI cost or by winning
   trades; filter titulares / reserva / todos.
 - **One trade per signal**: after a position on a coin exits, the same candle's signal can't buy it again (its target is
