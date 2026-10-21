@@ -125,6 +125,12 @@ the others must first show ≥ 10 profitable lab trades.
 - **At most 6 titulares** (`MAX_TITULARES`): when more bots qualify for real money, only the best 6 (reward points,
   then lab profit) trade it. Gabriel Jesus 15m was retired (15-minute breakouts lost to fees). The turbo does not switch
   on the AI bot's paid every-coin scan; that stays a separate choice.
+- **Bot modal** (click any bot card; `GET /api/paper/arena/bot/{model}`): mood (from its last 10 trades and streak),
+  lab and real performance, projection for the next 24h/48h (its trades/day × average result, with a likely range),
+  coins closest to its buy rule ("possíveis próximas trades"), what it learned, open positions, result per day and
+  its latest trades with dates, amounts and exit reasons. Turbo/coffee buttons are there too.
+- **Real account**: at most 5 positions at a time and no daily trade cap (`LIVE_MAX_POSITIONS=5`,
+  `LIVE_MAX_ENTRIES_PER_DAY` high in `.env`); the 10% daily loss stop and the kill switch stay.
 - **Self-learning** (`learning.py`, `SELF_LEARNING=1`): every entry is saved with its situation (trend, RSI band, dip /
   breakout setups, coin). From each bot's own closed trades of the last 30 days, a situation with ≥ 6 trades, win rate
   < 35% and a net loss is avoided from then on (veto "aprendizado: evita …"); it is allowed again when the record

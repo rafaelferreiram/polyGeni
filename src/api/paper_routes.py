@@ -964,6 +964,110 @@ def admin():
                       "scenarios": scen, "confidence": conf, "advice": advice}}
 
 
+def _mood(trades: list[dict], open_pnl: float) -> dict:
+    """How the bot 'feels' — its recent record in one face: last 10 trades, streak and what is open now."""
+    last = trades[-10:]
+    if not last and not open_pnl:
+        return {"emoji": "😴", "label": "esperando", "why": "ainda sem trades fechados"}
+    wr = sum(t["pnl_usd"] > 0 for t in last) / len(last) if last else 0.5
+    streak = 0
+    for t in reversed(trades):
+        if (t["pnl_usd"] > 0) != (trades[-1]["pnl_usd"] > 0):
+            break
+        streak += 1 if t["pnl_usd"] > 0 else -1
+    recent = sum(t["pnl_usd"] for t in last) + open_pnl
+    if wr >= 0.65 and recent > 0:
+        face = ("🤩", "em chamas") if streak >= 3 else ("😄", "confiante")
+    elif recent >= 0:
+        face = ("🙂", "tranquilo")
+    elif wr >= 0.4:
+        face = ("😐", "oscilando")
+    else:
+        face = ("😟", "preocupado") if streak > -3 else ("😣", "em má fase")
+    return {"emoji": face[0], "label": face[1], "streak": streak,
+            "why": f"{sum(t['pnl_usd'] > 0 for t in last)}/{len(last)} ganhos nos últimos trades · resultado recente ${recent:+.2f}"}
+
+
+def _opportunities(model: str, watch: list[dict]) -> list[dict]:
+    """What this bot is watching right now and how close each coin is to its buy rule."""
+    from src.solana import toptraders, whales
+    base = model.removesuffix("_15m").rstrip("2")
+    out = []
+    for w in watch:
+        if base == "rules" and w.get("up") and w.get("dip_at"):
+            gap = (w["price"] - w["dip_at"]) / w["price"]
+            out.append({"symbol": w["symbol"], "price": w["price"], "trigger": w["dip_at"], "gap_pct": round(-gap * 100, 2),
+                        "what": f"compra se cair até {w['dip_at']:.6g} (queda forte numa alta)"})
+        elif base in ("trend", "trend4h") and w.get("strong") and w.get("break_at"):
+            gap = (w["break_at"] - w["price"]) / w["price"]
+            out.append({"symbol": w["symbol"], "price": w["price"], "trigger": w["break_at"], "gap_pct": round(gap * 100, 2),
+                        "what": f"compra se romper {w['break_at']:.6g}"})
+        elif base == "whales" and w.get("up"):
+            s = whales.summary(w["symbol"])
+            net, need = (s.get("1h") or {}).get("net_usd", 0), 2 * s.get("threshold_usd", 0)
+            if net > 0 and need:
+                out.append({"symbol": w["symbol"], "price": w["price"], "gap_pct": round(max(0.0, 1 - net / need) * 100, 1),
+                            "what": f"baleias compraram ${net:,.0f} em 1h (precisa ${need:,.0f})"})
+        elif base == "copy" and w.get("up"):
+            c = toptraders.consensus(w["symbol"])
+            if c.get("long", 0) >= 1:
+                out.append({"symbol": w["symbol"], "price": w["price"], "gap_pct": round(max(0, 2 - c["long"]) * 50.0, 1),
+                            "what": f"{c['long']} dos top traders comprados, {c.get('new_longs_1h', 0)} entraram em 1h (precisa 2 + 1 entrando)"})
+    return sorted(out, key=lambda o: abs(o["gap_pct"]))[:8]
+
+
+@router.get("/arena/bot/{model}")
+def arena_bot(model: str):
+    """Everything about one bot for its card's modal: record (lab and real), trades, daily results, mood,
+    coins it is closest to buying and a 24h/48h projection from its own numbers."""
+    from statistics import pstdev
+    from src.solana import arena, hl_live, learning
+    eng = arena.bots().get(model)
+    if not eng:
+        raise HTTPException(404, "bot não existe")
+    lb = next((r for r in arena.leaderboard() if r["model"] == model), {})
+    lab = eng.ledger.closed_trades()
+    real = [t for t in hl_live.get_live_engine().ledger.closed_trades() if t["strategy"] == model]
+    pos_lab = [{"symbol": p["symbol"], "opened_at": p["opened_at"], "cost": round(p["cost_usd"], 2),
+                "now": round(p["mark_value"] or p["cost_usd"], 2), "pnl": round((p["mark_value"] or p["cost_usd"]) - p["cost_usd"], 4),
+                "stop": p["stop_price"], "tp": p["tp_price"]} for p in eng.ledger.positions()]
+    pos_real = [{"symbol": p["symbol"], "opened_at": p["opened_at"], "cost": round(p["cost_usd"], 2),
+                 "now": round(p["mark_value"] or p["cost_usd"], 2), "pnl": round((p["mark_value"] or p["cost_usd"]) - p["cost_usd"], 4)}
+                for p in hl_live.get_live_engine().ledger.positions() if p["strategy"] == model]
+    days: dict[str, dict] = {}
+    for src, rows in (("lab", lab), ("real", real)):
+        for t in rows:
+            d = days.setdefault(datetime.fromisoformat(t["exit_ts"]).astimezone(cfg.TZ).date().isoformat(),
+                                {"lab": 0.0, "real": 0.0, "trades": 0})
+            d[src] = round(d[src] + t["pnl_usd"], 4)
+            d["trades"] += 1
+    st = trade_stats(lab)
+    st.pop("best", None), st.pop("worst", None)
+    first = min((t["entry_ts"] for t in lab), default=None)
+    active_days = max((datetime.now(timezone.utc) - datetime.fromisoformat(first)).total_seconds() / 86400, 1) if first else 1
+    tpd = len(lab) / active_days
+    pnls = [t["pnl_usd"] for t in lab]
+    exp = sum(pnls) / len(pnls) if pnls else 0.0
+    sd = pstdev(pnls) if len(pnls) > 1 else 0.0
+    proj = {}
+    for h in (24, 48):
+        n = tpd * h / 24
+        proj[f"{h}h"] = {"trades": round(n, 1), "expected": round(n * exp, 2),
+                         "low": round(n * exp - sd * n ** 0.5, 2), "high": round(n * exp + sd * n ** 0.5, 2)}
+    open_pnl = sum(p["pnl"] for p in pos_lab)
+    trades = [{"where": "real" if t in real else "lab", "symbol": t["symbol"], "entry_ts": t["entry_ts"], "exit_ts": t["exit_ts"],
+               "cost": round(t["cost_usd"], 2), "pnl": round(t["pnl_usd"], 4), "pct": round(t["pnl_pct"] * 100, 2),
+               "reason": (t.get("reason") or "")[:80]} for t in sorted(lab + real, key=lambda t: t["exit_ts"], reverse=True)[:60]]
+    return {"model": model, "titular": arena.is_titular(model), "board": lb, "stats": st,
+            "real_stats": {k: v for k, v in trade_stats(real).items() if k not in ("best", "worst")},
+            "positions_lab": pos_lab, "positions_real": pos_real, "trades": trades,
+            "days": [{"day": k, **v} for k, v in sorted(days.items(), reverse=True)][:14],
+            "mood": _mood(lab, open_pnl), "learned": learning.summary(learning.record(eng.ledger, model)),
+            "opportunities": _opportunities(model, _market_temp().get("watch") or []),
+            "projection": {**proj, "trades_per_day": round(tpd, 1), "expectancy": round(exp, 4), "sample": len(pnls),
+                           "real_size": arena.is_titular(model)}}
+
+
 @router.get("/admin/live")
 def admin_live():
     """Real account as Hyperliquid sees it right now (balance, positions, fills, prices), refreshed every ~10s."""

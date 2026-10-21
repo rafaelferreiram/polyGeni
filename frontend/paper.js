@@ -136,7 +136,7 @@ function scanNow(btn) {
 function giveCoffee(btn) {
   if (!acc?.running) return toast("Clique em ▶ Start primeiro", true);
   run(btn, "Preparando o café…", () => api("/account/coffee", "POST", { kind: KIND, hours: 4 }),
-      (r) => `☕ Titulares com cafeína até ${hhmm(r.coffee_until)} nas contas simulada e real — modo day trade, até 24 compras por dia`);
+      (r) => `☕ Titulares com cafeína até ${hhmm(r.coffee_until)} nas contas simulada e real — sem pausas, atentos a cada sinal`);
 }
 
 function setMode(mode, btn) {
@@ -408,7 +408,7 @@ function renderGoals(a) {
     card(g.hit, "💰 Ganho do dia (com posições abertas)", `${pnl(g.day_gain_usd)} <small>de +$${g.profit.target_usd.toFixed(2)} (${(g.profit.target_pct * 100).toFixed(1)}%)</small>`,
          pctOf(g.day_gain_usd, g.profit.target_usd), `${g.rest ? "ao bater a meta os bots param de comprar até amanhã · " : ""}trades fechados ${pnl(g.profit.done_usd)} · perda máx. −$${Math.abs(g.loss_limit_usd).toFixed(2)}`),
     card(g.trades.done >= g.trades.target, "🔁 Trades abertos hoje", `${g.trades.done} <small>de ${g.trades.target}</small>`,
-         pctOf(g.trades.done, g.trades.target), `${g.trades.closed} fechados · ${g.trades.wins} com lucro · sem limite baixo: até ${a.coffee_until ? 24 : 12}/dia com sinal válido`),
+         pctOf(g.trades.done, g.trades.target), `${g.trades.closed} fechados · ${g.trades.wins} com lucro · sem limite diário de trades: compra sempre que houver sinal e vaga`),
     card(g.analyses.done >= g.analyses.target_so_far, "🔍 Análises (ciclos) hoje", `${g.analyses.done} <small>de ${g.analyses.target_so_far} até agora</small>`,
          pctOf(g.analyses.done, g.analyses.target_so_far), "1 ciclo a cada 5 min, 29 moedas por ciclo"),
   ].join(""));
@@ -672,9 +672,8 @@ function renderTeam() {
     const chip = cls === "off" ? "⏸ Desligado" : cls === "nokey" ? "🔑 Falta chave" : cls === "working" ? "⚡ Analisando"
       : cls === "holding" ? `📦 Em posição: ${open.join(", ")}` : cls === "sleeping" ? `😴 Dorme até ${hhmm(r.sleep_until)}` : "👀 Vigiando";
     const now = last ? `${last.market ? `<b>${esc(last.market)}</b> · ` : ""}${esc(ACTION_PT[last.action] || last.action || "")}` : "ainda sem decisões";
-    const boostable = r.green_light && !r.green_light.ok;      // reserve bots: tap the card to boost their training
-    return `<div class="tb ${cls}${boostable ? " boostable" : ""}" tabindex="0" style="--c:${L.color}" aria-label="${esc(L.label)}: ${esc(state)}"
-      ${boostable ? `onclick="trainBoost('${esc(m.model)}', this.querySelector('.tboost'))" title="toque para turbinar o treino de hoje"` : ""}>
+    return `<div class="tb ${cls}" tabindex="0" style="--c:${L.color}" aria-label="${esc(L.label)}: ${esc(state)}"
+      onclick="openBot('${esc(m.model)}')" onkeydown="if (event.key === 'Enter') openBot('${esc(m.model)}')" title="clique para ver tudo sobre o bot">
       ${coffee && cls !== "off" ? '<span class="cup" title="com cafeína: sem pausas">☕</span>' : ""}
       <div class="head">${botFace(L.color, L.ico)}
         <div><div class="nm">${esc(L.label)}${r.model_now && r.model_now !== m.model ? ` <small class="green">🚀 ${esc(look(r.model_now).label)}</small>` : reviewOn(r) ? ` <small class="green">🚀 ${esc(look(reviewOn(r).model).label)}</small>` : ""}</div><div class="rl">${esc(L.role)}</div></div></div>
@@ -745,6 +744,71 @@ function greenLine(g) {
   return `<div class="gl" title="Para a conta real: ${g.needed_trades} trades no laboratório, ${g.needed} vencedores, acerto ≥ 60%, fator de lucro ≥ 1,2, lucro líquido > 0. Falta: ${(g.missing || []).join(", ")}">
     <span>🚦 ${g.trades}/${g.needed_trades} trades · ✅ ${g.wins}/${g.needed} · ❌ ${g.trades - g.wins}${g.trades ? ` · acerto ${pct(g.win_rate)} · ${pnl(g.net_usd)}` : ""}</span><i style="width:${w.toFixed(0)}%"></i></div>`;
 }
+// ─── bot modal: everything about one bot ───
+let modalBot = null;
+function closeBot() { modalBot = null; document.getElementById("bot-modal").hidden = true; }
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && modalBot) closeBot(); });
+const dt = (iso) => new Date(iso).toLocaleString("pt-BR", { timeZone: "Europe/Lisbon", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+async function openBot(model) {
+  modalBot = model;
+  document.getElementById("bot-modal").hidden = false;
+  document.getElementById("bm-body").innerHTML = '<div class="empty">Carregando…</div>';
+  await renderBotModal();
+}
+async function renderBotModal() {
+  if (!modalBot) return;
+  const d = await api(`/arena/bot/${encodeURIComponent(modalBot)}`);
+  if (d.model !== modalBot) return;
+  const L = look(d.model), r = d.board || {}, s = d.stats || {}, rs = d.real_stats || {}, g = r.green_light || {}, p = d.projection;
+  const chip = (t) => `<span>${t}</span>`;
+  const chips = [d.titular ? "⚽ titular — opera dinheiro real" : "🪑 reserva — treina no laboratório",
+    r.turbo_until && new Date(r.turbo_until) > new Date() ? `⚡ turbo até ${hhmm(r.turbo_until)}` : "",
+    r.coffee_until && new Date(r.coffee_until) > new Date() ? `☕ café até ${hhmm(r.coffee_until)}` : "",
+    reviewOn(r) ? `🚀 ${esc(look(reviewOn(r).model).label)} revisa até ${hhmm(reviewOn(r).until)}` : ""].filter(Boolean).map(chip).join("");
+  const k = (l, v) => `<div><small>${l}</small><b>${v}</b></div>`;
+  const maxDay = Math.max(...d.days.map((x) => Math.abs(x.lab + x.real)), 0.01);
+  const proj = (h) => `<div class="bm-box"><b>Próximas ${h}</b><br>~${p[h].trades} trades · esperado ${pnl(p[h].expected)}<br>
+    <span class="muted">faixa provável ${pnl(p[h].low)} a ${pnl(p[h].high)}</span></div>`;
+  document.getElementById("bm-body").innerHTML = `
+    <div class="bm-head"><span class="face" aria-hidden="true">${d.mood.emoji}</span>
+      <div><b id="bm-title">${esc(L.ico || "")} ${esc(L.label)}</b> <span class="rl">· ${esc(L.role)}</span>
+        <div class="muted" style="font-size:13px">humor: <b>${esc(d.mood.label)}</b> — ${esc(d.mood.why)}</div><div class="bm-chips">${chips}</div></div></div>
+    <h3>Desempenho no laboratório</h3>
+    <div class="bm-kpis">${k("Resultado", pnl(r.net_usd ?? s.pnl_usd))}${k("Trades", s.trades || 0)}${k("Acerto", pct(s.win_rate))}
+      ${k("Fator de lucro", s.profit_factor ?? "–")}${k("Média por trade", pnl(s.expectancy))}${k("Ganho / perda média", `${pnl(s.avg_win)} / ${pnl(s.avg_loss)}`)}
+      ${k("Tempo médio", s.avg_hold_h != null ? `${s.avg_hold_h}h` : "–")}${k("Trades por dia", p.trades_per_day)}
+      ${!g.ok ? k("Rumo à conta real", `${g.trades || 0}/${g.needed_trades || 20} trades · ${g.wins || 0}/${g.needed || 12} vitórias`) : ""}</div>
+    ${rs.trades ? `<h3>Na conta real</h3><div class="bm-kpis">${k("Resultado", pnl(rs.pnl_usd))}${k("Trades", rs.trades)}${k("Acerto", pct(rs.win_rate))}${k("Média por trade", pnl(rs.expectancy))}</div>` : ""}
+    <h3>Projeção (pelo histórico dele${d.titular ? ", em dinheiro real" : ", no laboratório"})</h3>
+    <div class="bm-two">${proj("24h")}${proj("48h")}</div>
+    <p class="note">Estimativa: trades por dia × média por trade (${p.sample} trades de base). Com poucos trades a faixa é larga — não é promessa.</p>
+    <h3>Possíveis próximas trades</h3>
+    ${d.opportunities.length ? `<div class="tbl"><table><tr><th>Moeda</th><th class="n">Preço</th><th class="n">Distância</th><th>O que falta</th></tr>` +
+      d.opportunities.map((o) => `<tr><td>${coinIcon(o.symbol)}<b>${esc(o.symbol)}</b></td><td class="n">${fmtPx(o.price)}</td>
+        <td class="n">${o.gap_pct > 0 ? "+" : ""}${o.gap_pct}%</td><td>${esc(o.what)}</td></tr>`).join("") + "</table></div>"
+      : '<div class="empty">Nenhuma moeda perto da regra dele agora.</div>'}
+    <h3>🧠 O que ele aprendeu</h3>
+    <div class="bm-box">${d.learned.avoid.length ? `Evita: ${d.learned.avoid.map((x) => `<b>${esc(x.tag)}</b> (${x.wins}/${x.n}, ${pnl(x.pnl)})`).join(", ")}<br>` : ""}
+      ${d.learned.best.length ? `Vai melhor em: ${d.learned.best.map((x) => `<b>${esc(x.tag)}</b> (${x.wins}/${x.n}, ${pnl(x.pnl)})`).join(", ")}` : ""}
+      ${!d.learned.avoid.length && !d.learned.best.length ? `Aprendendo · ${d.learned.seen} trades analisados (precisa de 6 na mesma situação para tirar conclusões)` : ""}</div>
+    <h3>Posições abertas</h3>
+    ${[...d.positions_real.map((x) => ({ ...x, w: "💰 real" })), ...d.positions_lab.map((x) => ({ ...x, w: "🧪 lab" }))].map((x) =>
+      `<div class="bm-box" style="margin-bottom:6px">${x.w} · ${coinIcon(x.symbol)}<b>${esc(x.symbol)}</b> desde ${dt(x.opened_at)} · investido ${usd(x.cost)} → ${usd(x.now)} · ${pnl(x.pnl)}</div>`).join("")
+      || '<div class="empty">Nenhuma posição aberta.</div>'}
+    <h3>Resultado por dia</h3>
+    ${d.days.length ? `<div class="bm-days">${[...d.days].reverse().map((x) => { const v = x.lab + x.real;
+      return `<div title="${x.day}: lab ${usd(x.lab)} · real ${usd(x.real)} · ${x.trades} trades"><small>${v >= 0 ? "+" : "−"}$${Math.abs(v).toFixed(2)}</small>
+        <span style="height:${(Math.abs(v) / maxDay) * 60}px;background:${v >= 0 ? "var(--green)" : "var(--red)"}"></span><small>${x.day.slice(8)}/${x.day.slice(5, 7)}</small></div>`; }).join("")}</div>`
+      : '<div class="empty">Sem trades fechados ainda.</div>'}
+    <h3>Trades (${d.trades.length} mais recentes)</h3>
+    ${d.trades.length ? `<div class="tbl"><table><tr><th>Fechou</th><th>Onde</th><th>Moeda</th><th class="n">Investido</th><th class="n">Resultado</th><th class="n">%</th><th>Como saiu</th></tr>` +
+      d.trades.map((t) => `<tr><td>${dt(t.exit_ts)}</td><td>${t.where === "real" ? "💰 real" : "🧪 lab"}</td><td>${coinIcon(t.symbol)}${esc(t.symbol)}</td>
+        <td class="n">${usd(t.cost)}</td><td class="n">${pnl(t.pnl)}</td><td class="n ${t.pct >= 0 ? "green" : "red"}">${t.pct}%</td><td class="muted">${esc(t.reason)}</td></tr>`).join("") + "</table></div>"
+      : '<div class="empty">Sem trades ainda.</div>'}
+    ${REMOTE ? "" : `<div class="bm-chips" style="margin-top:16px">${trainButton(d.model, r)}${coffeeButton(d.model, r)}</div>`}`;
+}
+setInterval(() => { if (modalBot) safe(renderBotModal); }, 15000);
+
 // self-learning: what the bot learned from its own closed trades (it skips situations it keeps losing in)
 function learnedLine(l) {
   if (!l || !l.seen) return "";
