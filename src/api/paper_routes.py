@@ -596,6 +596,20 @@ def goals(eng) -> dict:
             "day_gain_usd": round((p := eng.portfolio()).equity - p.day_start_equity, 4)}   # deposits are not gains
 
 
+def _live_marks(positions: list[dict]) -> list[dict]:
+    """Open positions at the live Hyperliquid price (cached ~5s) instead of the last cycle's mark (up to 5 min old)."""
+    from src.solana import hl_live
+    try:
+        prices = hl_live.live_snapshot()["prices"]
+    except Exception:
+        return positions
+    out = []
+    for p in positions:
+        px = prices.get(p["symbol"])
+        out.append({**p, "mark_price": px, "mark_value": p["qty"] * px, "live": True} if px and not p["mint"].endswith("~short") else p)
+    return out
+
+
 def _market_temp() -> dict:
     """Market data is the same for both accounts (Hyperliquid mainnet): show the freshest scan of either one."""
     temps = [_account_engine(k).ledger.get_state("market_temp") or {} for k in ("sim", "real")]
@@ -629,7 +643,7 @@ def account(kind: str = "sim"):
         "buying_power": round(max(0.0, min(p.equity, cfg.LIVE_MAX_CAPITAL_USD) * cfg.LIVE_LEVERAGE * 0.97 - p.exposure), 4),
         "pnl_usd": round(p.equity - led.contributed(), 4), "contributed": led.contributed(),
         "performance": performance(led.equity_history(100_000)),
-        "positions": led.positions(), "trades": trades[:100],
+        "positions": _live_marks(led.positions()), "trades": trades[:100],
         "win_rate": round(sum(t["pnl_usd"] > 0 for t in trades) / len(trades), 3) if trades else None,
         "decisions": led.decisions(25), "last_cycle": led.get_state("last_cycle"), "cycle": eng.cycle,
         "heartbeat": led.get_state("heartbeat"), "cycle_interval_sec": cfg.LIVE_CYCLE_SEC,
@@ -793,7 +807,7 @@ def account_close(req: ClosePos):
 def account_position(kind: str, mint: str):
     """Everything about one open position: when, how much, how it is doing, why it was opened."""
     eng = _account_engine(kind)
-    pos = next((p for p in eng.ledger.positions() if p["mint"] == mint), None)
+    pos = next((p for p in _live_marks(eng.ledger.positions()) if p["mint"] == mint), None)
     if pos is None:
         raise HTTPException(404, "posição não encontrada")
     entry = next((d for d in eng.ledger.decisions(500, kind="entry") if d.get("order_id") == pos["entry_order_id"]

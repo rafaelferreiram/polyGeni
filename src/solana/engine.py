@@ -204,8 +204,8 @@ class PaperEngine:
             levels[strat.name] = rule.relax = 0 if behind < 1 else 1 if behind < 2 else 2
             if levels[strat.name] != prev.get(strat.name, 0):
                 self.ledger.log_decision("quota", strategy=strat.name, reason=(
-                    f"⏱ cota do dia: {done} de {cfg.DAILY_MIN_TRADES} operações completas — entrada um pouco mais solta (nível {levels[strat.name]}) e alvo mais perto"
-                    if levels[strat.name] else f"✅ cota do dia em dia: {done} de {cfg.DAILY_MIN_TRADES} operações completas"))
+                    f"⏱ {who}: cota do dia {done} de {cfg.DAILY_MIN_TRADES} operações completas — entrada um pouco mais solta (nível {levels[strat.name]}) e alvo mais perto"
+                    if levels[strat.name] else f"✅ {who}: cota do dia em dia ({done} de {cfg.DAILY_MIN_TRADES})"))
         self.ledger.set_state("quota_levels", levels)
         return levels
 
@@ -350,8 +350,12 @@ class PaperEngine:
     def manual_exit(self, mint: str) -> dict:
         """The user closes an open position from the dashboard (market sell; on the real account the exchange's
         stop/target orders are cancelled by the broker). Recorded like any exit."""
-        if not self._busy.acquire(timeout=120):             # never race a running cycle
-            raise ValueError("os bots estão no meio de um ciclo — tente de novo em instantes")
+        self._yield = True                                  # a running cycle stops at the next coin
+        try:
+            if not self._busy.acquire(timeout=120):         # never race a running cycle
+                raise ValueError("os bots estão no meio de um ciclo — tente de novo em instantes")
+        finally:
+            self._yield = False
         try:
             pos = next((p for p in self.ledger.positions() if p["mint"] == mint), None)
             if pos is None:
@@ -379,8 +383,12 @@ class PaperEngine:
         candles = self._candles(c)[:-1]
         stop, tp, a = _atr_stops(candles, 2.0, 3.0)
         sig = Signal("manual", c.price_usd, stop, tp, f"compra manual pelo painel (até ${usd:.2f})", {"atr": a})
-        if not self._busy.acquire(timeout=120):             # never race a running cycle
-            raise ValueError("os bots estão no meio de um ciclo — tente de novo em instantes")
+        self._yield = True                                  # a running cycle stops at the next coin
+        try:
+            if not self._busy.acquire(timeout=120):         # never race a running cycle
+                raise ValueError("os bots estão no meio de um ciclo — tente de novo em instantes")
+        finally:
+            self._yield = False
         try:
             risk = self.risk.evaluate(sig, c.mint, 1.0, self.portfolio(), self.profiles.get(c.venue, {}).get("max_pos_pct"),
                                       max_usd=usd)
@@ -476,6 +484,8 @@ class PaperEngine:
         paused = set(self.paused())
         ready = []
         for c in candidates:
+            if self.__dict__.get("_yield"):          # the user is buying/selling by hand: finish the cycle now
+                break
             if c.mint in paused or c.venue in paused:
                 continue
             profile = self.profiles.get(c.venue, {})
@@ -516,6 +526,8 @@ class PaperEngine:
         held = {x["mint"] for x in self.ledger.positions()}
         quota = self._quota_levels()
         for c, candles, safety, profile in ready:
+            if self.__dict__.get("_yield"):
+                break
             if c.mint in held:          # already holding it: its stop/target and exit review handle it — no AI tokens
                 continue
             for strat in self._ordered(c):

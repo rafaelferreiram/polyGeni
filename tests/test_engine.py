@@ -416,3 +416,11 @@ def test_titular_behind_its_daily_quota_loosens_a_notch_and_aims_closer(ledger, 
     assert ledger.decisions(kind="quota")
     monkeypatch.setattr(arena, "is_titular", lambda m: False)        # reserves never get the quota
     assert eng._quota_levels() == {} and eng.strategies[0].relax == 0
+
+
+def test_a_manual_order_makes_a_running_cycle_stop_early(ledger):
+    eng = build(ledger, Price(1.0))
+    eng._yield = True                         # what manual_exit/manual_entry set while waiting for the cycle
+    assert eng.run_cycle()["entries"] == 0 and ledger.positions() == []
+    eng._yield = False
+    assert eng.run_cycle()["entries"] == 1

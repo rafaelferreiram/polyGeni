@@ -457,7 +457,7 @@ function sellPos(mint, btn) {
   const p = acc.positions.find((x) => x.mint === mint);
   const res = p ? (p.mark_value ?? p.cost_usd) - p.cost_usd : 0;
   if (!confirm(`Vender ${p?.symbol || mint} agora a preço de mercado${KIND === "real" ? " com DINHEIRO REAL" : " (simulação)"}?\n\nResultado atual ≈ ${res >= 0 ? "+" : "−"}$${Math.abs(res).toFixed(2)}. O stop e o alvo na corretora são cancelados.`)) return;
-  run(btn, "Vendendo…", () => api("/account/close", "POST", { kind: KIND, mint }),
+  run(btn, "Vendendo… (os bots pausam a análise, alguns segundos)", () => api("/account/close", "POST", { kind: KIND, mint }),
       (r) => { closePos(); return `✓ Vendeu ${r.symbol} a ${fmtPx(r.price)} · resultado ${r.pnl_usd >= 0 ? "+" : "−"}$${Math.abs(r.pnl_usd).toFixed(2)}`; });
 }
 setInterval(() => { if (openMint) safe(() => openPos(openMint)); }, 15000);
