@@ -86,3 +86,8 @@ MARKET_PROFILES = {
     "hyperliquid": {"max_pos_pct": 0.15, "stop_mult": 1.5},
     **_json.loads(os.getenv("MARKET_PROFILES", "{}")),
 }
+
+# Watch-only EVM wallets (public reads only)
+ARBITRUM_RPC_URL = os.getenv("ARBITRUM_RPC_URL", "https://arb1.arbitrum.io/rpc")
+ARBITRUM_USDC = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"   # native USDC on Arbitrum One
+HYPERLIQUID_TESTNET_INFO_URL = "https://api.hyperliquid-testnet.xyz/info"

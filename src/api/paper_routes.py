@@ -17,6 +17,7 @@ from src.solana import market_data as md
 
 router = APIRouter()
 BASE58 = re.compile(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$")
+EVM = re.compile(r"^0x[0-9a-fA-F]{40}$")
 
 # State-changing endpoints: loopback clients only, loopback Host header (anti DNS-rebinding),
 # and a per-process token the dashboard fetches same-origin (cross-site pages cannot read it => CSRF-safe).
@@ -125,6 +126,7 @@ def status():
         "performance": performance(led.equity_history(100_000)),
         "venues": eng.executor.venues,
         "paused": eng.paused(),
+        "live": eng.ledger.get_state("live", {}),
         "debate_llm": {"enabled": eng.debate.enabled, "model": cfg.DEBATE_MODEL if eng.debate.enabled else None,
                        "mcp_servers": bool(cfg.DEBATE_MCP_SERVERS)},
         "limits": {"max_position_pct": eng.risk.max_pos_pct, "max_exposure_pct": eng.risk.max_exposure_pct,
@@ -260,7 +262,8 @@ def wallets():
     out = []
     for w in _led().get_state("watch_wallets", []):
         try:
-            out.append({**w, **md.wallet_balances(w["address"])})
+            bal = md.evm_wallet_balances(w["address"]) if EVM.match(w["address"]) else md.wallet_balances(w["address"])
+            out.append({**w, **bal})
         except Exception as e:
             out.append({**w, "error": str(e)})
     return {"mode": "WATCH-ONLY", "wallets": out}
@@ -268,8 +271,10 @@ def wallets():
 
 @router.post("/wallets", dependencies=LOCAL)
 def add_wallet(req: Wallet):
-    if not BASE58.match(req.address):
-        raise HTTPException(400, "not a Solana public address (never paste a private key or seed phrase)")
+    if not (BASE58.match(req.address) or EVM.match(req.address)):
+        raise HTTPException(400, "not a public Solana or EVM (0x) address — never paste a private key or seed phrase")
+    if len(req.address) > 44 and not EVM.match(req.address):
+        raise HTTPException(400, "that looks like a private key, not an address")
     ws = [w for w in _led().get_state("watch_wallets", []) if w["address"] != req.address]
     _led().set_state("watch_wallets", ws + [{"address": req.address, "label": req.label[:40]}])
     return {"ok": True}

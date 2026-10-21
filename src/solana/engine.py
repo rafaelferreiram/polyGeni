@@ -78,6 +78,9 @@ class PaperEngine:
     def _agent(self, name: str, **kw):
         agents = self.ledger.get_state("agents", {})
         a = agents.setdefault(name, {"approved": 0, "vetoed": 0})
+        # live view: which agent is acting right now and on what
+        self.ledger.set_state("live", {"agent": name, "ts": now_iso(), "detail": kw.get("last_reason", ""),
+                                       "cycle": self.cycle, "running": True})
         a.update(last_run=now_iso(), last_ok=not kw.get("vetoed"),
                  **{k: v for k, v in kw.items() if k not in ("approved", "vetoed")})
         a["approved"] += kw.get("approved", 0)
@@ -197,6 +200,8 @@ class PaperEngine:
             stats.update(equity=round(p.equity, 4), cash=round(p.cash, 4), positions=len(p.open_mints),
                          finished=now_iso())
             self.ledger.set_state("last_cycle", stats)
+            self.ledger.set_state("live", {"agent": None, "ts": now_iso(), "detail": "cycle finished",
+                                           "cycle": cycle, "running": False})
             logger.info(f"[paper] cycle {cycle}: {stats}")
         return stats
 

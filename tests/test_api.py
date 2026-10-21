@@ -86,3 +86,16 @@ def test_performance_vs_hold():
     assert perf["all"]["gain_usd"] == pytest.approx(5)
     assert perf["all"]["twr"] == pytest.approx(0.05)
     assert perf["all"]["hold_sol"] == pytest.approx(0.10)
+
+
+def test_wallets_accept_public_evm_and_solana_only(client, local, monkeypatch):
+    from src.solana import market_data as md
+    monkeypatch.setattr(md, "evm_wallet_balances", lambda a: {"address": a, "chain": "evm", "arbitrum_usdc": 7.0})
+    monkeypatch.setattr(md, "wallet_balances", lambda a: {"address": a, "sol": 1.0, "tokens": []})
+    for addr in ("0x374c90fC8Deb979D084e9799117700e908632240", "6ZeDkAdaEd6L4Ruq9PXQwnNS7tzVFCuTowLppr4iYx7D"):
+        assert client.post("/api/paper/wallets", json={"address": addr}, headers=local).status_code == 200
+    for bad in ("word " * 12, "0x" + "a" * 64, "5" * 88):   # seed phrase / EVM private key / Solana secret key
+        assert client.post("/api/paper/wallets", json={"address": bad}, headers=local).status_code == 400
+    ws = client.get("/api/paper/wallets").json()["wallets"]
+    assert {w.get("chain", "sol") for w in ws} == {"evm", "sol"}
+    assert next(w for w in ws if w.get("chain") == "evm")["arbitrum_usdc"] == 7.0
