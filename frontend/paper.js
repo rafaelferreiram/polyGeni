@@ -612,13 +612,20 @@ function rankBy(k) {
   document.querySelectorAll("#rank-sort button").forEach((b) => b.classList.toggle("on", b.dataset.r === k));
   renderRanking();
 }
+let RANK_WHO = "all";
+function rankWho(w) {
+  RANK_WHO = w;
+  document.querySelectorAll("#rank-who button").forEach((b) => b.classList.toggle("on", b.dataset.w === w));
+  renderRanking();
+}
+const isTitular = (r) => !!(r.green_light?.trusted || r.green_light?.ok);
 function renderRanking() {
-  const rows = (lastArena?.leaderboard || []).map((r) => ({ ...r, wins: Math.round((r.trades || 0) * (r.win_rate || 0)), net: r.net_usd ?? r.pnl_usd ?? 0 }));
+  const rows = (lastArena?.leaderboard || []).filter((r) => RANK_WHO === "all" || (RANK_WHO === "tit") === isTitular(r)).map((r) => ({ ...r, wins: Math.round((r.trades || 0) * (r.win_rate || 0)), net: r.net_usd ?? r.pnl_usd ?? 0 }));
   rows.sort((a, b) => RANK === "wins" ? (b.wins - a.wins) || (b.net - a.net) : (b.net - a.net) || (b.wins - a.wins));
   const medal = (i) => ["🥇", "🥈", "🥉"][i] || `${i + 1}º`;
   setHTML("rank-table", `<tr><th></th><th>Bot</th><th>Lucro</th><th>Lucrativos</th><th>Trades</th><th>Acerto</th></tr>` +
     rows.map((r, i) => { const L = look(r.model); return `<tr class="${i === 0 ? "me1" : ""}"><td class="pos">${medal(i)}</td>
-      <td>${esc(L.ico || "")} <b>${esc(L.label)}</b>${r.green_light?.trusted || r.green_light?.ok ? " ⚽" : " 🪑"}${r.turbo_until && new Date(r.turbo_until) > new Date() ? " ⚡" : ""}</td>
+      <td>${esc(L.ico || "")} <b>${esc(L.label)}</b>${isTitular(r) ? " ⚽" : " 🪑"}${r.turbo_until && new Date(r.turbo_until) > new Date() ? " ⚡" : ""}</td>
       <td>${pnl(r.net)}</td><td>${r.wins}</td><td>${r.trades || 0}</td><td>${r.trades ? pct(r.win_rate) : "–"}</td></tr>`; }).join(""));
 }
 
