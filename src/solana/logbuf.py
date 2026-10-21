@@ -23,7 +23,7 @@ def label(path: str) -> str:
     if name == "shadow":
         return "sim"
     if name.startswith("arena_"):
-        return "lab:" + {"rules": "são-marcos", "trend": "endrick", "trend4h": "gabriel-jesus", "whales": "evair",
+        return "lab:" + {"rules": "são-marcos", "trend": "endrick", "trend4h": "gabriel-jesus", "whales": "evair", "copy": "veiga",
                          "claude-haiku-5-5": "valdivia"}.get(name[6:], name[6:].replace("claude-", ""))
     if name == "paper":
         return "solana-legado"

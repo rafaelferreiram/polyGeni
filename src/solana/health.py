@@ -96,6 +96,10 @@ CHECKS = [
     ("Notícias cripto", "CoinDesk, Cointelegraph, Decrypt, The Block → bots e painel",
      lambda: (lambda st: (st["ok"], ", ".join(f"{k} {v}" for k, v in st["sources"].items()) or "a carregar…"))(
          __import__("src.solana.news", fromlist=["status"]).status())),
+    ("Top traders Hyperliquid", "ranking público + posições dos 10 melhores a cada 2 min",
+     lambda: (lambda st, n: (bool(n) if st["polled_at"] or st["error"] else None,
+                             f"{n} traders seguidos" + (f" · {st['error']}" if st["error"] else "") if n else (st["error"] or "a carregar ranking…")))(
+         __import__("src.solana.toptraders", fromlist=["x"])._status, len(__import__("src.solana.toptraders", fromlist=["x"])._traders))),
     ("Anthropic Claude", "decisões do bot de IA e debate", _anthropic),
     ("Arbitrum RPC", "saldos da MetaMask no painel", _arbitrum),
     ("Jupiter", "paper de tokens Solana (legado)",

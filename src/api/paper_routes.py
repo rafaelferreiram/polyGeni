@@ -840,6 +840,13 @@ def account_equity(kind: str = "sim", points: int = 400):
                      for r in rows[::step]]}
 
 
+@router.get("/toptraders")
+def top_traders():
+    """The top 10 Hyperliquid traders, their positions, recent moves and their consensus on our coins."""
+    from src.solana import toptraders
+    return toptraders.board(cfg.HL_LIVE_MARKETS)
+
+
 @router.get("/whales")
 def whales_board():
     """Whale flow per coin (last 1h / 4h) and the latest whale trades, from the live Hyperliquid trades feed."""

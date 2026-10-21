@@ -296,8 +296,30 @@ class WhaleFollow:
         return Signal(self.name, closes[-1], stop, tp, self.last[market]["reason"], {"atr": a, "whale_net_1h": h.get("net_usd")})
 
 
+class CopyTop(WhaleFollow):
+    """Copies the best traders of Hyperliquid, at our own (small, proportional) size: buy a coin when at least 2 of
+    the top 10 are long, at least one of them entered in the last hour, more of them are long than short, and the coin
+    is in an uptrend. Stop 2 ATR, target 3 ATR, closed within 24h. Lab bot until it proves itself."""
+    name = "copy"
+
+    def decide(self, candles: list[dict], context: dict) -> Signal | None:
+        market, t = context.get("symbol", "?"), context.get("top_traders") or {}
+        closes = [c["close"] for c in candles]
+        if len(closes) < 210:
+            return None
+        up = closes[-1] > ema(closes[-600:], 200)
+        crowd = t.get("long", 0) >= 2 and t.get("new_longs_1h", 0) >= 1 and t.get("long", 0) > t.get("short", 0)
+        self.last[market] = {"action": "BUY" if up and crowd else "HOLD", "model": self.name, "t": candles[-1]["t"],
+                             "reason": (f"{t.get('long')} dos top {t.get('of')} traders comprados, {t.get('new_longs_1h')} entraram na última hora"
+                                        if up and crowd else f"top traders: {t.get('long', 0)} comprados, {t.get('new_longs_1h', 0)} novas entradas")}
+        if not (up and crowd) or _crowded(candles, 0.0001):
+            return None
+        stop, tp, a = _atr_stops(candles, 2.0, 3.0)
+        return Signal(self.name, closes[-1], stop, tp, self.last[market]["reason"], {"atr": a, "top_longs": t.get("long")})
+
+
 # deterministic bots (no LLM, no API cost): model name -> strategy
-RULE_BOTS = {"rules": MeanReversionATR, "trend": TrendStrong, "trend4h": Trend4h, "whales": WhaleFollow}
+RULE_BOTS = {"rules": MeanReversionATR, "trend": TrendStrong, "trend4h": Trend4h, "whales": WhaleFollow, "copy": CopyTop}
 
 
 def features(candles: list[dict]) -> dict:

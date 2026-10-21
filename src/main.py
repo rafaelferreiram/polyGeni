@@ -44,3 +44,5 @@ def startup():
     from src.solana import whales, news
     whales.start()      # read-only WebSocket of big trades on the coins the bots watch
     news.start()        # crypto news RSS, tagged by coin, every 5 min
+    from src.solana import toptraders
+    toptraders.start()  # top 10 Hyperliquid traders: leaderboard every 6h, their positions every 2 min

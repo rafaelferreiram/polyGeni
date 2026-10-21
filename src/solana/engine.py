@@ -443,10 +443,11 @@ class PaperEngine:
                     if not strat.enabled:
                         self._agent(strat.name, last_reason="sem ANTHROPIC_API_KEY — este bot não decide", vetoed=1)
                         continue
-                    from src.solana import news, whales
+                    from src.solana import news, toptraders, whales
                     sig = strat.decide(candles, {**c.summary(), "symbol": c.symbol, "venue": c.venue,
                                                  "whale_flow": whales.summary(c.symbol), "market_breadth": breadth,
-                                                 "news_12h": news.for_llm(c.symbol)})
+                                                 "news_12h": news.for_llm(c.symbol),
+                                                 "top_traders": toptraders.consensus(c.symbol)})
                     d = strat.last.get(c.symbol, {})
                     msg = f"{c.symbol}: {d.get('action', 'HOLD')} — {d.get('reason', '')}"[:200]
                     self._agent(strat.name, last_reason=msg, approved=int(sig is not None))

@@ -243,6 +243,14 @@
     .hot { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
     .hot .h { background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 5px 12px; font-size: 13px; cursor: pointer; }
     .hot .h b { color: var(--accent); }
+    .coin { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+    .ci { width: 18px; height: 18px; border-radius: 50%; flex: none; vertical-align: -4px; background: var(--surface-2); }
+    .ci-l { display: inline-flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: var(--muted); border: 1px solid var(--border); }
+    .coin-tag .ci { width: 13px; height: 13px; margin-right: 3px; vertical-align: -2px; }
+    .pos .sym .ci { width: 24px; height: 24px; }
+    .pos-chip { display: inline-flex; align-items: center; gap: 4px; margin: 2px 4px 2px 0; padding: 2px 8px; border-radius: 999px; font-size: 11.5px;
+                border: 1px solid var(--border); white-space: nowrap; } .pos-chip .ci { width: 14px; height: 14px; }
+    .pos-chip.long { border-color: rgba(52,211,153,.4); } .pos-chip.short { border-color: rgba(248,113,113,.4); }
     .three { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-top: 14px; }
     .funds { display: grid; grid-template-columns: 180px 1fr; gap: 18px; align-items: start; }
     @media (max-width: 600px) { .funds { grid-template-columns: 1fr; } }
@@ -285,7 +293,15 @@
             display: flex; align-items: center; gap: 10px; }
     .band::after { content: ""; flex: 1; height: 1px; background: var(--border); }
     .two > .panel { min-width: 0; }
-    @media (max-width: 600px) { .statusbar { padding: 8px 12px; } .sb-nav { display: none; } .sb-items { gap: 6px 14px; } }
+    @media (max-width: 600px) {
+      .statusbar { padding: 8px 12px; } .sb-nav { display: none; }
+      .sb-items { flex-wrap: nowrap; overflow-x: auto; gap: 14px; width: 100%; scrollbar-width: none; } .sb-items span { flex: none; }
+      .kpis { grid-template-columns: 1fr 1fr; gap: 10px; } .kpi { padding: 12px; } .kpi .v { font-size: 20px; } .kpi .s { font-size: 11px; }
+      .goals, .thermos, .positions { grid-template-columns: 1fr; }
+      .chartbox { height: 280px; } .boost { font-size: 12px; } .boost select { max-width: 100%; }
+      .whale-grid .flows { grid-template-columns: 1fr 1fr; }
+      .pos-chip { font-size: 11px; }
+    }
     .goals { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
     .goal { background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
     .goal .k { font-size: 12px; color: var(--muted); } .goal .v { font-size: 20px; font-weight: 650; margin: 4px 0 8px; font-variant-numeric: tabular-nums; }
@@ -379,7 +395,7 @@
     </div>
   </header>
   <div class="statusbar"><div class="sb-items" id="statusbar-items"></div>
-    <nav class="sb-nav" aria-label="Seções"><a href="#g-visao">Visão geral</a><a href="#posicoes">Posições</a><a href="#radar">Radar</a><a href="#grafico">Gráfico</a><a href="#baleias">Baleias</a><a href="#noticias">Notícias</a><a href="#team">Bots</a><a href="#logs">Logs</a><a href="#g-hist">Histórico</a><a href="#g-sist">Sistema</a></nav></div>
+    <nav class="sb-nav" aria-label="Seções"><a href="#g-visao">Visão geral</a><a href="#posicoes">Posições</a><a href="#radar">Radar</a><a href="#grafico">Gráfico</a><a href="#baleias">Baleias</a><a href="#toptraders">Top traders</a><a href="#noticias">Notícias</a><a href="#team">Bots</a><a href="#logs">Logs</a><a href="#g-hist">Histórico</a><a href="#g-sist">Sistema</a></nav></div>
   <div class="alert" id="alert" hidden><span>🛑 <span id="alert-text"></span></span><button onclick="killReset(this)">Rearmar</button></div>
   <div class="scanbar" id="scanbar" hidden><span class="spin"></span><span id="scan-text">Analisando o mercado…</span></div>
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
@@ -467,6 +483,16 @@
       <div class="legend"><span>🐋 baleia = ordem a mercado ≥ $25 mil e ≥ 0,02% do volume diário da moeda</span><span>🟢 comprando / 🔴 vendendo = mais de 30% de diferença entre compras e vendas</span><span>🧠 o bot de IA recebe este fluxo antes de decidir</span></div>
     </section>
 
+    <section class="panel" id="toptraders">
+      <h2><span>👑 Top 10 traders da Hyperliquid <span class="tag" id="top-tag">–</span></span></h2>
+      <div class="tbl"><table id="top-table"></table></div>
+      <div class="note" style="margin:14px 0 8px">Últimos movimentos deles (comparados a cada 2 min)</div>
+      <div class="tbl" style="max-height:260px"><table id="top-moves"></table></div>
+      <div class="legend"><span>Escolhidos no ranking público: lucrativos no mês, na semana e no total, ROI realista, conta ≥ $100 mil, operando de verdade (sem market makers)</span>
+        <span>👑 <b>Veiga</b> copia em escala pequena quando ≥ 2 deles estão comprados numa moeda nossa e um acabou de entrar, numa alta — sempre com stop, alvo e aprovação do comitê (Coordenador + Debate + Risk)</span>
+        <span>🧠 Valdivia (IA) também vê o que eles estão fazendo antes de decidir</span></div>
+    </section>
+
     <section class="panel" id="noticias">
       <h2><span>📰 Notícias <span class="tag" id="news-tag">–</span></span>
         <span class="ctrls"><select id="news-coin" aria-label="Moeda" onchange="newsAll = true; loadNews()"><option value="">Todas as moedas</option></select>
@@ -494,7 +520,7 @@
         <button onclick="startBoost(this)">Ativar</button>
         <span class="note" id="boost-status"></span>
       </div>
-      <div class="legend"><span>🏆 Recompensa: 1 ponto = 1 centavo de lucro líquido (30 dias) → mais pontos = prioridade e posição cheia; prejuízo = posição mínima</span><span>🛡️ Na conta real: São Marcos e Endrick já operam; Gabriel Jesus, Evair e Valdivia só depois de 10 trades com lucro no laboratório</span><span>👆 Passe o mouse num bot para ver detalhes</span></div>
+      <div class="legend"><span>🏆 Recompensa: 1 ponto = 1 centavo de lucro líquido (30 dias) → mais pontos = prioridade e posição cheia; prejuízo = posição mínima</span><span>🛡️ Na conta real: São Marcos e Endrick já operam; Gabriel Jesus, Evair, Veiga e Valdivia só depois de 10 trades com lucro no laboratório</span><span>👆 Passe o mouse num bot para ver detalhes</span></div>
     </section>
     <section class="panel" id="logs">
       <h2><span>Logs ao vivo <span class="live-chip" id="log-live">ao vivo</span></span>
@@ -590,6 +616,6 @@
 
   <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <script src="https://unpkg.com/qrcode-generator@1.4.4/qrcode.js"></script>
-  <script src="/static/paper.js?v=50"></script>
+  <script src="/static/paper.js?v=53"></script>
 </body>
 </html>

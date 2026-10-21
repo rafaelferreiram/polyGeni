@@ -21,6 +21,19 @@ const pnl = (v) => {
   const n = Number(v);
   return `<span class="${n >= 0 ? "green" : "red"}">${n >= 0 ? "+" : "−"}$${Math.abs(n).toFixed(2)}</span>`;
 };
+// coin icons (CoinMarketCap static images by id); unknown coins get a letter badge
+const CMC_ID = { BTC: 1, ETH: 1027, XRP: 52, BNB: 1839, SOL: 5426, DOGE: 74, ADA: 2010, TRX: 1958, HBAR: 4642, LINK: 1975,
+  AVAX: 5805, XLM: 512, SUI: 20947, BCH: 1831, LTC: 2, DOT: 6636, UNI: 7083, NEAR: 6535, AAVE: 7278, ZEC: 1437, XMR: 328,
+  HYPE: 32196, TAO: 22974, ONDO: 21159, ENA: 30171, WLD: 13502, ARB: 11841, ZRO: 26997, kPEPE: 24478, PEPE: 24478,
+  USDC: 3408, OP: 11840, APT: 21794, INJ: 7226, SEI: 23149, TIA: 22861, JUP: 29210, FIL: 2280, ATOM: 3794, ETC: 1321, ICP: 8916,
+  POL: 28321, RENDER: 5690, STX: 4847, CRV: 6538, PUMP: 36507, FARTCOIN: 33597, TRUMP: 35336, WIF: 28752, BONK: 23095,
+  PENGU: 34466, VIRTUAL: 29420, KAITO: 35509, BERA: 24647, S: 32684, MKR: 1518, LDO: 8000, PENDLE: 9481, JTO: 28541 };
+const coinIcon = (sym) => {
+  const id = CMC_ID[sym];
+  return id ? `<img class="ci" src="https://s2.coinmarketcap.com/static/img/coins/64x64/${id}.png" alt="" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'ci ci-l',textContent:'${esc(String(sym)[0] || "?")}'}))">`
+            : `<span class="ci ci-l">${esc(String(sym || "?").replace(/^k/, "")[0] || "?")}</span>`;
+};
+const coin = (sym) => `<span class="coin">${coinIcon(sym)}<b>${esc(sym)}</b></span>`;
 const pct = (v) => (v === null || v === undefined ? "–" : `${(v * 100).toFixed(2)}%`);
 const time = (iso) => (iso ? new Date(iso).toLocaleString("pt-BR") : "–");
 const short = (m) => (m ? `${m.slice(0, 4)}…${m.slice(-4)}` : "");
@@ -304,7 +317,7 @@ async function refresh() {
   // trades
   document.getElementById("trades-total").innerHTML = a.trades.length ? pnl(a.trades.reduce((x, t) => x + t.pnl_usd, 0)) : "";
   table("trades", ["Ativo", "Entrada → saída", "Lucro", "Motivo"], a.trades.map((t) => `
-    <tr><td><b>${esc(t.symbol)}</b><br><span class="muted">${time(t.exit_ts)}</span></td>
+    <tr><td>${coin(t.symbol)}<br><span class="muted">${time(t.exit_ts)}</span></td>
     <td>${Number(t.entry_price).toPrecision(6)} → ${Number(t.exit_price).toPrecision(6)}</td>
     <td>${pnl(t.pnl_usd)}<br><span class="muted">${pct(t.pnl_pct)}</span></td><td class="muted">${esc(t.reason)}</td></tr>`));
   const L = a.limits;
@@ -313,7 +326,7 @@ async function refresh() {
 
 // ─── open positions: how each trade is doing between its stop and its target ───
 const fmtPx = (v) => (v == null ? "–" : `$${Number(v) >= 100 ? Number(v).toFixed(2) : Number(v).toPrecision(4)}`);
-const STRAT_MODEL = { trend: "trend", trend4h: "trend4h", whales: "whales", rules: "rules", mean_reversion_atr: "rules" };
+const STRAT_MODEL = { trend: "trend", trend4h: "trend4h", whales: "whales", copy: "copy", rules: "rules", mean_reversion_atr: "rules" };
 const botName = (s) => (s === "manual" ? "Manual" : look(s?.startsWith("llm:") ? s.slice(4) : STRAT_MODEL[s] || "rules").label);
 function renderPositions(a) {
   const ps = a.positions || [];
@@ -327,7 +340,7 @@ function renderPositions(a) {
     const span = p.tp_price - p.stop_price;
     const at = (x) => `${(clamp01((x - p.stop_price) / span) * 100).toFixed(1)}%`;
     return `<div class="pos ${pl >= 0 ? "win" : "lose"}">
-      <div class="top"><span class="sym">${esc(p.symbol)}</span><span class="pl">${pnl(pl)} <small class="muted">${(plPct * 100).toFixed(2)}%</small></span></div>
+      <div class="top"><span class="sym">${coin(p.symbol)}</span><span class="pl">${pnl(pl)} <small class="muted">${(plPct * 100).toFixed(2)}%</small></span></div>
       <div class="sub"><span>bot ${esc(botName(p.strategy))} · aberta há ${ago(p.opened_at)}</span><span>${usd(p.cost_usd)}</span></div>
       <div class="track" title="entre o stop e o alvo"><span class="entry" style="left:${at(p.entry_price)}"></span><span class="now" style="left:${at(now)}"></span></div>
       <div class="ends"><span>🛑 stop ${fmtPx(p.stop_price)}</span><span>entrada ${fmtPx(p.entry_price)} · agora ${fmtPx(now)}</span><span>🎯 ${fmtPx(p.tp_price)}</span></div>
@@ -392,15 +405,16 @@ function renderRadar(a) {
   const near = w.filter((r) => r.status === "pronto" || r.status === "perto").length;
   document.getElementById("radar-head").textContent = a.market_temp?.ts ? `${near} perto de compra · atualizado há ${ago(a.market_temp.ts)}` : "aguardando a primeira análise";
   const rows = (radarAll ? w : w.slice(0, 8)).map((r) => `<tr onclick="showChart('${esc(r.symbol)}')" title="ver gráfico">
-    <td><b>${esc(r.symbol)}</b><br><span class="muted">${r.ch24 >= 0 ? "+" : ""}${r.ch24}% 24h</span></td>
+    <td>${coin(r.symbol)}<br><span class="muted">${r.ch24 >= 0 ? "+" : ""}${r.ch24}% 24h</span></td>
     <td>${fmtPx(r.price)}</td>
     <td>${r.strong ? "⬆⬆ forte" : r.up ? "⬆ alta" : "⬇ baixa"}<br><span class="muted">RSI ${r.rsi}</span></td>
     <td>${r.up ? `abaixo de <b>${fmtPx(r.dip_at)}</b><br><span class="muted">${r.dip_pct}% de distância${r.rsi >= 30 ? " · RSI precisa cair" : ""}</span>` : '<span class="muted">só em alta</span>'}</td>
     <td>${r.strong ? `acima de <b>${fmtPx(r.break_at)}</b><br><span class="muted">+${Math.max(r.break_pct, 0).toFixed(2)}% de distância</span>` : '<span class="muted">precisa de tendência forte</span>'}</td>
     <td>${(() => { const s = lastWhales?.coins?.[r.symbol]; return s && s["1h"].n ? `${WHALE_PT[s.pressure]}<br><span class="muted">${kusd(s["1h"].net_usd)} líquido 1h</span>` : '<span class="muted">—</span>'; })()}</td>
+    <td>${(() => { const c = lastTop?.consensus?.[r.symbol]; return c && (c.long || c.short) ? `${c.long ? `<span class="green">▲ ${c.long}</span>` : ""} ${c.short ? `<span class="red">▼ ${c.short}</span>` : ""}${c.new_longs_1h ? `<br><span class="muted">${c.new_longs_1h} entraram 1h</span>` : ""}` : '<span class="muted">—</span>'; })()}</td>
     <td>${radarVerdict(r)}</td>
     <td><span class="st-chip ${r.status === "pronto" ? "pronto" : r.status === "perto" ? "perto" : ""}">${STATUS_PT[r.status] || esc(r.status)}</span>${r.ready_by ? `<br><span class="muted">sinal do bot ${esc(r.ready_by === "quedas" ? "São Marcos" : "Endrick")}</span>` : ""}</td></tr>`);
-  table("radar-table", ["Moeda", "Preço", "Tendência", "📐 Compra na queda", "📈 Compra no rompimento", "🐋 Baleias 1h", "Vai comprar?", "Status"], rows);
+  table("radar-table", ["Moeda", "Preço", "Tendência", "📐 Compra na queda", "📈 Compra no rompimento", "🐋 Baleias 1h", "👑 Top 10", "Vai comprar?", "Status"], rows);
 }
 
 // ─── thermometer: market temperature (from the bots' own scan) and our performance vs simply holding BTC ───
@@ -558,6 +572,7 @@ const MODEL_LOOK = {
   "trend": { label: "Endrick", color: "#67e8f9", ico: "⚡", role: "rompimentos rápidos, day trade de 24h" },
   "trend4h": { label: "Gabriel Jesus", color: "#fbbf24", ico: "🎯", role: "tendências maiores, velas de 4h" },
   "whales": { label: "Evair", color: "#60a5fa", ico: "🐋", role: "segue as baleias quando compram forte" },
+  "copy": { label: "Veiga", color: "#f472b6", ico: "👑", role: "copia os 10 melhores traders da Hyperliquid" },
   "claude-fable-5-1": { label: "Fable 5.1", color: "#f5c451", ico: "✨" },
   "claude-opus-5-5": { label: "Opus 5.5", color: "#fb923c", ico: "🎼" },
   "claude-opus-5": { label: "Opus 5", color: "#f97362", ico: "🎻" },
@@ -566,7 +581,7 @@ const MODEL_LOOK = {
 };
 const ACTION_PT = { BUY: "🟢 comprar", HOLD: "⏸ esperar", SELL: "🔵 vender", sleep: "😴 dormindo", wake: "⏰ acordou",
                     entry: "🟢 comprou", exit: "🔵 vendeu", veto: "🟡 bloqueado" };
-const FREE = new Set(["rules", "trend", "trend4h", "whales"]);   // deterministic bots: no AI cost
+const FREE = new Set(["rules", "trend", "trend4h", "whales", "copy"]);   // deterministic bots: no AI cost
 const look = (m) => ({ role: "IA analisa e decide", ...(MODEL_LOOK[m] || { label: m, color: "#9fe8c7", ico: "🤖" }) });
 let lastArena = null;
 
@@ -760,14 +775,14 @@ async function loadWhales() {
   const flowCard = ([c, s]) => {
     const h = s["1h"], tot = h.buy_usd + h.sell_usd || 1;
     return `<div class="flow-c ${s.pressure}" title="4h: compras ${kusd(s["4h"].buy_usd)} · vendas ${kusd(s["4h"].sell_usd)} · baleia ≥ ${kusd(s.threshold_usd)}">
-      <b>${esc(c)}</b> ${WHALE_PT[s.pressure] || ""}
+      ${coin(c)} ${WHALE_PT[s.pressure] || ""}
       <div class="bar2"><i class="b" style="width:${(h.buy_usd / tot * 100).toFixed(0)}%"></i><i class="s" style="width:${(h.sell_usd / tot * 100).toFixed(0)}%"></i></div>
       ${kusd(h.buy_usd)} / ${kusd(h.sell_usd)} · ${h.n} ordens</div>`;
   };
   setHTML("whale-flows", active.length ? active.slice(0, 12).map(flowCard).join("") : '<div class="empty">Ainda sem ordens de baleia nas nossas moedas desde que o feed ligou.</div>');
   setHTML("whale-market", w.market.length ? w.market.map((m) => flowCard([m.coin, m])).join("") : '<div class="empty">Sem baleias no resto do mercado na última hora.</div>');
   table("whale-recent", ["Quando", "Moeda", "Lado", "Valor", "Carteira"], w.recent.map((t) => `<tr>
-    <td>${hhmm(new Date(t.ts * 1000).toISOString())}</td><td><b>${esc(t.coin)}</b></td>
+    <td>${hhmm(new Date(t.ts * 1000).toISOString())}</td><td>${coin(t.coin)}</td>
     <td class="${t.side === "compra" ? "green" : "red"}">${t.side}</td><td>${kusd(t.usd)}</td>
     <td class="muted">${t.wallet ? `<a href="https://hypurrscan.io/address/${esc(t.wallet)}" target="_blank" rel="noopener">${short(t.wallet)}</a>` : "–"}</td></tr>`));
   table("whale-wallets", ["Carteira", "Comprou", "Vendeu", "Líquido", "Moedas", "Ordens"], (w.wallets || []).map((x) => `<tr>
@@ -855,7 +870,7 @@ async function loadNews() {
   tag.textContent = newsAll ? `${r.items.length} nas últimas 24h` : `top ${r.items.length} de ${t.total} notícias (12h)`;
   if (!newsAll) sel.value = "";
   setHTML("news", r.items.length ? r.items.map((i) => `<div class="ni"><span class="w">há ${ago(new Date(i.ts * 1000).toISOString())}</span>
-    <span><a href="${esc(i.url)}" target="_blank" rel="noopener">${esc(i.title)}</a>${i.coins.map((c) => `<span class="coin-tag">${esc(c)}</span>`).join("")}
+    <span><a href="${esc(i.url)}" target="_blank" rel="noopener">${esc(i.title)}</a>${i.coins.map((c) => `<span class="coin-tag">${coinIcon(c)}${esc(c)}</span>`).join("")}
     <br><span class="src">${esc(i.source)}</span></span></div>`).join("") : '<div class="empty">Sem notícias para este filtro nas últimas 24h.</div>');
 }
 setTimeout(() => safe(loadNews), 1500);
@@ -897,11 +912,11 @@ async function loadHistory() {
     k("Melhor / pior", `${pnl(s.best.pnl_usd)} / ${pnl(s.worst.pnl_usd)}`, `${esc(s.best.symbol)} / ${esc(s.worst.symbol)}`),
   ].join("") : '<div class="empty">Quando os primeiros trades fecharem, aparecem aqui o acerto, o fator de lucro e o resultado por bot, moeda e tipo de saída.</div>');
   const grp = (id, g, name) => table(id, ["", "Trades", "Acerto", "Resultado"], Object.entries(g || {}).map(([key, r]) =>
-    `<tr><td><b>${esc(name(key))}</b></td><td>${r.trades}</td><td>${pct(r.wins / r.trades)}</td><td>${pnl(r.pnl_usd)}</td></tr>`));
-  grp("stats-bot", s.by_bot, BOT_PT); grp("stats-coin", s.by_coin, (x) => x); grp("stats-exit", s.by_exit, (x) => x);
+    `<tr><td>${name ? `<b>${esc(name(key))}</b>` : coin(key)}</td><td>${r.trades}</td><td>${pct(r.wins / r.trades)}</td><td>${pnl(r.pnl_usd)}</td></tr>`));
+  grp("stats-bot", s.by_bot, BOT_PT); grp("stats-coin", s.by_coin, null); grp("stats-exit", s.by_exit, (x) => x);
   document.getElementById("tx-tag").textContent = `${tx.rows.length} movimentos`;
   table("tx-table", ["Quando", "Tipo", "Ativo", "Valor", "Preço", "Taxa", "Bot / nota"], tx.rows.map((r) => `<tr>
-    <td>${time(r.ts)}</td><td class="${r.type === "compra" || r.type === "depósito" ? "green" : "red"}">${r.type}</td><td><b>${esc(r.symbol)}</b></td>
+    <td>${time(r.ts)}</td><td class="${r.type === "compra" || r.type === "depósito" ? "green" : "red"}">${r.type}</td><td>${r.symbol === "USDC" ? coin("USDC") : coin(r.symbol)}</td>
     <td>${usd(r.usd)}</td><td>${r.price ? fmtPx(r.price) : "–"}</td><td>${r.fee_usd ? usd(r.fee_usd, 4) : "–"}</td>
     <td class="muted">${esc(r.bot ? BOT_PT(r.bot) : r.note || "")}</td></tr>`));
 }
@@ -926,6 +941,25 @@ function copyAddr(btn) {
 }
 safe(loadFunding);
 setInterval(() => safe(loadFunding), 120000);
+
+// ─── top 10 traders of Hyperliquid: who, what they hold, what they just did ───
+let lastTop = null;
+async function loadTop() {
+  const t = await api("/toptraders");
+  lastTop = t;
+  const st = t.status || {};
+  document.getElementById("top-tag").textContent = t.traders.length ? `${t.traders.length} seguidos · posições a cada 2 min` : (st.error || "carregando ranking…");
+  table("top-table", ["#", "Trader", "Conta", "Lucro 30d", "ROI 30d / 7d", "Maiores posições agora"], t.traders.map((x, i) => `<tr>
+    <td>${i + 1}</td><td><a href="https://hypurrscan.io/address/${esc(x.address)}" target="_blank" rel="noopener">${esc(x.name || short(x.address))}</a></td>
+    <td>${kusd(x.account_usd)}</td><td class="green">+${kusd(x.pnl_30d)}</td><td>${pct(x.roi_30d)} / ${pct(x.roi_7d)}</td>
+    <td>${x.positions.length ? x.positions.map((p) => `<span class="pos-chip ${p.szi > 0 ? "long" : "short"}">${coinIcon(p.coin)}${esc(p.coin)} ${p.szi > 0 ? "▲" : "▼"} ${kusd(p.value)}${p.lev ? ` ${p.lev}x` : ""}</span>`).join("") : '<span class="muted">sem posições</span>'}</td></tr>`));
+  table("top-moves", ["Quando", "Trader", "Moeda", "Movimento", "Tamanho"], t.events.map((e) => `<tr>
+    <td>${hhmm(new Date(e.ts * 1000).toISOString())}</td><td>${short(e.address)}</td><td>${coin(e.coin)}</td>
+    <td class="${e.what.includes("compra") && !e.what.includes("fechou") ? "green" : "red"}">${esc(e.what)}</td><td>${kusd(e.usd)}</td></tr>`));
+  if (acc) renderRadar(acc);
+}
+safe(loadTop);
+setInterval(() => safe(loadTop), 30000);
 
 // ─── connections: exchange, data, AI and RPC providers ───
 async function loadHealth() {

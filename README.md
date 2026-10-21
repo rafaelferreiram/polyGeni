@@ -65,7 +65,8 @@ Same engine and agents; only the broker is real (`HyperliquidLiveBroker`, offici
 ### One wallet, a team of bots
 The team (named after Palmeiras players): **São Marcos** (`rules`, buys dips in an uptrend), **Endrick** (`trend`,
 24h-breakout day trades), **Gabriel Jesus** (`trend4h`, trend following on 4h candles), **Evair** (`whales`, buys when
-whales are strong net buyers in an uptrend) and **Valdivia** (Claude Haiku AI). São Marcos and Endrick trade real money;
+whales are strong net buyers in an uptrend), **Veiga** (`copy`, copies the top 10 Hyperliquid traders at our size)
+and **Valdivia** (Claude Haiku AI). São Marcos and Endrick trade real money;
 the others must first show ≥ 10 profitable lab trades.
 - **Team:** `ARENA_MODELS` (default `rules`, Fable 5.1, Opus 5.5, Opus 5, Sonnet 5.5, Haiku 5.5). Each bot runs in the
   **lab** with its own $20 paper wallet and the real account's exact limits — that is how each model is measured.
@@ -81,6 +82,11 @@ the others must first show ≥ 10 profitable lab trades.
 - **Manual buy** (dashboard "🛒 Compra manual", `POST /api/paper/account/manual-buy`): the user's own buy, $10–12, put
   through the same Risk limits with an exchange stop (2 ATR) and target (3 ATR) and recorded in the ledger — buying
   directly on Hyperliquid instead would look like an untracked position and trip the kill switch.
+- **Top traders** (`src/solana/toptraders.py`, `GET /api/paper/toptraders`): the 10 most profitable consistent traders
+  of the public Hyperliquid leaderboard (profitable month/week/all-time, ROI 5–300%, account ≥ $100k, no market
+  makers), their positions polled every 2 min and every open/close detected. Veiga buys a coin when ≥ 2 of them are
+  long, one just entered and the coin is in an uptrend; the AI bot sees their consensus. A trend-pullback bot was also
+  tested for the 7th slot and lost in every variant, so it was not added.
 - **News** (`src/solana/news.py`, `GET /api/paper/news`): CoinDesk, Cointelegraph, Decrypt and The Block RSS every 5 min,
   tagged with the coins they mention; shown on the dashboard and given to the AI bot (headlines of the last 12h for the
   coin). X.com is not used: its API has no free read access.
