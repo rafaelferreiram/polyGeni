@@ -120,6 +120,8 @@ the others must first show ≥ 10 profitable lab trades.
   market every minute (`TURBO_CYCLE_SEC`), with every lab slot, no daily cap and, for the AI bot, every coin. From then on
   it uses fast exits — positions close within 2h (15m twins 1h; `TURBO_MAX_HOLD_H`), also on the real account once
   promoted — aiming at 10+ lab trades a day. Entry rules, size, stops and targets don't change.
+- **Valdivia (AI bot) retired** for cost; **Dudu** (`whales2`) takes the slot: an identical clone of Evair, at the user's
+  request (on the real account one position per coin still applies). Re-enable the AI bot with `claude-haiku-5-5` in `ARENA_MODELS`.
 - **At most 6 titulares** (`MAX_TITULARES`): when more bots qualify for real money, only the best 6 (reward points,
   then lab profit) trade it. Gabriel Jesus 15m was retired (15-minute breakouts lost to fees). The turbo does not switch
   on the AI bot's paid every-coin scan; that stays a separate choice.

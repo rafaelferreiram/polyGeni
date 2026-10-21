@@ -580,6 +580,7 @@ const MODEL_LOOK = {
   "trend": { label: "Endrick", color: "#67e8f9", ico: "⚡", role: "rompimentos rápidos, day trade de 24h" },
   "trend4h": { label: "Gabriel Jesus", color: "#fbbf24", ico: "🎯", role: "tendências maiores, velas de 4h" },
   "whales": { label: "Evair", color: "#60a5fa", ico: "🐋", role: "segue as baleias quando compram forte" },
+  "whales2": { label: "Dudu", color: "#38bdf8", ico: "🐳", role: "clone do Evair: mesmas regras, segue as baleias" },
   "copy": { label: "Veiga", color: "#f472b6", ico: "👑", role: "copia os 10 melhores traders da Hyperliquid" },
   "short": { label: "Estêvão", color: "#f87171", ico: "📉", role: "short: lucra quando o preço cai (só laboratório)" },
   "trend4h_15m": { label: "Gabriel Jesus 15m", color: "#fbbf24", ico: "⏱", role: "trades rápidos: tendências em velas de 15 min" },

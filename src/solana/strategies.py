@@ -296,6 +296,12 @@ class WhaleFollow:
         return Signal(self.name, closes[-1], stop, tp, self.last[market]["reason"], {"atr": a, "whale_net_1h": h.get("net_usd")})
 
 
+class WhaleFollowClone(WhaleFollow):
+    """'Dudu': an identical clone of Evair (same rules), at the user's request — two bots on the same signal show how
+    much of a record is luck. On the real account one position per coin still applies (no doubled bet)."""
+    name = "whales2"
+
+
 class CopyTop(WhaleFollow):
     """Copies the best traders of Hyperliquid, at our own (small, proportional) size: buy a coin when at least 2 of
     the top 10 are long, at least one of them entered in the last hour, more of them are long than short, and the coin
@@ -358,7 +364,7 @@ CopyTop15 = fast(CopyTop, "copy_15m")
 
 
 # deterministic bots (no LLM, no API cost): model name -> strategy
-RULE_BOTS = {"rules": MeanReversionATR, "trend": TrendStrong, "trend4h": Trend4h, "whales": WhaleFollow, "copy": CopyTop,
+RULE_BOTS = {"rules": MeanReversionATR, "trend": TrendStrong, "trend4h": Trend4h, "whales": WhaleFollow, "whales2": WhaleFollowClone, "copy": CopyTop,
              "short": ShortFade, "trend4h_15m": Trend4h15, "whales_15m": WhaleFollow15, "copy_15m": CopyTop15}
 SHORT_BOTS = {"short"}          # lab only: the real account (and its simulation) never short
 FAST_BOTS = {"trend4h_15m", "whales_15m", "copy_15m"}      # 15-minute twins: quick trades, they decide on 15m candles
