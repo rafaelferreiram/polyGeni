@@ -124,7 +124,7 @@ HL_LIVE_MARKETS = [m for m in os.getenv("HL_LIVE_MARKETS", HL_BROAD).split(",") 
 # ─── Model arena: one paper bot per LLM, same markets and risk limits, separate portfolios ───
 # "rules" = deterministic baseline bot (no LLM, no API cost) that every model must beat
 # default: free rules bot + the cheap Haiku; add Sonnet/Opus/Fable when capital makes their cost worthwhile
-ARENA_MODELS = [m for m in os.getenv("ARENA_MODELS", "rules,trend,trend4h,whales,copy,claude-haiku-5-5,trend4h_15m,whales_15m,copy_15m").split(",") if m]
+ARENA_MODELS = [m for m in os.getenv("ARENA_MODELS", "rules,trend,trend4h,whales,copy,claude-haiku-5-5,whales_15m,copy_15m").split(",") if m]
 TOP_TRADERS_ENABLED = os.getenv("TOP_TRADERS_ENABLED", "1") == "1"   # follow the top 10 Hyperliquid traders (read-only)
 WHALES_ENABLED = os.getenv("WHALES_ENABLED", "1") == "1"      # live whale-trade feed (WebSocket, read-only)
 WHALE_MIN_USD = float(os.getenv("WHALE_MIN_USD", "25000"))    # whale = ≥ this and ≥ 0.02% of the coin's daily volume
@@ -154,6 +154,7 @@ TRAIN_BOOST_MAX_POSITIONS = _i("TRAIN_BOOST_MAX_POSITIONS", 29)
 TRAIN_BOOST_CAPITAL_USD = _f("TRAIN_BOOST_CAPITAL_USD", 400.0)   # fake money: 29 slots x ~$12 fit
 # green light to real money (bots not in REAL_TRUSTED_BOTS): at least GREEN_LIGHT_TRADES closed lab trades with
 # GREEN_LIGHT_WINS winners, net profit after AI cost, win rate and profit factor at least these (user's rule: 20 trades, 12 wins)
+MAX_TITULARES = _i("MAX_TITULARES", 6)          # the real account fields at most this many bots: the best ones
 GREEN_LIGHT_TRADES = _i("GREEN_LIGHT_TRADES", 20)
 GREEN_LIGHT_WINS = _i("GREEN_LIGHT_WINS", 12)
 GREEN_LIGHT_WIN_RATE = _f("GREEN_LIGHT_WIN_RATE", 0.6)

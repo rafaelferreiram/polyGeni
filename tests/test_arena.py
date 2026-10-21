@@ -89,6 +89,9 @@ def test_real_wallet_only_trusts_bots_with_lab_evidence(tmp_path, monkeypatch):
                              symbol="BTC", strategy="x", qty=10, decimals=0, usd_gross=10 * px, fee_usd=0, price=px, quote_price=px))
     team = [TeamMember("rules"), TeamMember("claude-opus-5"), TeamMember("claude-haiku-5-5")]
     assert [m.model for m in arena.eligible_for_real(team)] == ["rules", "claude-opus-5"]
+    monkeypatch.setattr(cfg, "MAX_TITULARES", 1)          # only the best plays: opus has the lab wins
+    assert [m.model for m in arena.eligible_for_real(team)] == ["claude-opus-5"]
+    monkeypatch.setattr(cfg, "MAX_TITULARES", 6)
     # trusted rule bots trade real money from day one; untrusted ones need lab evidence
     assert "trend" in [m.model for m in arena.eligible_for_real([TeamMember("trend")])]
     monkeypatch.setattr(cfg, "REAL_TRUSTED_BOTS", ["rules"])
@@ -232,7 +235,7 @@ def test_turbo_runs_the_bot_every_minute_until_midnight(tmp_path, monkeypatch):
     job = sch.get_job("turbo_claude-haiku-5-5")
     assert job and job.trigger.interval.total_seconds() == cfg.TURBO_CYCLE_SEC
     eng = bots["claude-haiku-5-5"]
-    assert eng.ledger.get_state("train_boost_until") >= r["until"][:13] and eng.ledger.get_state("ai_full_scan_until")
+    assert eng.ledger.get_state("train_boost_until") >= r["until"][:13]
     assert r["until"].endswith(":00:00+00:00")      # Lisbon midnight
     from src.solana.engine import _max_hold
     assert _max_hold("claude-haiku-5-5", 48) == cfg.TURBO_MAX_HOLD_H and arena.fast_exit_hold("rules") is None

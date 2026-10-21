@@ -728,7 +728,7 @@ function trainButton(model, r) {
 }
 function trainBoost(model, btn) {
   if (REMOTE || !btn || btn.disabled) return;
-  if (!confirm(`Turbinar o ${look(model).label} até a meia-noite? No laboratório (dinheiro falso) ele passa a ler o mercado a cada minuto, com todas as vagas e sem limite diário, e fecha cada posição em até ${model.endsWith("_15m") ? 1 : 2}h (meta: 10+ trades por dia)${look(model).label === "Valdivia" ? ", e a IA analisa as 29 moedas" : ""}. As regras de compra, stops e alvos não mudam. Atenção: depois do turbo o bot passa a operar sempre com saídas rápidas, inclusive na conta real quando for promovido.`)) return;
+  if (!confirm(`Turbinar o ${look(model).label} até a meia-noite? No laboratório (dinheiro falso) ele passa a ler o mercado a cada minuto, com todas as vagas e sem limite diário, e fecha cada posição em até ${model.endsWith("_15m") ? 1 : 2}h (meta: 10+ trades por dia). As regras de compra, stops e alvos não mudam. Atenção: depois do turbo o bot passa a operar sempre com saídas rápidas, inclusive na conta real quando for promovido.`)) return;
   run(btn, "Turbinando…", () => api("/arena/turbo", "POST", { bot: model }),
       `⚡ ${look(model).label} turbinado até a meia-noite: analisa o mercado a cada minuto`);
 }

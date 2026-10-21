@@ -171,8 +171,8 @@ def boost_training(model: str, hours: float = 24) -> dict:
 def turbo(model: str) -> dict:
     """'Turbo do dia' for a bot in training: until midnight (Lisbon) it analyses the market every TURBO_CYCLE_SEC
     and, from now on, closes positions within TURBO_MAX_HOLD_H (fast exits, also on the real account once promoted)
-    instead of once per lab round, with every slot and no daily cap (training boost), and the AI bot reads every coin
-    (full scan). More looks at the market = setups caught as soon as they appear and stops/targets checked more often,
+    instead of once per lab round, with every slot and no daily cap (training boost). The AI bot's every-coin scan is a
+    separate, paid switch (ai_full_scan). More looks at the market = setups caught as soon as they appear and stops/targets checked more often,
     so lab trades pile up faster (goal: ≥ 10 a day). Entry rules, size, stops and targets do not change."""
     eng = bots().get(model)
     if not eng:
@@ -188,8 +188,6 @@ def turbo(model: str) -> dict:
     if eng.ledger.get_state("train_boost_until", "") < until:
         boost_training(model, hours)
     _top_up(eng)
-    if eng.llm and eng.ledger.get_state("ai_full_scan_until", "") < until:
-        ai_full_scan(model, hours)
     eng.ledger.log_decision("boost", reason=f"⚡ turbo até 00:00 (Lisboa): analisa a cada {cfg.TURBO_CYCLE_SEC}s")
     _schedule_turbo(model, eng)
     return {"until": until, "every_s": cfg.TURBO_CYCLE_SEC}
@@ -256,6 +254,9 @@ def eligible_for_real(members: list) -> list:
             continue
         if green_light(m.model)["ok"]:
             ok.append(m)
+    if len(ok) > cfg.MAX_TITULARES:      # at most MAX_TITULARES play: the best by reward points, then lab profit
+        best = sorted(ok, key=lambda m: (-reward(m.model).get("points", 0), -net_of_cost(m.model)[2]))[:cfg.MAX_TITULARES]
+        ok = [m for m in ok if m in best]
     return ok
 
 
