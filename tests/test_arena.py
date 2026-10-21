@@ -183,11 +183,8 @@ def test_training_boost_doubles_lab_slots_then_expires(tmp_path, monkeypatch):
     bots, _ = make_bots(tmp_path, {"claude-haiku-5-5": "{}"})
     monkeypatch.setattr(arena, "_bots", bots)
     eng = bots["claude-haiku-5-5"]
-    first = arena.boost_training("claude-haiku-5-5", 24)["until"]
+    arena.boost_training("claude-haiku-5-5", 24)
     assert eng.risk.max_positions == cfg.TRAIN_BOOST_MAX_POSITIONS and eng.risk.max_entries_per_day > 1000
-    from datetime import datetime
-    second = arena.boost_training("claude-haiku-5-5", 24)["until"]          # clicking again extends it by 24h
-    assert abs((datetime.fromisoformat(second) - datetime.fromisoformat(first)).total_seconds() - 24 * 3600) < 5
     eng.ledger.set_state("train_boost_until", "2000-01-01T00:00:00+00:00")
     arena._apply_training_boost(eng)
     assert eng.risk.max_positions == cfg.LAB_MAX_POSITIONS
@@ -223,3 +220,17 @@ def test_fifteen_minute_twins_are_lab_only_and_named_for_their_exits():
         g = arena.green_light(m)
         assert not g["ok"] and "versão de 15 min: só laboratório" in g["missing"]
     assert all(t.model not in FAST_BOTS for t in hl_live.team())
+
+
+def test_turbo_runs_the_bot_every_minute_until_midnight(tmp_path, monkeypatch):
+    from apscheduler.schedulers.background import BackgroundScheduler
+    bots, _ = make_bots(tmp_path, {"claude-haiku-5-5": "{}"})
+    monkeypatch.setattr(arena, "_bots", bots)
+    sch = BackgroundScheduler()                     # not started: only checks what gets scheduled
+    monkeypatch.setattr(arena, "paper_scheduler", lambda: sch)
+    r = arena.turbo("claude-haiku-5-5")
+    job = sch.get_job("turbo_claude-haiku-5-5")
+    assert job and job.trigger.interval.total_seconds() == cfg.TURBO_CYCLE_SEC
+    eng = bots["claude-haiku-5-5"]
+    assert eng.ledger.get_state("train_boost_until") >= r["until"][:13] and eng.ledger.get_state("ai_full_scan_until")
+    assert r["until"].endswith(":00:00+00:00")      # Lisbon midnight

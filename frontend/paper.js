@@ -648,7 +648,7 @@ function renderTeam() {
     const now = last ? `${last.market ? `<b>${esc(last.market)}</b> · ` : ""}${esc(ACTION_PT[last.action] || last.action || "")}` : "ainda sem decisões";
     const boostable = r.green_light && !r.green_light.ok;      // reserve bots: tap the card to boost their training
     return `<div class="tb ${cls}${boostable ? " boostable" : ""}" tabindex="0" style="--c:${L.color}" aria-label="${esc(L.label)}: ${esc(state)}"
-      ${boostable ? `onclick="trainBoost('${esc(m.model)}', this.querySelector('.tboost'))" title="toque para dar boost no treino"` : ""}>
+      ${boostable ? `onclick="trainBoost('${esc(m.model)}', this.querySelector('.tboost'))" title="toque para turbinar o treino de hoje"` : ""}>
       ${coffee && cls !== "off" ? '<span class="cup" title="com cafeína: sem pausas">☕</span>' : ""}
       <div class="head">${botFace(L.color, L.ico)}
         <div><div class="nm">${esc(L.label)}${r.model_now && r.model_now !== m.model ? ` <small class="green">🚀 ${esc(look(r.model_now).label)}</small>` : ""}</div><div class="rl">${esc(L.role)}</div></div></div>
@@ -697,14 +697,15 @@ function trainButton(model, r) {
   if (!r?.green_light || r.green_light.ok) return "";
   const until = r.train_boost_until && new Date(r.train_boost_until) > new Date() ? r.train_boost_until : null;
   const scan = r.ai_full_scan_until && new Date(r.ai_full_scan_until) > new Date() ? `<div class="gl ok">🧠 analisa as 29 moedas a cada hora até ${hhmm(r.ai_full_scan_until)}</div>` : "";
-  return scan + `<button class="tboost${until ? " on" : ""}" onclick="event.stopPropagation(); trainBoost('${esc(model)}', this)">` +
-    (until ? `🚀 treino até ${hhmm(until)} · +24h` : "🚀 Treino intensivo 24h") + "</button>";
+  const turbo = r.turbo_until && new Date(r.turbo_until) > new Date() ? r.turbo_until : null;
+  return scan + (turbo ? `<button class="tboost on" disabled>⚡ turbo até ${hhmm(turbo)} · analisa a cada minuto</button>`
+    : `<button class="tboost" onclick="event.stopPropagation(); trainBoost('${esc(model)}', this)">⚡ Turbo hoje</button>`);
 }
 function trainBoost(model, btn) {
-  if (REMOTE || !btn) return;
-  if (!confirm(`Dar boost no ${look(model).label}? +24h de treino intensivo no laboratório (dinheiro falso): mais vagas, sem limite diário e análise agora. As regras de compra, stops e alvos não mudam.`)) return;
-  run(btn, "Ativando…", () => api("/arena/train-boost", "POST", { bot: model, hours: 24 }),
-      `🚀 ${look(model).label} em treino intensivo: 29 vagas, $200 simulados, analisando agora`);
+  if (REMOTE || !btn || btn.disabled) return;
+  if (!confirm(`Turbinar o ${look(model).label} até a meia-noite? No laboratório (dinheiro falso) ele passa a ler o mercado a cada minuto em vez de a cada rodada, com todas as vagas e sem limite diário${look(model).label === "Valdivia" ? ", e a IA analisa as 29 moedas" : ""}. As regras de compra, stops e alvos não mudam — os trades continuam valendo como prova.`)) return;
+  run(btn, "Turbinando…", () => api("/arena/turbo", "POST", { bot: model }),
+      `⚡ ${look(model).label} turbinado até a meia-noite: analisa o mercado a cada minuto`);
 }
 
 safe(refresh); safe(loadArena);

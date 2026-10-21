@@ -151,10 +151,7 @@ def boost_training(model: str, hours: float = 24) -> dict:
     eng = bots().get(model)
     if not eng:
         raise ValueError(f"bot {model} não existe")
-    now = datetime.now(timezone.utc)
-    cur = eng.ledger.get_state("train_boost_until")
-    start = max(now, datetime.fromisoformat(cur)) if cur else now          # clicking again extends the boost
-    until = min(start + timedelta(hours=min(max(hours, 1), 72)), now + timedelta(hours=72)).isoformat(timespec="seconds")
+    until = (datetime.now(timezone.utc) + timedelta(hours=min(max(hours, 1), 72))).isoformat(timespec="seconds")
     eng.ledger.set_state("train_boost_until", until)
     if eng.ledger.contributed() < cfg.TRAIN_BOOST_CAPITAL_USD:      # paper top-up, a contribution — never profit
         eng.ledger.move_cash("deposit", cfg.TRAIN_BOOST_CAPITAL_USD - eng.ledger.contributed(), "treino intensivo")
@@ -165,6 +162,46 @@ def boost_training(model: str, hours: float = 24) -> dict:
     if job:                                  # analyse right away instead of waiting for the next lab round
         job.modify(next_run_time=datetime.now())
     return {"until": until}
+
+
+def turbo(model: str) -> dict:
+    """'Turbo do dia' for a bot in training: until midnight (Lisbon) it analyses the market every TURBO_CYCLE_SEC
+    instead of once per lab round, with every slot and no daily cap (training boost), and the AI bot reads every coin
+    (full scan). More looks at the market = setups caught as soon as they appear and stops/targets checked more often,
+    so lab trades pile up faster. Entry rules, size, stops and targets do not change: the evidence stays honest."""
+    eng = bots().get(model)
+    if not eng:
+        raise ValueError(f"bot {model} não existe")
+    if green_light(model).get("ok"):
+        raise ValueError(f"{model} já está pronto para a conta real")
+    now = datetime.now(timezone.utc)
+    midnight = datetime.combine(now.astimezone(cfg.TZ).date() + timedelta(days=1), datetime.min.time(), cfg.TZ)
+    hours = max((midnight - now).total_seconds() / 3600, 1)
+    until = midnight.astimezone(timezone.utc).isoformat(timespec="seconds")
+    eng.ledger.set_state("turbo_until", until)
+    if eng.ledger.get_state("train_boost_until", "") < until:
+        boost_training(model, hours)
+    if eng.llm and eng.ledger.get_state("ai_full_scan_until", "") < until:
+        ai_full_scan(model, hours)
+    eng.ledger.log_decision("boost", reason=f"⚡ turbo até 00:00 (Lisboa): analisa a cada {cfg.TURBO_CYCLE_SEC}s")
+    _schedule_turbo(model, eng)
+    return {"until": until, "every_s": cfg.TURBO_CYCLE_SEC}
+
+
+def _schedule_turbo(model: str, eng):
+    job_id = f"turbo_{model}"
+
+    def tick():
+        if datetime.now(timezone.utc).isoformat() >= (eng.ledger.get_state("turbo_until") or ""):
+            paper_scheduler().remove_job(job_id)
+            return
+        if eng.ledger.get_state("running", False) and (not eng.llm or eng.llm.enabled):
+            _apply_training_boost(eng)
+            eng.run_cycle()              # returns at once if the lab round is running this bot right now
+    sch = paper_scheduler()
+    if sch.get_job(job_id) is None:
+        sch.add_job(tick, "interval", seconds=cfg.TURBO_CYCLE_SEC, id=job_id, max_instances=1, coalesce=True,
+                    next_run_time=datetime.now())
 
 
 def ai_full_scan(model: str, hours: float = 24) -> dict:
@@ -344,7 +381,7 @@ def leaderboard() -> list[dict]:
             "open": [x["symbol"] for x in led.positions()], "reward": reward(model),
             "model_now": eng.llm.model if eng.llm else None, "boost": led.get_state("boost") or {},
             "green_light": green_light(model), "train_boost_until": led.get_state("train_boost_until"),
-            "ai_full_scan_until": led.get_state("ai_full_scan_until"),
+            "ai_full_scan_until": led.get_state("ai_full_scan_until"), "turbo_until": led.get_state("turbo_until"),
             "last_decision": next(({"market": k, **{x: v.get(x) for x in ("action", "reason", "model")}}
                                    for k, v in sorted(last.items(), key=lambda kv: -(kv[1].get("t") or 0))), None)
                              if eng.llm else _rules_last(led),
@@ -362,3 +399,7 @@ def resume_if_running():
     """After a restart, bots that were on keep working (state lives in each bot's ledger)."""
     if any(e.ledger.get_state("running", False) for e in bots().values()):
         set_running(True)
+    now = datetime.now(timezone.utc).isoformat()
+    for model, eng in bots().items():           # a turbo survives a restart until its midnight
+        if (eng.ledger.get_state("turbo_until") or "") > now:
+            _schedule_turbo(model, eng)

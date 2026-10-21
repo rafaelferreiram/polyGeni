@@ -476,6 +476,19 @@ def arena_train_boost(req: TrainBoost):
         raise HTTPException(400, str(e))
 
 
+class Turbo(BaseModel):
+    bot: str
+
+
+@router.post("/arena/turbo", dependencies=LOCAL)
+def arena_turbo(req: Turbo):
+    from src.solana import arena
+    try:
+        return arena.turbo(req.bot)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
 @router.post("/arena/ai-full-scan", dependencies=LOCAL)
 def arena_ai_full_scan(req: TrainBoost):
     from src.solana import arena
