@@ -98,6 +98,12 @@ function scanNow(btn) {
       (r) => (r.started ? "🔍 Equipa acordada — a analisar os mercados agora" : "Já está uma análise a correr"));
 }
 
+function giveCoffee(btn) {
+  if (!acc?.running) return toast("Carregue em ▶ Start primeiro", true);
+  run(btn, "A preparar o café…", () => api("/account/coffee", "POST", { kind: KIND, hours: 4 }),
+      (r) => `☕ Equipa com cafeína até ${new Date(r.coffee_until).toLocaleTimeString().slice(0, 5)} — sem pausas, a analisar todos os ciclos`);
+}
+
 function setMode(mode, btn) {
   run(btn, "…", () => api("/account/mode", "POST", { mode }),
       mode === "llm" ? "🧠 A equipa de bots decide; o Coordenador escolhe o melhor por mercado" : "✓ Só o bot de regras decide");
@@ -388,6 +394,10 @@ function renderTeam() {
   document.getElementById("team-head").innerHTML = acc.running
     ? `<b>${awake}</b> de ${members.length} bots ativos${acc.sleep?.until ? ` · carteira em pausa até <b>${new Date(acc.sleep.until).toLocaleTimeString().slice(0, 5)}</b>` : ""}`
     : "equipa desligada — carregue em ▶ Start";
+  const coffee = acc.running && acc.coffee_until;
+  const cb = document.getElementById("btn-coffee");
+  cb.classList.toggle("on", !!coffee);
+  cb.textContent = coffee ? `☕ até ${new Date(coffee).toLocaleTimeString().slice(0, 5)}` : "☕ Café";
   document.getElementById("team-grid").innerHTML = members.map((m) => {
     const L = look(m.model), r = lab[m.model] || {};
     const working = acc.running && (liveName === m.name || r.state === "a trabalhar");
@@ -398,7 +408,7 @@ function renderTeam() {
     const bubble = r.needs_key ? "Ponha ANTHROPIC_API_KEY no .env para eu começar a decidir."
       : last ? `${last.market ? last.market + ": " : ""}${ACTION_PT[last.action] || last.action || ""} — ${(last.reason || "").replace(/^a dormir [^:]*: /, "")}` : r.sleep_reason || "Ainda sem decisões.";
     return `<div class="tb ${cls}">
-      ${cls === "sleeping" ? '<span class="zz">z z</span>' : ""}
+      ${cls === "sleeping" ? '<span class="zz">z z</span>' : ""}${coffee && cls !== "off" ? '<span class="cup" title="com cafeína: sem pausas">☕</span>' : ""}
       <div class="head"><div class="bot" style="--c:${L.color}"><span class="ant"></span><span class="mouth"></span><span class="badge-ico">${L.ico}</span></div>
         <div><div class="nm">${esc(L.label)}</div><span class="pill ${cls === "working" || cls === "holding" ? "on" : ""}">${esc(state)}</span></div></div>
       <div class="bubble">${esc(bubble)}</div>

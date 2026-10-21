@@ -204,3 +204,16 @@ def test_sleeping_wallet_skips_entries_until_woken(ledger):
     assert s["entries"] == 0 and s["sleeping_until"] == until
     ledger.set_state("sleep", {})                           # what "Analisar agora" does
     assert eng.run_cycle()["entries"] == 1
+
+
+def test_coffee_keeps_the_wallet_awake(ledger):
+    from datetime import datetime, timedelta, timezone
+    eng = build(ledger, Price(1.0))
+    until = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(timespec="seconds")
+    ledger.set_state("sleep", {"until": until, "reason": "test", "prices": {}})
+    assert eng.coffee() is None
+    eng.give_coffee(2)
+    assert eng.coffee() and ledger.get_state("sleep") == {}
+    ledger.set_state("sleep", {"until": until, "reason": "test", "prices": {}})   # even a stale sleep is ignored
+    s = eng.run_cycle()
+    assert s["entries"] == 1 and "sleeping_until" not in s

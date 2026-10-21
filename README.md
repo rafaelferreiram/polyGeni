@@ -67,6 +67,9 @@ Same engine and agents; only the broker is real (`HyperliquidLiveBroker`, offici
   candle (one call feeds both). Positions scale with capital (`LIVE_MAX_POSITIONS=0` = capital ÷ position size).
 - **Self-pause:** a bot with nothing to do sleeps (LLM suggests `next_check_min`, or idle-streak back-off up to
   `BOT_MAX_SLEEP_MIN`) and wakes early when price moves `BOT_WAKE_MOVE_PCT` or a position needs watching.
+- **☕ Coffee** (button next to the bots, `POST /api/paper/account/coffee`): keeps the wallet and the whole team awake
+  (no self-pause, a scan every cycle) for 4 hours. Entry rules do **not** loosen: in the backtest, accepting shallower
+  dips (Bollinger k 1.0–1.5, RSI < 40–45, shorter targets) tripled the trades and turned +2.5% into −4% to −19%.
 - Markets: crypto first (BTC, ETH, SOL, HYPE, XRP); gold/silver with `HL_INCLUDE_METALS=1`.
 
 ### Decision mode and model arena

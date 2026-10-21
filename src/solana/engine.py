@@ -242,11 +242,12 @@ class PaperEngine:
                                       f"(${p.day_start_equity:.2f} → ${p.equity:.2f})")
             if self.kill_switch().get("active"):
                 stats["skipped"] = "kill switch active"
-            elif self._sleeping(stats):
+            elif not self.coffee() and self._sleeping(stats):
                 pass
             else:
                 self._entries(stats)
-                self._maybe_sleep(stats)
+                if not self.coffee():
+                    self._maybe_sleep(stats)
         except Exception as e:
             logger.exception("cycle failed")
             self.ledger.log_decision("error", cycle=cycle, reason=f"cycle error: {e}")
@@ -268,6 +269,19 @@ class PaperEngine:
                                            "cycle": cycle, "running": False})
             logger.info(f"[paper] cycle {cycle}: {stats}")
         return stats
+
+    # ─── coffee: the user keeps the bots awake (no self-pause) for a while; entry rules are unchanged ───
+    def coffee(self) -> str | None:
+        until = self.ledger.get_state("coffee_until")
+        return until if until and datetime.now(timezone.utc) < _ts(until) else None
+
+    def give_coffee(self, hours: float) -> str:
+        until = (datetime.now(timezone.utc) + timedelta(hours=hours)).isoformat(timespec="seconds")
+        self.ledger.set_state("coffee_until", until)
+        self.ledger.set_state("sleep", {})
+        self.ledger.set_state("idle_streak", 0)
+        self.ledger.log_decision("coffee", cycle=self.cycle, reason=f"☕ café: acordados e atentos até {_ts(until).astimezone().strftime('%H:%M')}")
+        return until
 
     # ─── self-pause: nothing to do → sleep; price moves or open positions → wake ───
     def _sleeping(self, stats: dict) -> bool:

@@ -541,7 +541,7 @@ def account(kind: str = "sim"):
                   "trades": len([t for t in trades if t["strategy"] == m.name]),
                   "pnl_usd": round(sum(t["pnl_usd"] for t in trades if t["strategy"] == m.name), 4),
                   "open": [x["symbol"] for x in led.positions() if x["strategy"] == m.name]} for m in eng.team],
-        "sleep": led.get_state("sleep") or {},
+        "sleep": led.get_state("sleep") or {}, "coffee_until": eng.coffee(),
         "profit": profit(eng),
         "equity": round(p.equity, 4), "cash": round(p.cash, 4), "exposure": round(p.exposure, 4),
         "pnl_usd": round(p.equity - led.contributed(), 4), "contributed": led.contributed(),
@@ -620,6 +620,24 @@ def account_scan(req: Kind):
         eng.ledger.set_state("idle_streak", 0)          # back-off restarts short after a manual look
     threading.Thread(target=arena.run_round, daemon=True).start()
     return {"started": _scan_in_background(req.kind)}
+
+
+class Coffee(BaseModel):
+    kind: str = "sim"
+    hours: float = 4
+
+
+@router.post("/account/coffee", dependencies=LOCAL)
+def account_coffee(req: Coffee):
+    """☕ Keep the wallet and the whole team awake (no self-pause) for a few hours and scan now.
+    Entry rules stay the same: looser dips lost money in the backtest, so coffee buys attention, not risk."""
+    from src.solana import arena
+    hours = max(0.5, min(req.hours, 12))
+    until = _account_engine(req.kind).give_coffee(hours)
+    for bot in arena.bots().values():          # the lab bots are the team's brains: they stay awake too
+        bot.give_coffee(hours)
+    threading.Thread(target=arena.run_round, daemon=True).start()
+    return {"coffee_until": until, "hours": hours, "scan_started": _scan_in_background(req.kind)}
 
 
 class AccountMode(BaseModel):
