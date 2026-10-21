@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>polyGeni · Solana Paper</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
+  <link rel="stylesheet" href="/static/style.css" />
+  <style>
+    .paper-banner { background: var(--yellow); color: #111; font-weight: 700; text-align: center;
+                    padding: 8px 16px; letter-spacing: .5px; }
+    main { padding: 16px; max-width: 1400px; margin: 0 auto; }
+    .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); margin-bottom: 16px; }
+    .cards-row { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    th { color: var(--muted); font-weight: 500; }
+    .tbl-wrap { overflow-x: auto; max-height: 420px; overflow-y: auto; }
+    .agent { border: 1px solid var(--border); border-radius: 8px; padding: 10px; }
+    .agent h3 { font-size: 14px; margin-bottom: 4px; display: flex; justify-content: space-between; gap: 8px; }
+    .agent .role { color: var(--muted); font-size: 12px; margin-bottom: 6px; }
+    .agent .last { font-size: 12px; word-break: break-word; }
+    .agents-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+    .perf { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+    .perf div { background: var(--bg); border-radius: 8px; padding: 10px; text-align: center; }
+    .perf .lbl { color: var(--muted); font-size: 12px; }
+    .perf .val { font-size: 18px; font-weight: 700; }
+    form.inline { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+    input { background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 8px; min-width: 0; flex: 1; }
+    button { cursor: pointer; }
+    .btn-danger { background: var(--red) !important; color: #fff !important; }
+    .note { color: var(--muted); font-size: 12px; line-height: 1.5; }
+    .kind-entry { color: var(--green); } .kind-exit { color: var(--accent); }
+    .kind-veto { color: var(--yellow); } .kind-kill_switch, .kind-error { color: var(--red); }
+    details summary { cursor: pointer; color: var(--muted); }
+    pre { white-space: pre-wrap; word-break: break-word; font-size: 11px; color: var(--muted); }
+    nav.sections { display: flex; gap: 6px; flex-wrap: wrap; padding: 8px 16px; background: var(--surface);
+                   border-bottom: 1px solid var(--border); position: sticky; top: 56px; z-index: 9; }
+    nav.sections a { color: var(--muted); text-decoration: none; font-size: 13px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border); }
+    nav.sections a:hover { color: var(--text); border-color: var(--accent); }
+    .story { background: var(--surface); border: 1px solid var(--border); border-left: 4px solid var(--accent);
+             border-radius: 10px; padding: 14px 16px; margin-bottom: 16px; line-height: 1.6; }
+    .story b { color: var(--text); }
+    .pipeline { display: flex; align-items: stretch; gap: 6px; flex-wrap: wrap; }
+    .pipeline .agent { flex: 1 1 150px; min-width: 150px; border-top: 3px solid var(--border); }
+    .pipeline .agent.ok { border-top-color: var(--green); }
+    .pipeline .agent.blocked { border-top-color: var(--yellow); }
+    .pipeline .agent.idle { opacity: .7; }
+    .pipeline .arrow { align-self: center; color: var(--muted); font-size: 18px; }
+    .agent .icon { font-size: 18px; margin-right: 4px; }
+    .wallet-btns { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+    .help { color: var(--muted); cursor: help; font-size: 11px; border: 1px solid var(--border); border-radius: 50%;
+            display: inline-block; width: 15px; height: 15px; text-align: center; line-height: 13px; margin-left: 4px; }
+    html { scroll-padding-top: 110px; }
+    @media (max-width: 600px) {
+      .perf { grid-template-columns: repeat(2, 1fr); }
+      header { flex-wrap: wrap; gap: 8px; position: static; }
+      .header-right { flex-wrap: wrap; }
+      nav.sections { position: static; }
+    }
+  </style>
+</head>
+<body>
+  <div class="paper-banner">PAPER TRADING — dinheiro simulado, cotações reais. Nenhuma transação real é enviada.</div>
+  <header>
+    <div class="logo">⚡ polyGeni · Solana Agents <span class="tag">PAPER</span></div>
+    <div class="header-right">
+      <span id="run-badge" class="badge badge-off">PARADO</span>
+      <span id="kill-badge" class="badge badge-off">kill switch: off</span>
+      <button onclick="act('/start')">Iniciar 24/7</button>
+      <button onclick="act('/stop')">Parar</button>
+      <button onclick="act('/cycle')">Correr 1 ciclo</button>
+      <button class="btn-danger" onclick="kill()">Kill switch</button>
+      <a href="/" class="muted" style="font-size:12px">Polymarket ↗</a>
+    </div>
+  </header>
+  <nav class="sections">
+    <a href="#resumo">Resumo</a><a href="#agents">Agents</a><a href="#research-desk">Research</a>
+    <a href="#posicoes">Posições & trades</a><a href="#decisoes">Decisões</a><a href="#fundos">Fundos & carteiras</a>
+  </nav>
+
+  <main>
+    <div class="story" id="resumo"><span class="muted">A carregar…</span></div>
+
+    <section class="cards-row">
+      <div class="card"><div class="card-label">Património (equity) <span class="help" title="Cash + valor atual das posições, se vendesses agora ao preço da Jupiter">?</span></div><div class="card-value" id="equity">–</div></div>
+      <div class="card"><div class="card-label">Cash (USDC paper)</div><div class="card-value" id="cash">–</div></div>
+      <div class="card"><div class="card-label">Em posições</div><div class="card-value" id="exposure">–</div></div>
+      <div class="card"><div class="card-label">P&L total <span class="help" title="Lucro/prejuízo desde o início, sem contar depósitos e levantamentos">?</span></div><div class="card-value" id="total-pnl">–</div></div>
+      <div class="card"><div class="card-label">Realizado / Não realizado</div><div class="card-value" id="r-u">–</div></div>
+      <div class="card"><div class="card-label">Trades · Win rate</div><div class="card-value" id="wr">–</div></div>
+    </section>
+
+    <div class="grid">
+      <section class="panel">
+        <h2>Ganhos (excluem depósitos/levantamentos)</h2>
+        <div class="perf" id="perf"></div>
+        <canvas id="equity-chart" height="140" style="margin-top:12px"></canvas>
+      </section>
+      <section class="panel">
+        <h2>Estado do loop</h2>
+        <div id="loop" class="note"></div>
+      </section>
+    </div>
+
+    <section class="panel" style="margin-bottom:16px" id="agents-sec">
+      <h2 id="agents">Agents — fluxo de decisão</h2>
+      <p class="note">Cada token passa da esquerda para a direita. Qualquer agent pode <b>bloquear</b>; só o Risk define o tamanho e só o Executor "compra" (em paper). Verde = aprovou da última vez, amarelo = bloqueou.</p>
+      <div class="pipeline" id="pipeline"></div>
+    </section>
+
+    <section class="panel" style="margin-bottom:16px" id="research-desk">
+      <h2>Research desk <span class="tag">análise · riscos · notícias</span></h2>
+      <p class="note">Cada token que gera sinal recebe uma ficha: métricas on-chain/fluxo (Jupiter) com alertas de risco e, com ANTHROPIC_API_KEY, uma análise LLM com pesquisa web/MCP. O research pode só <b>vetar</b>.</p>
+      <form class="inline" onsubmit="return researchNow(event)">
+        <input id="r-mint" placeholder="Mint do token para pesquisar agora" required>
+        <button>Pesquisar token</button>
+      </form>
+      <div class="agents-grid" id="research"></div>
+    </section>
+
+    <div class="grid">
+      <section class="panel" id="posicoes">
+        <h2>Posições abertas</h2>
+        <div class="tbl-wrap"><table id="positions"></table></div>
+      </section>
+      <section class="panel">
+        <h2>Trades fechados</h2>
+        <div class="tbl-wrap"><table id="trades"></table></div>
+      </section>
+    </div>
+
+    <section class="panel" style="margin-bottom:16px" id="decisoes">
+      <h2>Decision log <span class="tag" id="dec-count"></span></h2>
+      <div class="tbl-wrap"><table id="decisions"></table></div>
+    </section>
+
+    <div class="grid">
+      <section class="panel" id="fundos">
+        <h2>Fundos (paper)</h2>
+        <p class="note">Depósitos e levantamentos aqui são <b>simulados</b> e ficam num ledger append-only.</p>
+        <form class="inline" onsubmit="return move(event,'deposit')">
+          <input id="dep" type="number" min="1" step="any" placeholder="USD a depositar" required>
+          <button>Depositar (paper)</button>
+        </form>
+        <form class="inline" onsubmit="return move(event,'withdraw')">
+          <input id="wd" type="number" min="1" step="any" placeholder="USD a levantar" required>
+          <button>Levantar (paper)</button>
+        </form>
+        <div class="tbl-wrap"><table id="funds"></table></div>
+        <details style="margin-top:10px"><summary>Como funcionará com dinheiro real (fase 3)</summary>
+          <p class="note">1) O bot terá uma <b>hot wallet Solana própria</b> com pouco saldo; a chave fica só no servidor, nunca no browser nem no repositório.<br>
+          2) <b>Adicionar fundos</b> = enviar USDC/SOL da tua Phantom para o endereço público do bot.<br>
+          3) <b>Levantar</b> = o bot envia para um único endereço de levantamento pré-aprovado (allowlist), com limite diário.<br>
+          4) Trades reais só com <code>LIVE_TRADING=1</code>, depois de 4–8 semanas de paper 24/7 com resultado positivo vs. hold SOL.<br>
+          A tua Phantom continua só tua; o BlueWallet fica como cofre BTC.</p>
+        </details>
+      </section>
+      <section class="panel">
+        <h2>Carteiras (só leitura)</h2>
+        <p class="note">Liga a tua carteira para veres saldos aqui. Só lemos o <b>endereço público</b>: não pedimos assinaturas nem acesso aos fundos. Nunca escrevas a seed phrase em lado nenhum.</p>
+        <div class="wallet-btns">
+          <button onclick="connectWallet('phantom')">👻 Conectar Phantom</button>
+          <button onclick="connectWallet('solflare')">☀️ Conectar Solflare</button>
+        </div>
+        <p class="note">Ou cola o endereço público manualmente:</p>
+        <form class="inline" onsubmit="return addWallet(event)">
+          <input id="w-addr" placeholder="Endereço público Solana" required>
+          <input id="w-label" placeholder="Nome (ex.: Phantom)" style="max-width:160px">
+          <button>Adicionar</button>
+        </form>
+        <div id="wallets"></div>
+      </section>
+    </div>
+  </main>
+
+  <script src="/static/chart.min.js"></script>
+  <script src="/static/paper.js"></script>
+</body>
+</html>

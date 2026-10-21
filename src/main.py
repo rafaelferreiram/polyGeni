@@ -2,6 +2,8 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from src.api.routes import router
+from src.api.paper_routes import router as paper_router
+from src.solana import config as solana_cfg, engine as paper_engine
 from src.database import init_db
 import logging
 import os
@@ -14,6 +16,7 @@ logging.basicConfig(
 app = FastAPI(title="polyGeni", version="1.0.0")
 
 app.include_router(router, prefix="/api")
+app.include_router(paper_router, prefix="/api/paper")
 
 # Serve frontend
 frontend_path = os.path.join(os.path.dirname(__file__), "..", "frontend")
@@ -24,8 +27,14 @@ if os.path.isdir(frontend_path):
     def serve_ui():
         return FileResponse(os.path.join(frontend_path, "index.html"))
 
+    @app.get("/paper")
+    def serve_paper_ui():
+        return FileResponse(os.path.join(frontend_path, "paper.html"))
+
 
 @app.on_event("startup")
 def startup():
     init_db()
     logging.getLogger("main").info("polyGeni started. DB initialized.")
+    if solana_cfg.PAPER_AUTOSTART:
+        paper_engine.start()

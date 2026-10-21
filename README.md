@@ -1,5 +1,90 @@
 # polyGeni
 
+> ⚠️ **No real trading by default.** The Polymarket bot only places real orders with `LIVE_TRADING=1`
+> explicitly set; otherwise every order is a dry run. The Solana bot (below) is **paper trading only**:
+> it never builds, signs or sends a transaction and never creates, reads or uses a private key.
+
+## Solana multi-agent bot — Phase 1: PAPER trading
+
+Simulated money, **real quotes**. Dashboard: [http://localhost:8000/paper](http://localhost:8000/paper)
+(labelled PAPER everywhere).
+
+### Architecture
+
+```
+            ┌──────────── every PAPER_CYCLE_SEC (APScheduler, heartbeat) ────────────┐
+ ledger ⇄ reconcile ⇄ positions → mark-to-market (Jupiter sell quote) → stop / TP / max-hold exits
+                                   → daily-loss check → persistent KILL SWITCH
+ ScoutAgent ─► SafetyAgent ─► StrategyAgents ─► ResearchAgent ─► DebateAgent ─► RiskAgent ─► ExecutorAgent ─► PaperBroker
+ (DexScreener  (anti-rug,     (momentum,        (analyst desk:    (LLM bull vs   (rules: size,  (only one that   (real Jupiter
+  trending +    rejects by     mean-reversion;   Jupiter metrics   bear, VETO     exposure, max   talks to the     quote + slippage
+  watchlist)    default)       own sub-capital)  + LLM web/MCP)    only)          positions; VETO) broker)          + fees → paper.db)
+```
+
+| Agent | Decides? | What it does |
+|---|---|---|
+| `ScoutAgent` | candidates only | DexScreener boosted/latest Solana tokens + a watchlist of established tokens; best USDC/SOL pair; min liquidity & 24h volume |
+| `SafetyAgent` | can only reject | **No launch sniping**: pair age ≥ `SAFETY_MIN_PAIR_AGE_H` (24h). Min liquidity, mint & freeze authority must be revoked (on-chain RPC), no risky Token-2022 extensions, top-holder concentration (Jupiter audit, RPC fallback). Anything unverifiable ⇒ reject. Context: on Pump.fun ~98% of tokens were rugs/manipulation |
+| `MomentumBreakout`, `MeanReversion` | signal | Deterministic, pure functions of closed 1h candles (GeckoTerminal live, Binance in backtest); each owns 50% of capital; stop-loss and take-profit always attached |
+| `ResearchAgent` | can only veto | Per-token brief: Jupiter organic score, buy/sell flow, holder and liquidity change, verification, concentration → red flags + risk level; with `ANTHROPIC_API_KEY`, Claude with live web search (+ optional MCP servers) adds thesis, risks, catalysts, sentiment |
+| `DebateAgent` | can only veto | Optional LLM bull-vs-bear review. Off without `ANTHROPIC_API_KEY`. Cannot open, resize or redirect a trade; errors/unparsable output ⇒ veto |
+| `RiskAgent` | **final veto + sizing** | No LLM. Max % per position, max total exposure, max positions, strategy sub-capital, mandatory stop/TP, daily loss limit ⇒ persistent kill switch |
+| `ExecutorAgent` | — | The only component holding the broker |
+
+Lesson applied from Alpha Arena (LLMs trading alone lost 30–60%): **rules decide, the LLM only analyses and vetoes.**
+
+### Ledger & decision log (`paper.db`, separate from `polygeni.db`)
+- `fills`, `decisions`, `cash_movements`: **append-only** (SQLite triggers block UPDATE/DELETE); fills idempotent by `order_id`.
+- `positions` is a materialised view rebuilt from fills every cycle (reconciliation logs any mismatch).
+- Every entry, veto, exit, kill-switch and error is logged with signals, each agent's vote and the reason.
+
+### Run it (paper)
+```bash
+uv venv --python 3.11 .venv && uv pip install --python .venv/bin/python -r requirements.txt
+PAPER_AUTOSTART=1 .venv/bin/uvicorn src.main:app --port 8000      # 24/7 loop + dashboard at /paper
+.venv/bin/python -m src.solana.engine --cycles 3                   # or a few cycles from the shell
+.venv/bin/python -m src.solana.demo                                # dummy account demo → demo.db (forced entries, proves plumbing)
+.venv/bin/python -m src.solana.backtest --days 180                 # walk-forward report → reports/
+.venv/bin/python -m pytest -q                                      # offline tests (no network)
+```
+
+Main settings (env, conservative defaults): `PAPER_START_USDC=100`, `PAPER_CYCLE_SEC=300`,
+`RISK_MAX_POSITION_PCT=0.10`, `RISK_MAX_EXPOSURE_PCT=0.50`, `RISK_MAX_POSITIONS=4`, `RISK_MAX_DAILY_LOSS_PCT=0.05`,
+`SAFETY_MIN_PAIR_AGE_H=24`, `SAFETY_MIN_LIQUIDITY_USD=250000`, `PAPER_SLIPPAGE_BPS=30`,
+`PAPER_PRIORITY_FEE_LAMPORTS=100000`, `SOLANA_RPC_URL` (public RPC by default), `ANTHROPIC_API_KEY`,
+`DEBATE_MODEL`, `DEBATE_MCP_SERVERS` (JSON list of remote MCP servers for fresh market context).
+
+### Dashboard (`/paper`)
+Equity, cash, P&L (realised/unrealised), gains for day / week / month / all-time (deposits excluded),
+equity chart, each agent's activity and veto counts, research desk, open positions, closed trades,
+decision log with per-agent votes, kill switch, **paper** deposit/withdraw, and **watch-only** wallets.
+A plain-language summary at the top says what the bot is doing; the agents are shown as a left-to-right
+decision pipeline (green = approved last time, yellow = blocked).
+Wallets: **Connect Phantom / Solflare** buttons call the extension's `connect()`, which only shares the public
+key (no signature, no fund access), or paste a public address; SOL/SPL balances are read via RPC.
+Gold/silver are not traded yet (later phase).
+
+### Funds and wallets — what is and isn't possible now
+- Paper deposits/withdrawals are simulated ledger entries.
+- Phase 3 (not built): a dedicated bot hot wallet with a small balance; funding = sending USDC/SOL from your
+  wallet to its public address; withdrawals only to an allow-listed address with daily limits; real swaps via
+  Jupiter only with `LIVE_TRADING=1` **after** 4–8 weeks of 24/7 paper trading that beats hold SOL after costs.
+
+### Backtest
+`reports/backtest_<date>.md`: walk-forward (params chosen in-sample on the previous fold, traded on the next),
+net of 60 bps/side + network fees, always vs **buy-and-hold SOL**. Latest run (180d, 1h, 6 Solana tokens):
+momentum −35.9%, mean-reversion −8.7%, hold SOL +58.7% — **the strategies do not beat holding SOL**; they are
+a baseline to iterate on in paper, not a reason to go live.
+
+### Known limitations
+- Public endpoints are rate limited (Jupiter keyless 429s, public RPC blocks `getTokenLargestAccounts`); the loop
+  logs and continues, Safety rejects what it cannot verify. A free RPC/Jupiter key improves coverage.
+- Holder concentration comes from Jupiter's audit (third-party) and includes pool vaults.
+- Live candles come from GeckoTerminal (~30 req/min); backtest uses Binance and excludes memecoins.
+- Paper fills assume the quoted route would fill; no MEV/landing failures beyond the extra slippage bps.
+
+---
+
 Automated trading bot for [Polymarket](https://polymarket.com) prediction markets.
 Covers **Bitcoin**, **Sports**, and **Global Events** markets with a real-time analysis engine, Kelly Criterion position sizing, and a live dashboard.
 
@@ -133,7 +218,8 @@ Open [http://localhost:8000](http://localhost:8000)
 Click **Start (monitor)** in the dashboard — the bot scans every 5 minutes and surfaces opportunities, but places **no real orders**.
 
 ### Auto-trade mode
-Click **Start (auto-trade)** — the bot automatically places the top opportunity each scan cycle if edge ≥ 5%.
+Click **Start (auto-trade)** — the bot picks the top opportunity each scan cycle if edge ≥ 5%.
+Orders stay dry-run unless the server runs with `LIVE_TRADING=1` (see the audit before enabling it).
 
 ### Manual scan
 Click **Scan Now** to run a scan immediately at any time.

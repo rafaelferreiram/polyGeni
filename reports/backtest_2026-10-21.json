@@ -1,0 +1,139 @@
+{
+ "momentum": {
+  "oos": {
+   "return_pct": -35.9,
+   "max_dd_pct": 44.55,
+   "sharpe": -2.42,
+   "trades": 185,
+   "win_rate": 36.2
+  },
+  "folds": [
+   {
+    "fold": 1,
+    "params": {
+     "lookback": 48,
+     "vol_mult": 1.5
+    },
+    "return_pct": -15.03,
+    "max_dd_pct": 24.29,
+    "sharpe": -3.35,
+    "trades": 55,
+    "win_rate": 36.4
+   },
+   {
+    "fold": 2,
+    "params": {
+     "lookback": 24,
+     "vol_mult": 2.0
+    },
+    "return_pct": -10.34,
+    "max_dd_pct": 22.79,
+    "sharpe": -1.87,
+    "trades": 50,
+    "win_rate": 36.0
+   },
+   {
+    "fold": 3,
+    "params": {
+     "lookback": 24,
+     "vol_mult": 1.5
+    },
+    "return_pct": -15.87,
+    "max_dd_pct": 26.23,
+    "sharpe": -2.3,
+    "trades": 80,
+    "win_rate": 36.2
+   }
+  ],
+  "params": [
+   {
+    "lookback": 48,
+    "vol_mult": 1.5
+   },
+   {
+    "lookback": 24,
+    "vol_mult": 2.0
+   },
+   {
+    "lookback": 24,
+    "vol_mult": 1.5
+   }
+  ]
+ },
+ "mean_reversion": {
+  "oos": {
+   "return_pct": -8.69,
+   "max_dd_pct": 14.65,
+   "sharpe": -0.94,
+   "trades": 96,
+   "win_rate": 49.0
+  },
+  "folds": [
+   {
+    "fold": 1,
+    "params": {
+     "k": 2.0,
+     "rsi_max": 25
+    },
+    "return_pct": -5.61,
+    "max_dd_pct": 10.42,
+    "sharpe": -1.41,
+    "trades": 40,
+    "win_rate": 50.0
+   },
+   {
+    "fold": 2,
+    "params": {
+     "k": 2.5,
+     "rsi_max": 30
+    },
+    "return_pct": -0.32,
+    "max_dd_pct": 5.65,
+    "sharpe": -0.04,
+    "trades": 29,
+    "win_rate": 44.8
+   },
+   {
+    "fold": 3,
+    "params": {
+     "k": 2.5,
+     "rsi_max": 25
+    },
+    "return_pct": -2.94,
+    "max_dd_pct": 7.27,
+    "sharpe": -1.25,
+    "trades": 27,
+    "win_rate": 51.9
+   }
+  ],
+  "params": [
+   {
+    "k": 2.0,
+    "rsi_max": 25
+   },
+   {
+    "k": 2.5,
+    "rsi_max": 30
+   },
+   {
+    "k": 2.5,
+    "rsi_max": 25
+   }
+  ]
+ },
+ "hold_SOL": {
+  "oos": {
+   "return_pct": 58.71,
+   "max_dd_pct": 18.99,
+   "sharpe": 2.47,
+   "trades": 0,
+   "win_rate": null
+  }
+ },
+ "_span": {
+  "oos_start": "2026-06-08T02:00:00+00:00",
+  "oos_end": "2026-10-21T01:00:00+00:00",
+  "bars": 3240,
+  "folds": 4
+ }
+}

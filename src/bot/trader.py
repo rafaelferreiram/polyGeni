@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from src.polymarket import client as poly
 from src.models import Trade, Position, Opportunity
 from src.bot.risk import check_trade
+from src.config import LIVE_TRADING
 
 
 def execute_opportunity(
@@ -18,7 +19,10 @@ def execute_opportunity(
     """
     Validates, places, and records a trade.
     dry_run=True: validates and records opportunity only, no real order.
+    Real orders also require LIVE_TRADING=1; otherwise dry_run is forced.
     """
+    if not LIVE_TRADING:
+        dry_run = True
     approved, reason = check_trade(opportunity, bankroll, open_positions)
     if not approved:
         return {"success": False, "reason": reason}

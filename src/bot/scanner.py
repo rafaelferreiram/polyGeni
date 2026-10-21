@@ -11,7 +11,7 @@ from src.analysis.same_day import scan_same_day_markets
 from src.bot.trader import execute_opportunity, sync_positions
 from src.polymarket.client import get_balance
 from src.database import SessionLocal
-from src.config import BOT_SCAN_INTERVAL_SEC
+from src.config import BOT_SCAN_INTERVAL_SEC, LIVE_TRADING
 from src.models import Position, PortfolioSnapshot, Trade
 
 logger = logging.getLogger("scanner")
@@ -135,7 +135,7 @@ def _scan_job():
                     )
                     logger.info(f"[scanner] Best edge {candidate['edge']:.1%} — below threshold, skipping all")
                     break
-                result = execute_opportunity(candidate, bankroll, open_count, db, dry_run=False)
+                result = execute_opportunity(candidate, bankroll, open_count, db, dry_run=not LIVE_TRADING)
                 logger.info(f"[scanner] Trade attempt: {result}")
                 if result.get("success"):
                     _log_thought(
