@@ -114,7 +114,8 @@ def test_account_sim_and_real_share_shape_and_controls(client, local, monkeypatc
     monkeypatch.setattr(hl_live, "_shadow", None)
     monkeypatch.setattr(hl_live, "_live", None)
     monkeypatch.setattr(hl_live, "shadow_cycle", lambda: None)
-    monkeypatch.delenv("HL_API_WALLET_KEY", raising=False)
+    for var in ("HL_API_WALLET_KEY", "HL_API_WALLET_KEY_TESTNET", "HL_API_WALLET_KEY_MAINNET"):
+        monkeypatch.delenv(var, raising=False)
     sim = client.get("/api/paper/account?kind=sim").json()
     real = client.get("/api/paper/account?kind=real").json()
     shared = {"equity", "pnl_usd", "positions", "trades", "decisions", "agents", "live", "limits", "decision_mode"}

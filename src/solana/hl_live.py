@@ -44,12 +44,17 @@ def info_url() -> str:
     return API_URLS[network()] + "/info"
 
 
+def api_key() -> str:
+    """One API wallet per network: HL_API_WALLET_KEY_TESTNET / _MAINNET, falling back to HL_API_WALLET_KEY."""
+    return os.getenv(f"HL_API_WALLET_KEY_{network().upper()}", "") or os.getenv("HL_API_WALLET_KEY", "")
+
+
 def config_status() -> dict:
     """What is configured, without ever exposing the key."""
     problems, api_addr = [], None
-    key = os.getenv("HL_API_WALLET_KEY", "")
+    key = api_key()
     if not key:
-        problems.append("HL_API_WALLET_KEY em falta no .env (chave da API wallet)")
+        problems.append(f"HL_API_WALLET_KEY_{network().upper()} em falta no .env (chave privada da API wallet desta rede)")
     else:
         try:
             from eth_account import Account
@@ -113,7 +118,7 @@ class HyperliquidLiveBroker(Broker):
         if self._exchange is None:
             from eth_account import Account
             from hyperliquid.exchange import Exchange
-            wallet = Account.from_key(os.environ["HL_API_WALLET_KEY"])
+            wallet = Account.from_key(api_key())
             self._exchange = Exchange(wallet, API_URLS[network()], account_address=self.address, perp_dexs=["", "xyz"])
             self._info = self._exchange.info
         return self._exchange, self._info

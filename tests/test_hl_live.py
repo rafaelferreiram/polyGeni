@@ -197,7 +197,8 @@ def test_risk_hard_usd_caps():
 
 
 def test_arming_requires_configuration(monkeypatch):
-    monkeypatch.delenv("HL_API_WALLET_KEY", raising=False)
+    for var in ("HL_API_WALLET_KEY", "HL_API_WALLET_KEY_TESTNET", "HL_API_WALLET_KEY_MAINNET"):
+        monkeypatch.delenv(var, raising=False)
     monkeypatch.setattr(cfg, "HL_ACCOUNT_ADDRESS", "")
     st = hl_live.config_status()
     assert len(st["problems"]) == 2 and st["api_wallet"] is None
