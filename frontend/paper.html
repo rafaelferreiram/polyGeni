@@ -240,6 +240,9 @@
     .st-chip.pronto { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); }
     .st-chip.perto { color: var(--yellow); border-color: rgba(251,191,36,.5); }
     .legend b { color: var(--text); }
+    .boost { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-top: 14px; padding: 10px 12px;
+             border: 1px dashed var(--border); border-radius: 12px; font-size: 13px; }
+    .boost select, .boost input { padding: 6px 8px; }
     .reward { margin-top: 8px; font-size: 12px; color: var(--muted); padding: 5px 8px; border-radius: 8px; background: var(--surface); }
     .reward b { color: var(--text); } .reward.up b { color: var(--green); } .reward.down b { color: var(--red); }
     .term { background: #050706; border: 1px solid var(--border); border-radius: 10px; height: 380px; overflow-y: auto; padding: 10px 12px;
@@ -434,6 +437,19 @@
       <h2><span>Equipe de bots</span>
         <span class="ctrls"><span class="note" id="team-head"></span><button id="btn-coffee" onclick="giveCoffee(this)" title="4 horas de modo day trade nas contas simulada e real: até 24 compras por dia em vez de 12 (as regras de compra e os stops não mudam)">☕ Café</button><button id="btn-scan" onclick="scanNow(this)">🔍 Analisar agora</button></span></h2>
       <div class="team" id="team-grid"></div>
+      <div class="boost">
+        <span>🚀 <b>Turbo da IA</b> — trocar o modelo do bot de IA por alguns ciclos (1 ciclo = 5 min), depois volta ao Haiku:</span>
+        <select id="boost-model" aria-label="Modelo">
+          <option value="claude-sonnet-5-5">Sonnet 5.5 · ~$0,015/análise</option>
+          <option value="claude-opus-5-5">Opus 5.5 · ~$0,03/análise</option>
+          <option value="claude-opus-5">Opus 5 · ~$0,04/análise</option>
+          <option value="claude-fable-5-1">Fable 5.1 · ~$0,08/análise</option>
+          <option value="claude-haiku-5-5">Haiku 5.5 · ~$0,001/análise (padrão)</option>
+        </select>
+        <label>por <input id="boost-cycles" type="number" min="1" max="288" value="3" style="width:64px"> ciclos</label>
+        <button onclick="startBoost(this)">Ativar</button>
+        <span class="note" id="boost-status"></span>
+      </div>
       <div class="legend"><span>🏆 Recompensa: 1 ponto = 1 centavo de lucro líquido (30 dias) → mais pontos = prioridade e posição cheia; prejuízo = posição mínima</span><span>🛡️ Na conta real: Quedas e Tendência já operam; bots de IA só depois de 10 trades com lucro no laboratório</span><span>👆 Passe o mouse num bot para ver detalhes</span></div>
     </section>
     <section class="panel" id="logs">
@@ -498,6 +514,6 @@
     </details>
   </main>
 
-  <script src="/static/paper.js?v=42"></script>
+  <script src="/static/paper.js?v=43"></script>
 </body>
 </html>

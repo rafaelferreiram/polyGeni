@@ -541,6 +541,7 @@ async function loadArena() {
       <td>${usd(r.equity)}</td><td><span class="${r.twr >= 0 ? "green" : "red"}">${pct(r.twr)}</span></td><td>${r.trades}</td>
       <td>${r.win_rate === null ? "–" : pct(r.win_rate)}</td><td class="muted">${esc(r.state)}</td></tr>`));
   renderTeam();
+  renderBoost();
 }
 
 function renderTeam() {
@@ -583,7 +584,7 @@ function renderTeam() {
     return `<div class="tb ${cls}" tabindex="0" style="--c:${L.color}" aria-label="${esc(L.label)}: ${esc(state)}">
       ${coffee && cls !== "off" ? '<span class="cup" title="com cafeína: sem pausas">☕</span>' : ""}
       <div class="head">${botFace(L.color, L.ico)}
-        <div><div class="nm">${esc(L.label)}</div><div class="rl">${esc(L.role)}</div></div></div>
+        <div><div class="nm">${esc(L.label)}${r.model_now && r.model_now !== m.model ? ` <small class="green">🚀 ${esc(look(r.model_now).label)}</small>` : ""}</div><div class="rl">${esc(L.role)}</div></div></div>
       <span class="chip">${esc(chip)}</span>
       <div class="now">Última decisão: ${now}</div>
       ${rewardLine(r.reward, rankOf[m.model])}
@@ -592,6 +593,20 @@ function renderTeam() {
       <div class="tip" role="tooltip">${tip}<div class="note" style="margin-top:6px">${esc(bubble)}</div></div>
     </div>`;
   }).join(""));
+}
+
+// ─── AI turbo: a stronger model for N cycles, then back to Haiku ───
+function startBoost(btn) {
+  const model = document.getElementById("boost-model").value, cycles = +document.getElementById("boost-cycles").value;
+  run(btn, "Ativando…", () => api("/arena/boost", "POST", { bot: "claude-haiku-5-5", model, cycles }),
+      `🚀 Bot de IA usando ${look(model).label} por ${cycles} ciclo(s); depois volta ao Haiku. Só gasta quando há oportunidade.`);
+}
+function renderBoost() {
+  const r = (lastArena?.leaderboard || []).find((x) => x.model === "claude-haiku-5-5");
+  const b = r?.boost || {};
+  document.getElementById("boost-status").innerHTML = b.model && b.cycles_left >= 0 && r.model_now !== "claude-haiku-5-5"
+    ? `ativo: <b>${esc(look(b.model).label)}</b> · ${b.cycles_left} de ${b.total} ciclos restantes`
+    : b.model ? `agendado: <b>${esc(look(b.model).label)}</b> por ${b.total} ciclos (começa no próximo ciclo)` : "modelo atual: Haiku 5.5 (padrão)";
 }
 
 // reward: points = net profit of the last 30 days after AI cost; it buys priority and position size

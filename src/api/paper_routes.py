@@ -456,6 +456,22 @@ class LiveModel(BaseModel):
     model: str
 
 
+class Boost(BaseModel):
+    bot: str = "claude-haiku-5-5"
+    model: str
+    cycles: int = 3
+
+
+@router.post("/arena/boost", dependencies=LOCAL)
+def arena_boost(req: Boost):
+    """Give an AI bot a stronger model (Sonnet, Opus, Fable…) for N cycles; it then returns to its default."""
+    from src.solana import arena
+    try:
+        return arena.boost(req.bot, req.model, req.cycles)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
 @router.post("/live/model", dependencies=LOCAL)
 def live_model(req: LiveModel):
     from src.solana import hl_live

@@ -53,8 +53,11 @@ class CostBook:
                                usage.get("input_tokens", 0), usage.get("output_tokens", 0), usage.get("searches", 0), usd))
         return usd
 
-    def total(self, days: float | None = None, model: str | None = None) -> float:
+    def total(self, days: float | None = None, model: str | None = None, who: str | None = None) -> float:
         sql, args = "SELECT COALESCE(SUM(usd),0) FROM costs WHERE 1=1", []
+        if who:
+            sql += " AND who = ?"
+            args.append(who)
         if days is not None:
             sql += " AND ts >= ?"
             args.append((datetime.now(timezone.utc) - timedelta(days=days)).isoformat(timespec="seconds"))

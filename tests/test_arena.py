@@ -131,3 +131,18 @@ def test_reward_points_priority_and_size_penalty(tmp_path, monkeypatch):
     order = [m.model for m in arena.rank("ETH", [TeamMember("claude-haiku-5-5"), TeamMember("claude-opus-5")])]
     assert order == ["claude-opus-5", "claude-haiku-5-5"]          # the winner gets priority
     assert arena.track_record("claude-haiku-5-5")["recent_trades"][0]["pnl_pct"] < 0
+
+
+def test_model_boost_runs_n_cycles_then_returns_to_default(tmp_path, monkeypatch):
+    bots, _ = make_bots(tmp_path, {"claude-haiku-5-5": "{}"})
+    monkeypatch.setattr(arena, "_bots", bots)
+    eng = bots["claude-haiku-5-5"]
+    arena.boost("claude-haiku-5-5", "claude-sonnet-5-5", 2)
+    models = []
+    for _ in range(3):                                   # one lab round each
+        arena._apply_boost("claude-haiku-5-5", eng)
+        models.append(eng.llm.model)
+    assert models == ["claude-sonnet-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"]
+    assert eng.ledger.get_state("boost") == {}
+    with pytest.raises(ValueError):
+        arena.boost("claude-haiku-5-5", "gpt-5", 1)

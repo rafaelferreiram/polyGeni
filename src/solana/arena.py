@@ -77,7 +77,7 @@ def reward(model: str) -> dict:
     since = (datetime.now(timezone.utc) - timedelta(days=d)).isoformat()
     trades = [t for t in eng.ledger.closed_trades() if t["exit_ts"] >= since] if eng else []
     pnl = sum(t["pnl_usd"] for t in trades)
-    ai = 0.0 if model in RULE_BOTS else costs.book().total(days=d, model=model)
+    ai = 0.0 if model in RULE_BOTS else _ai_cost(model, d)
     exp, n = score(model, None, d)
     streak = 0
     for t in trades:                                  # newest first
@@ -150,8 +150,46 @@ def net_of_cost(model: str) -> tuple[float, float, float]:
     from src.solana import costs
     eng = bots().get(model)
     pnl = (eng.portfolio().equity - eng.ledger.contributed()) if eng else 0.0
-    cost = costs.book().total(model=model) if model not in RULE_BOTS else 0.0
+    cost = _ai_cost(model) if model not in RULE_BOTS else 0.0
     return pnl, cost, pnl - cost
+
+
+def _ai_cost(model: str, days: float | None = None) -> float:
+    """Everything this AI bot spent — its own model and any boosted model it ran with (calls are tagged by bot)."""
+    from src.solana import costs
+    b = costs.book()
+    return b.total(days=days, who=f"llm:{model}") or b.total(days=days, model=model)
+
+
+BOOST_MODELS = ("claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5", "claude-opus-5", "claude-fable-5-1")
+
+
+def boost(model: str, to: str, cycles: int) -> dict:
+    """Run an AI bot with a stronger model for N cycles (then it returns to its own model, e.g. Haiku)."""
+    eng = bots().get(model)
+    if not eng or not eng.llm:
+        raise ValueError(f"{model} não é um bot de IA")
+    if to not in BOOST_MODELS or not 1 <= int(cycles) <= 288:
+        raise ValueError("modelo ou número de ciclos inválido (1–288)")
+    eng.ledger.set_state("boost", {"model": to, "cycles_left": int(cycles), "total": int(cycles)})
+    eng.llm._seen.clear()          # re-decide every market of this candle with the new model
+    eng.ledger.log_decision("boost", reason=f"🚀 {to} por {cycles} ciclo(s); depois volta a {model}")
+    return eng.ledger.get_state("boost")
+
+
+def _apply_boost(model: str, eng):
+    """Called before each lab cycle: use the boosted model while cycles remain, then return to the default."""
+    if not eng.llm:
+        return
+    b = eng.ledger.get_state("boost") or {}
+    if b.get("cycles_left", 0) > 0:
+        eng.llm.model = b["model"]
+        eng.ledger.set_state("boost", {**b, "cycles_left": b["cycles_left"] - 1})
+    elif eng.llm.model != model:
+        eng.llm.model = model
+        eng.ledger.set_state("boost", {})
+        eng.llm._seen.clear()
+        eng.ledger.log_decision("boost", reason=f"fim do boost: voltou a {model}")
 
 
 def _pause_if_unprofitable(model: str, eng) -> bool:
@@ -174,6 +212,7 @@ def run_round() -> dict:
             out[model] = {"paused": "unprofitable"}
             continue
         if eng.ledger.get_state("running", False) and (not eng.llm or eng.llm.enabled):
+            _apply_boost(model, eng)
             try:
                 out[model] = eng.run_cycle()
             except Exception as e:
@@ -222,6 +261,7 @@ def leaderboard() -> list[dict]:
             "pnl_usd": round(p.equity - led.contributed(), 2), "twr": perf.get("twr", 0.0), "hold_btc": perf.get("hold_btc"),
             "trades": len(trades), "win_rate": round(sum(t["pnl_usd"] > 0 for t in trades) / len(trades), 3) if trades else None,
             "open": [x["symbol"] for x in led.positions()], "reward": reward(model),
+            "model_now": eng.llm.model if eng.llm else None, "boost": led.get_state("boost") or {},
             "last_decision": next(({"market": k, **{x: v.get(x) for x in ("action", "reason", "model")}}
                                    for k, v in sorted(last.items(), key=lambda kv: -(kv[1].get("t") or 0))), None)
                              if eng.llm else _rules_last(led),
