@@ -416,7 +416,8 @@ class PaperEngine:
                 self._agent("debate", last_reason=f"{c.symbol}: {debate.reason}",
                             approved=int(debate.approve), vetoed=int(not debate.approve))
                 p = self.portfolio()
-                risk = self.risk.evaluate(sig, c.mint, strat.capital_pct, p, profile.get("max_pos_pct"))
+                risk = self.risk.evaluate(sig, c.mint, strat.capital_pct, p, profile.get("max_pos_pct"),
+                                          entry_cap_mult=2 if self.coffee() else 1)
                 self._agent("risk", last_reason=f"{c.symbol}: {risk.reason}",
                             approved=int(risk.approve), vetoed=int(not risk.approve))
                 chain = [v for v in (safety, strat_vote, research_vote, debate, risk) if v is not None]

@@ -75,8 +75,12 @@ Same engine and agents; only the broker is real (`HyperliquidLiveBroker`, offici
   equity, so the worst day is still capped.
 - **Thermometer** on the dashboard: market temperature from the bots' own scan (how many of the 29 coins are in an
   uptrend, average RSI and 24h move, coins close to a buy) and our return vs simply holding BTC.
+- **Connections** panel (`GET /api/paper/health`, cached 60s): Hyperliquid data and real account (API wallet
+  authorized, balance), Anthropic (key + models), Arbitrum and Solana RPC, Jupiter, DexScreener, CoinAPI (optional, no
+  credits). CoinMarketCap and TradingView are MCP connectors used by Claude in the morning/evening routine.
+- **Lucro real** has a toggle to show profit with or without the AI cost.
 - **☕ Coffee** (button next to the bots, `POST /api/paper/account/coffee`): keeps both wallets (simulation and real) and the whole team awake
-  (no self-pause, a scan every cycle) for 4 hours. Entry rules do **not** loosen: in the backtest, accepting shallower
+  (no self-pause, a scan every cycle) for 4 hours and doubles the daily entry cap (3 → 6) for day trading. Entry rules and stops do **not** loosen: in the backtest, accepting shallower
   dips (Bollinger k 1.0–1.5, RSI < 40–45, shorter targets) tripled the trades and turned +2.5% into −4% to −19%.
 - Markets: the whole liquid crypto market, not one coin — 29 perps (`HL_BROAD`): CoinMarketCap top-50 by market cap
   plus Hyperliquid's most traded, each with ≥ 208 days of history and ≥ $1M daily volume on Hyperliquid (BTC, ETH, SOL,

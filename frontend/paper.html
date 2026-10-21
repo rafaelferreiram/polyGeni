@@ -179,6 +179,14 @@
     .flow .net { border-color: rgba(52,211,153,.45) !important; }
     .flow .net.loss { border-color: rgba(248,113,113,.5) !important; }
     .budget { margin-top: 12px; }
+    .flow .excluded { opacity: .35; text-decoration: line-through; }
+    .switch { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text); cursor: pointer; text-transform: none; letter-spacing: 0; font-weight: 500; }
+    .switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+    .switch span { width: 34px; height: 20px; border-radius: 999px; background: var(--border); position: relative; transition: background .2s; flex: none; }
+    .switch span::after { content: ""; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: transform .2s; }
+    .switch input:checked + span { background: var(--accent); }
+    .switch input:checked + span::after { transform: translateX(14px); }
+    .switch input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
     .bar { height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden; }
     .bar span { display: block; height: 100%; background: var(--accent); width: 0; transition: width .4s; }
     .bar span.warn { background: var(--yellow); } .bar span.full { background: var(--red); }
@@ -208,6 +216,10 @@
     .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border);
              font-size: 11px; color: var(--muted); text-align: center; }
     .stats b { display: block; font-size: 14px; color: var(--text); font-variant-numeric: tabular-nums; }
+    .conns { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
+    .conn { background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; font-size: 12px; color: var(--muted); }
+    .conn b { color: var(--text); font-size: 13px; } .conn .d { margin-top: 3px; color: var(--text); overflow-wrap: anywhere; }
+    .conn.bad { border-color: rgba(248,113,113,.5); } .conn.bad .d { color: var(--red); }
     .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 12px; font-size: 12px; color: var(--muted); }
     .thermos { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
     .thermo { background: var(--surface-2); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; }
@@ -294,15 +306,16 @@
     <div class="setup" id="setup" hidden></div>
 
     <section class="panel" id="lucro">
-      <h2><span>Lucro real <span class="tag" id="verdict">–</span></span><span class="note" id="budget-note"></span></h2>
+      <h2><span>Lucro real <span class="tag" id="verdict">–</span></span>
+        <span class="ctrls"><label class="switch"><input type="checkbox" id="ai-toggle" checked onchange="toggleAI(this.checked)"><span></span>incluir custo da IA</label><span class="note" id="budget-note"></span></span></h2>
       <div class="flow">
         <div><span class="l">Ganho dos trades</span><b id="f-trade">–</b><span class="s">já inclui taxas e funding</span></div>
-        <div class="op">−</div>
+        <div class="op" id="op-ai">−</div>
         <div><span class="l">Custo da IA</span><b id="f-ai">–</b><span class="s" id="f-ai-s">–</span></div>
         <div class="op">−</div>
         <div><span class="l">Servidor</span><b id="f-vps">–</b><span class="s">VPS_MONTHLY_USD</span></div>
         <div class="op">=</div>
-        <div class="net"><span class="l">Lucro líquido</span><b id="f-net">–</b><span class="s" id="f-net-s">–</span></div>
+        <div class="net"><span class="l" id="f-net-l">Lucro líquido</span><b id="f-net">–</b><span class="s" id="f-net-s">–</span></div>
       </div>
       <div class="budget"><div class="bar"><span id="budget-bar"></span></div></div>
     </section>
@@ -330,7 +343,7 @@
 
     <section class="panel" id="team">
       <h2><span>Equipe de bots</span>
-        <span class="ctrls"><span class="note" id="team-head"></span><button id="btn-coffee" onclick="giveCoffee(this)" title="Mantém os bots das contas simulada e real acordados e atentos durante 4 horas (as regras de compra não mudam)">☕ Café</button><button id="btn-scan" onclick="scanNow(this)">🔍 Analisar agora</button></span></h2>
+        <span class="ctrls"><span class="note" id="team-head"></span><button id="btn-coffee" onclick="giveCoffee(this)" title="4 horas de modo day trade nas contas simulada e real: sem pausas, análise a cada 5 min e até 6 compras por dia (as regras de compra e os stops não mudam)">☕ Café</button><button id="btn-scan" onclick="scanNow(this)">🔍 Analisar agora</button></span></h2>
       <div class="team" id="team-grid"></div>
       <div class="legend"><span>🧭 O Coordenador usa o bot que mais lucrou nos últimos 30 dias</span><span>🛡️ Bot novo só usa dinheiro real depois de provar lucro</span><span>👆 Passe o mouse num bot para ver detalhes</span></div>
     </section>
@@ -370,6 +383,11 @@
       </section>
     </div>
 
+    <section class="panel" id="conexoes">
+      <h2><span>Conexões <span class="tag" id="conn-tag">–</span></span><span class="note">verificado a cada minuto</span></h2>
+      <div class="conns" id="conns"></div>
+    </section>
+
     <details class="more"><summary>Avançado</summary>
       <div class="wallet-row">
         <button class="btn-danger" id="btn-flat" onclick="flatten(this)">Fechar todas as posições reais</button>
@@ -383,6 +401,6 @@
     </details>
   </main>
 
-  <script src="/static/paper.js?v=24"></script>
+  <script src="/static/paper.js?v=27"></script>
 </body>
 </html>

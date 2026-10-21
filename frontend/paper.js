@@ -101,7 +101,7 @@ function scanNow(btn) {
 function giveCoffee(btn) {
   if (!acc?.running) return toast("Clique em ▶ Start primeiro", true);
   run(btn, "Preparando o café…", () => api("/account/coffee", "POST", { kind: KIND, hours: 4 }),
-      (r) => `☕ Equipe com cafeína até ${hhmm(r.coffee_until)} nas contas simulada e real — sem pausas, analisando todos os ciclos`);
+      (r) => `☕ Equipe com cafeína até ${hhmm(r.coffee_until)} nas contas simulada e real — sem pausas e até 6 compras por dia`);
 }
 
 function setMode(mode, btn) {
@@ -253,7 +253,7 @@ async function refresh() {
   document.getElementById("k-eq").textContent = usd(KIND === "real" && a.exchange_balance !== undefined ? a.exchange_balance : a.equity);
   document.getElementById("k-eq-s").textContent = `caixa ${usd(a.cash)} · em posição ${usd(a.exposure)}`;
   const P = a.profit || {};
-  document.getElementById("k-pnl").innerHTML = pnl(P.net_all);
+  document.getElementById("k-pnl").innerHTML = pnl(netOf(P, "all"));
   const all = a.performance?.all;
   document.getElementById("k-pnl-s").textContent = `trades ${usd(P.trading_all)} · IA −${usd(P.ai_all)}${all ? ` · segurar BTC ${pct(all.hold_btc)}` : ""}`;
   renderProfit(P);
@@ -321,18 +321,34 @@ function renderThermo(a) {
     <span><b>${a.trades.length ? pct(a.win_rate) : "–"}</b> acerto</span><span><b>${pnl(a.profit?.net_all ?? 0)}</b> lucro líquido</span>`;
 }
 
+// "Lucro real" can be shown with or without the AI cost (the user's choice, remembered in this browser)
+let withAI = true;
+try { withAI = localStorage.getItem("withAI") !== "0"; } catch (e) { /* storage blocked */ }
+const netOf = (P, span) => (span === "all" ? P.net_all + (withAI ? 0 : P.ai_all) : P.net_30d + (withAI ? 0 : P.ai_30d));
+function toggleAI(on) {
+  withAI = on;
+  try { localStorage.setItem("withAI", on ? "1" : "0"); } catch (e) { /* ignore */ }
+  safe(refresh);
+}
+
 function renderProfit(P) {
   if (!P) return;
+  document.getElementById("ai-toggle").checked = withAI;
+  document.getElementById("f-ai").parentElement.classList.toggle("excluded", !withAI);
+  document.getElementById("op-ai").classList.toggle("excluded", !withAI);
   document.getElementById("f-trade").innerHTML = pnl(P.trading_30d);
   document.getElementById("f-ai").innerHTML = P.ai_30d ? `<span class="red">−${usd(P.ai_30d)}</span>` : "$0.00";
   document.getElementById("f-ai-s").textContent = `${P.ai_calls_30d} análises pagas em 30 dias${P.prefilter ? " · só quando há oportunidade" : ""}`;
   document.getElementById("f-vps").innerHTML = P.server_30d ? `<span class="red">−${usd(P.server_30d)}</span>` : "$0.00";
-  document.getElementById("f-net").innerHTML = pnl(P.net_30d);
-  document.getElementById("f-net").parentElement.classList.toggle("loss", P.net_30d < 0);
-  document.getElementById("f-net-s").textContent = `últimos 30 dias · desde o início ${P.net_all >= 0 ? "+" : "−"}$${Math.abs(P.net_all).toFixed(2)}`;
+  const n30 = netOf(P, "30d"), nAll = netOf(P, "all");
+  document.getElementById("f-net").innerHTML = pnl(n30);
+  document.getElementById("f-net").parentElement.classList.toggle("loss", n30 < 0);
+  document.getElementById("f-net-l").textContent = withAI ? "Lucro líquido" : "Lucro sem a IA";
+  document.getElementById("f-net-s").textContent = `últimos 30 dias · desde o início ${nAll >= 0 ? "+" : "−"}$${Math.abs(nAll).toFixed(2)}`;
   const v = document.getElementById("verdict");
-  v.textContent = P.verdict;
-  v.style.color = P.verdict === "dando lucro" ? "var(--green)" : P.verdict === "dando prejuízo" ? "var(--red)" : "";
+  const verdict = !(P.trading_all || (withAI && P.ai_all)) ? "sem dados ainda" : nAll > 0 ? "dando lucro" : "dando prejuízo";
+  v.textContent = verdict;
+  v.style.color = verdict === "dando lucro" ? "var(--green)" : verdict === "dando prejuízo" ? "var(--red)" : "";
   const used = P.ai_budget ? Math.min(P.ai_month / P.ai_budget, 1) : 0;
   const bar = document.getElementById("budget-bar");
   bar.style.width = `${(used * 100).toFixed(1)}%`;
@@ -526,4 +542,19 @@ async function loadDaily() {
 }
 safe(loadDaily);
 setInterval(() => safe(loadDaily), 30000);
+
+// ─── connections: exchange, data, AI and RPC providers ───
+async function loadHealth() {
+  const h = await api("/health");
+  const bad = h.checks.filter((c) => c.ok === false).length;
+  const tag = document.getElementById("conn-tag");
+  tag.textContent = bad ? `${bad} com problema` : "tudo conectado";
+  tag.style.color = bad ? "var(--red)" : "var(--green)";
+  document.getElementById("conns").innerHTML = h.checks.map((c) => `<div class="conn ${c.ok === false ? "bad" : ""}">
+    ${c.ok ? "🟢" : c.ok === false ? "🔴" : "⚪"} <b>${esc(c.name)}</b> <span>· ${c.ms} ms</span>
+    <div class="d">${esc(c.detail)}</div><div>${esc(c.role)}</div></div>`).join("") +
+    `<div class="conn">🟢 <b>CoinMarketCap · TradingView</b> <span>· MCP via Claude</span><div class="d">contexto de mercado nas rotinas das 11h e 22h</div><div>medo/ganância, dominância, notícias, análise técnica</div></div>`;
+}
+safe(loadHealth);
+setInterval(() => safe(loadHealth), 60000);
 

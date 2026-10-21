@@ -267,7 +267,7 @@ class RiskAgent:
         return p.day_start_equity > 0 and (p.day_start_equity - p.equity) / p.day_start_equity >= self.max_daily_loss_pct
 
     def evaluate(self, sig: Signal, mint: str, capital_pct: float, p: Portfolio,
-                 max_pos_pct: float | None = None) -> Vote:
+                 max_pos_pct: float | None = None, entry_cap_mult: int = 1) -> Vote:
         d = {"equity": round(p.equity, 2), "cash": round(p.cash, 2), "exposure": round(p.exposure, 2)}
         if p.kill_switch:
             return Vote("risk", False, "kill switch active", d)
@@ -277,8 +277,9 @@ class RiskAgent:
             return Vote("risk", False, "stop-loss and take-profit are mandatory", d)
         if mint in p.open_mints:
             return Vote("risk", False, "already holding this token", d)
-        if p.entries_today >= self.max_entries_per_day:
-            return Vote("risk", False, f"daily entry cap ({self.max_entries_per_day}) reached", d)
+        cap = self.max_entries_per_day * entry_cap_mult        # ☕ coffee doubles it for active day trading
+        if p.entries_today >= cap:
+            return Vote("risk", False, f"daily entry cap ({cap}) reached", d)
         max_pos = self.max_positions
         if not max_pos and self.max_position_usd:      # 0 = auto: one slot per max_position_usd of capital
             cap = min(p.equity, self.max_capital_usd) if self.max_capital_usd else p.equity

@@ -76,3 +76,10 @@ def test_two_x_leverage_fits_three_positions_on_18_dollars():
     one_x = RiskAgent(max_pos_pct=1.0, max_exposure_pct=1.0, max_positions=0, min_trade_usd=10,
                       max_position_usd=12, max_capital_usd=20)
     assert one_x.evaluate(sig(), "A", 1.0, pf(equity=18.4, cash=18.4, day_start_equity=18.4)).detail["max_positions"] == 1
+
+
+def test_coffee_doubles_the_daily_entry_cap():
+    r = RiskAgent(max_pos_pct=0.1, max_exposure_pct=1.0, max_positions=10, min_trade_usd=5, max_entries_per_day=3)
+    p = pf(entries_today=3)
+    assert not r.evaluate(sig(), "M", 1.0, p).approve
+    assert r.evaluate(sig(), "M", 1.0, p, entry_cap_mult=2).approve

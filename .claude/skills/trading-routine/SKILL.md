@@ -41,6 +41,8 @@ If the CoinMarketCap connector is available, also call, in parallel:
   ENA 30171, WLD 13502, ARB 11841) — 24h/7d moves and volume, to spot which coins are pulling back.
 - `get_crypto_latest_news` only for a coin the bots traded or that is close to a buy signal, to explain a move.
 - `trending_crypto_narratives` once a day (morning) — which sectors are moving.
+- TradingView MCP, if available: `bitcoin_market_pulse` (BTC macro frame + risk label) and, for a coin near a buy
+  signal, `coin_analysis` / `multi_timeframe_analysis` to cross-check the setup.
 
 Cite which numbers came from CoinMarketCap. If the connector fails, say so in one line and continue with the snapshot.
 These are context for the report and for proposals (e.g. "add coin X to `HL_BROAD`"); the bots themselves trade only

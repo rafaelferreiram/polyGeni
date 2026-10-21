@@ -524,6 +524,12 @@ def profit(eng) -> dict:
             "verdict": "sem dados ainda" if not (ai_all or trade_all) else ("dando lucro" if net_all > 0 else "dando prejuízo")}
 
 
+def _market_temp() -> dict:
+    """Market data is the same for both accounts (Hyperliquid mainnet): show the freshest scan of either one."""
+    temps = [_account_engine(k).ledger.get_state("market_temp") or {} for k in ("sim", "real")]
+    return max(temps, key=lambda t: t.get("ts") or "")
+
+
 @router.get("/account")
 def account(kind: str = "sim"):
     from src.solana import hl_live
@@ -541,7 +547,7 @@ def account(kind: str = "sim"):
                   "trades": len([t for t in trades if t["strategy"] == m.name]),
                   "pnl_usd": round(sum(t["pnl_usd"] for t in trades if t["strategy"] == m.name), 4),
                   "open": [x["symbol"] for x in led.positions() if x["strategy"] == m.name]} for m in eng.team],
-        "sleep": led.get_state("sleep") or {}, "coffee_until": eng.coffee(), "market_temp": led.get_state("market_temp") or {},
+        "sleep": led.get_state("sleep") or {}, "coffee_until": eng.coffee(), "market_temp": _market_temp(),
         "profit": profit(eng),
         "equity": round(p.equity, 4), "cash": round(p.cash, 4), "exposure": round(p.exposure, 4),
         "pnl_usd": round(p.equity - led.contributed(), 4), "contributed": led.contributed(),
@@ -657,6 +663,14 @@ def account_mode(req: AccountMode):
     except ValueError as e:
         raise HTTPException(400, str(e))
     return {"mode": req.mode}
+
+
+@router.get("/health")
+def health():
+    """Is every third party (exchange, data, AI, RPCs) reachable? Cached 60s, read-only calls."""
+    from src.solana import health as h
+    rows = h.check_all()
+    return {"ok": all(r["ok"] is not False for r in rows), "checks": rows}
 
 
 @router.get("/report/daily")
