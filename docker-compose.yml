@@ -2,9 +2,10 @@ services:
   polygeni:
     build: .
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"   # never expose the API publicly
     env_file:
       - .env
     volumes:
       - ./polygeni.db:/app/polygeni.db
+      - ./paper.db:/app/paper.db
     restart: unless-stopped
