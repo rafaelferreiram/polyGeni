@@ -290,21 +290,35 @@ function killReset(btn) {
 }
 
 // ─── wallets (watch-only) ───
+// EIP-6963: each wallet extension announces itself with a stable id (rdns), so we can ask for MetaMask by name
+// instead of trusting window.ethereum, which Coinbase Wallet and others take over.
+const announced = new Map();
+window.addEventListener("eip6963:announceProvider", (e) => announced.set(e.detail.info.rdns, e.detail.provider));
+window.dispatchEvent(new Event("eip6963:requestProvider"));
+
 function metamaskProvider() {
+  const byId = announced.get("io.metamask") || announced.get("io.metamask.flask");
+  if (byId) return byId;
   const eth = window.ethereum;
-  if (!eth) return null;
-  return (eth.providers || [eth]).find((p) => p.isMetaMask) || null;
+  const list = eth?.providers || (eth ? [eth] : []);
+  // older extensions without EIP-6963: only a provider that is MetaMask and nothing else
+  return list.find((p) => p.isMetaMask && !p.isCoinbaseWallet && !p.isPhantom && !p.isBraveWallet && !p.isRabby && !p.isTrust) || null;
+}
+
+function phantomProvider() {
+  const p = window.phantom?.solana;
+  return p?.isPhantom ? p : null;
 }
 async function connectWallet(kind) {
   try {
     let address, label;
     if (kind === "metamask") {
       const mm = metamaskProvider();
-      if (!mm) throw new Error("MetaMask não encontrada neste browser. Abra http://127.0.0.1:8000/paper no Chrome ou Brave com a extensão MetaMask instalada.");
+      if (!mm) throw new Error("MetaMask não encontrada. Só ligamos à MetaMask e à Phantom — instale/ative a extensão MetaMask neste browser (outras carteiras são ignoradas).");
       [address] = await mm.request({ method: "eth_requestAccounts" });   // public address only, no signature
       label = "MetaMask";
     } else {
-      const provider = window.phantom?.solana;
+      const provider = phantomProvider();
       if (!provider) throw new Error("Phantom não encontrada neste browser. Instale a extensão Phantom no Chrome ou Brave.");
       const res = await provider.connect();
       address = (res?.publicKey || provider.publicKey).toString();
