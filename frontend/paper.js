@@ -101,7 +101,7 @@ function scanNow(btn) {
 function giveCoffee(btn) {
   if (!acc?.running) return toast("Clique em ▶ Start primeiro", true);
   run(btn, "Preparando o café…", () => api("/account/coffee", "POST", { kind: KIND, hours: 4 }),
-      (r) => `☕ Equipe com cafeína até ${hhmm(r.coffee_until)} nas contas simulada e real — sem pausas e até 6 compras por dia`);
+      (r) => `☕ Equipe com cafeína até ${hhmm(r.coffee_until)} nas contas simulada e real — modo day trade, até 6 compras por dia`);
 }
 
 function setMode(mode, btn) {
@@ -248,6 +248,8 @@ async function refresh() {
       <li>Testnet: Faucet → More → API → <b>Generate</b> → Authorize (salve a chave só no <code>.env</code>)</li>
       <li>No <code>.env</code>: <code>HL_NETWORK=testnet</code>, <code>HL_ACCOUNT_ADDRESS=0x…</code>, <code>HL_API_WALLET_KEY=…</code> e reinicie</li></ol>`;
   }
+  // status bar + kill switch banner (always visible)
+  renderStatusBar(a);
   // KPIs
   document.getElementById("k-eq-l").textContent = KIND === "sim" ? "Saldo simulado" : "Saldo real na Hyperliquid";
   document.getElementById("k-eq").textContent = usd(KIND === "real" && a.exchange_balance !== undefined ? a.exchange_balance : a.equity);
@@ -280,11 +282,7 @@ async function refresh() {
   renderRadar(a);
   maybeReplay(a);
   renderFoot();
-  // feed + trades
-  const lc = a.last_cycle;
-  document.getElementById("feed").innerHTML = (lc ? `<div class="fi"><span class="w">${ago(lc.finished)}</span><span>⚙️ Ciclo #${lc.cycle}: ${lc.candidates} mercados, ${lc.signals} sinais, ${lc.entries} compras</span></div>` : "") +
-    (a.decisions.map((d) => `<div class="fi"><span class="w">${ago(d.ts)}</span><span><span class="k-${esc(d.kind)}">${KINDS[d.kind] || esc(d.kind)}</span> <b>${esc(d.symbol || "")}</b> — ${esc(d.reason)}</span></div>`).join("")
-     || '<p class="note">Os bots ainda não fizeram nada nesta conta.</p>');
+  // trades
   document.getElementById("trades-total").innerHTML = a.trades.length ? pnl(a.trades.reduce((x, t) => x + t.pnl_usd, 0)) : "";
   table("trades", ["Ativo", "Entrada → saída", "Lucro", "Motivo"], a.trades.map((t) => `
     <tr><td><b>${esc(t.symbol)}</b><br><span class="muted">${time(t.exit_ts)}</span></td>
@@ -420,7 +418,8 @@ function testOrder(btn) {
       (r) => (r.position ? `✓ Ordem de teste: ${r.position.symbol} com stop e alvo na exchange` : "Sem ordem — veja o feed"));
 }
 function killReset(btn) {
-  run(btn, "Rearmando…", () => api(KIND === "real" ? "/live/kill-switch/reset" : "/kill-switch/reset", "POST", { reason: "dashboard" }), "✓ Kill switch rearmado");
+  if (KIND === "real" && !confirm("Rearmar o kill switch da conta REAL? Os bots voltam a poder abrir posições com dinheiro real.")) return;
+  run(btn, "Rearmando…", () => api("/account/kill-switch/reset", "POST", { kind: KIND }), "✓ Kill switch rearmado — os bots voltam a operar");
 }
 
 // ─── wallets (watch-only) ───
@@ -587,6 +586,56 @@ async function loadDaily() {
 safe(loadDaily);
 setInterval(() => safe(loadDaily), 30000);
 
+// ─── status bar: the few things to see at a glance, always on screen ───
+function renderStatusBar(a) {
+  const ks = a.kill_switch || {};
+  const alert = document.getElementById("alert");
+  alert.hidden = !ks.active;
+  if (ks.active) document.getElementById("alert-text").textContent = `Kill switch ativo desde ${hhmm(ks.ts)} — ${(ks.reason || "").replace(/\{.*$/, "").slice(0, 140)}. Os bots não abrem novas posições até rearmar.`;
+  const secs = nextCycleAt ? Math.round((nextCycleAt - Date.now()) / 1000) : null;
+  const today = (a.performance?.day || {}).gain_usd;
+  const items = [
+    ["Conta", KIND === "sim" ? "🧪 simulação" : `💰 real · ${a.network}`],
+    ["Estado", ks.active ? '<span class="red">🛑 kill switch</span>' : a.running ? (a.scanning ? '<span class="green">⚡ analisando</span>' : '<span class="green">● ligada</span>') : "⏸ parada"],
+    ["Saldo", usd(KIND === "real" && a.exchange_balance !== undefined ? a.exchange_balance : a.equity)],
+    ["Hoje", today == null ? "–" : pnl(today)],
+    ["Posições", `${a.positions.length}`],
+    ["Próxima análise", !a.running ? "–" : a.scanning ? "agora" : secs > 0 ? `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}` : "instantes"],
+    ["Café", a.coffee_until ? `☕ até ${hhmm(a.coffee_until)}` : "—"],
+    ["Baleias", lastWhales?.status?.connected ? '<span class="green">● ao vivo</span>' : '<span class="red">● off</span>'],
+    ["Conexões", healthBad == null ? "–" : healthBad ? `<span class="red">● ${healthBad} com problema</span>` : '<span class="green">● todas ok</span>'],
+  ];
+  setHTML("statusbar-items", items.map(([k, v]) => `<span><small>${k}</small>${v}</span>`).join(""));
+}
+let healthBad = null;
+
+// ─── live logs: every agent step, decision and cycle of every bot, like a server console ───
+let logLines = [], logLast = 0, logSrc = "", logPaused = false;
+function logFilter(btn) {
+  logSrc = btn.dataset.s;
+  document.querySelectorAll("#log-src button").forEach((b) => b.classList.toggle("on", b === btn));
+  renderLogs(true);
+}
+function renderLogs(force) {
+  if (logPaused && !force) return;
+  const term = document.getElementById("term");
+  const atBottom = term.scrollHeight - term.scrollTop - term.clientHeight < 40;
+  const debug = document.getElementById("log-debug").checked;
+  const rows = logLines.filter((l) => (debug || l.level !== "DEBUG") && (!logSrc || l.source === logSrc || l.source.startsWith(logSrc + ":"))).slice(-600);
+  term.innerHTML = rows.length ? rows.map((l) => `<div class="l ${l.level}"><span class="t">${new Date(l.ts).toLocaleTimeString("pt-BR")}</span> <span class="s ${esc(l.source.split(":")[0])}">[${esc(l.source)}]</span> ${l.level.padEnd(5)} ${esc(l.msg)}</div>`).join("")
+    : '<div class="l DEBUG">aguardando logs… (os bots escrevem aqui a cada passo de cada ciclo)</div>';
+  if (atBottom || force) term.scrollTop = term.scrollHeight;
+}
+async function loadLogs() {
+  const r = await api(`/logs?after=${logLast}&limit=1000`);
+  if (!r.lines.length) return;
+  logLast = r.last;
+  logLines = logLines.concat(r.lines).slice(-2000);
+  renderLogs(false);
+}
+safe(loadLogs);
+setInterval(() => safe(loadLogs), 1500);
+
 // ─── whales: big market orders on the coins the bots watch (live Hyperliquid trades feed) ───
 let lastWhales = null;
 const kusd = (v) => (Math.abs(v) >= 1e6 ? `$${(v / 1e6).toFixed(1)}M` : `$${Math.round(v / 1e3)}k`);
@@ -601,14 +650,16 @@ async function loadWhales() {
   const coins = Object.entries(w.coins).sort((a, b) => (b[1]["1h"].buy_usd + b[1]["1h"].sell_usd) - (a[1]["1h"].buy_usd + a[1]["1h"].sell_usd));
   const active = coins.filter(([, s]) => s["1h"].n);
   document.getElementById("whale-head").textContent = st.connected
-    ? `${active.length} moedas com baleias na última hora · desde ${hhmm(new Date(st.since * 1000).toISOString())}` : (st.error || "a ligar…");
-  setHTML("whale-flows", active.length ? active.slice(0, 12).map(([c, s]) => {
+    ? `vigiando ${st.watching} moedas · ${active.length + w.market.length} com baleias na última hora · ao vivo desde ${hhmm(new Date(st.since * 1000).toISOString())}` : (st.error || "conectando…");
+  const flowCard = ([c, s]) => {
     const h = s["1h"], tot = h.buy_usd + h.sell_usd || 1;
     return `<div class="flow-c ${s.pressure}" title="4h: compras ${kusd(s["4h"].buy_usd)} · vendas ${kusd(s["4h"].sell_usd)} · baleia ≥ ${kusd(s.threshold_usd)}">
       <b>${esc(c)}</b> ${WHALE_PT[s.pressure] || ""}
       <div class="bar2"><i class="b" style="width:${(h.buy_usd / tot * 100).toFixed(0)}%"></i><i class="s" style="width:${(h.sell_usd / tot * 100).toFixed(0)}%"></i></div>
       ${kusd(h.buy_usd)} / ${kusd(h.sell_usd)} · ${h.n} ordens</div>`;
-  }).join("") : '<div class="empty">Ainda sem ordens de baleia desde que o feed ligou.</div>');
+  };
+  setHTML("whale-flows", active.length ? active.slice(0, 12).map(flowCard).join("") : '<div class="empty">Ainda sem ordens de baleia nas nossas moedas desde que o feed ligou.</div>');
+  setHTML("whale-market", w.market.length ? w.market.map((m) => flowCard([m.coin, m])).join("") : '<div class="empty">Sem baleias no resto do mercado na última hora.</div>');
   table("whale-recent", ["Quando", "Moeda", "Lado", "Valor", "Carteira"], w.recent.map((t) => `<tr>
     <td>${hhmm(new Date(t.ts * 1000).toISOString())}</td><td><b>${esc(t.coin)}</b></td>
     <td class="${t.side === "compra" ? "green" : "red"}">${t.side}</td><td>${kusd(t.usd)}</td>
@@ -622,6 +673,7 @@ setInterval(() => safe(loadWhales), 10000);
 async function loadHealth() {
   const h = await api("/health");
   const bad = h.checks.filter((c) => c.ok === false).length;
+  healthBad = bad;
   const tag = document.getElementById("conn-tag");
   tag.textContent = bad ? `${bad} com problema` : "tudo conectado";
   tag.style.color = bad ? "var(--red)" : "var(--green)";

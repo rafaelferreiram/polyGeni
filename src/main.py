@@ -33,6 +33,8 @@ if os.path.isdir(frontend_path):
 def startup():
     init_db()
     logging.getLogger("main").info("Kairos started. DB initialized.")
+    from src.solana import logbuf
+    logbuf.install()     # live log console on the dashboard
     if solana_cfg.PAPER_AUTOSTART:
         paper_engine.start()
     from src.solana import hl_live

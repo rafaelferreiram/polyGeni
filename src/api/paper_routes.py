@@ -547,7 +547,7 @@ def account(kind: str = "sim"):
                   "trades": len([t for t in trades if t["strategy"] == m.name]),
                   "pnl_usd": round(sum(t["pnl_usd"] for t in trades if t["strategy"] == m.name), 4),
                   "open": [x["symbol"] for x in led.positions() if x["strategy"] == m.name]} for m in eng.team],
-        "sleep": led.get_state("sleep") or {}, "coffee_until": eng.coffee(), "market_temp": _market_temp(),
+        "sleep": (led.get_state("sleep") or {}) if cfg.BOT_SELF_PAUSE else {}, "coffee_until": eng.coffee(), "market_temp": _market_temp(),
         "profit": profit(eng),
         "equity": round(p.equity, 4), "cash": round(p.cash, 4), "exposure": round(p.exposure, 4),
         "pnl_usd": round(p.equity - led.contributed(), 4), "contributed": led.contributed(),
@@ -649,6 +649,15 @@ def account_coffee(req: Coffee):
             "scan_started": {k: _scan_in_background(k) for k, on in running.items() if on}}
 
 
+@router.post("/account/kill-switch/reset", dependencies=LOCAL)
+def account_kill_reset(req: Kind):
+    """Re-arm after a kill switch (the user's explicit click on the dashboard banner)."""
+    eng = _account_engine(req.kind)
+    eng.reset_kill_switch("dashboard")
+    eng.ledger.set_state("sync_failures", 0)
+    return eng.kill_switch()
+
+
 class AccountMode(BaseModel):
     mode: str
 
@@ -665,12 +674,25 @@ def account_mode(req: AccountMode):
     return {"mode": req.mode}
 
 
+@router.get("/logs")
+def logs(after: int = 0, limit: int = 400):
+    """Live log of every bot (agents, decisions, cycles, warnings), newest last; poll with after=<last seq>."""
+    from src.solana import logbuf
+    rows = logbuf.since(after, min(limit, 1000))
+    return {"lines": rows, "last": rows[-1]["seq"] if rows else after}
+
+
 @router.get("/whales")
 def whales_board():
     """Whale flow per coin (last 1h / 4h) and the latest whale trades, from the live Hyperliquid trades feed."""
     from src.solana import whales
-    coins = cfg.HL_LIVE_MARKETS
-    return {"status": whales.status(), "coins": {c: whales.summary(c) for c in coins}, "recent": whales.recent(15)}
+    ours = cfg.HL_LIVE_MARKETS
+    market = [(c, whales.summary(c)) for c in whales.watching() if c not in ours]
+    market = sorted([m for m in market if m[1]["1h"]["n"]], key=lambda m: -(m[1]["1h"]["buy_usd"] + m[1]["1h"]["sell_usd"]))
+    return {"status": {**whales.status(), "watching": len(whales.watching())},
+            "coins": {c: whales.summary(c) for c in ours},                 # the coins our bots trade
+            "market": [{"coin": c, **s} for c, s in market[:12]],          # whales elsewhere in crypto (not traded yet)
+            "recent": whales.recent(20)}
 
 
 @router.get("/health")

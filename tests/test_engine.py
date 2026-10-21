@@ -195,8 +195,10 @@ def test_executor_refuses_order_not_approved_by_risk(ledger):
     assert len(ledger.fills()) == 1
 
 
-def test_sleeping_wallet_skips_entries_until_woken(ledger):
+def test_sleeping_wallet_skips_entries_until_woken(ledger, monkeypatch):
     from datetime import datetime, timedelta, timezone
+    from src.solana import config as cfg
+    monkeypatch.setattr(cfg, "BOT_SELF_PAUSE", True)          # opt-in; by default the bots never sleep
     eng = build(ledger, Price(1.0))
     until = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(timespec="seconds")
     ledger.set_state("sleep", {"until": until, "reason": "test", "prices": {}})
@@ -253,3 +255,24 @@ def test_unreachable_exchange_skips_entries_without_tripping_the_kill_switch(led
     eng.run_cycle()
     eng.run_cycle()                                   # third failure in a row: now it is an outage
     assert eng.kill_switch()["active"]
+
+
+def test_live_log_records_cycles_agents_and_decisions(ledger):
+    from src.solana import logbuf
+    start = logbuf.since(0)[-1]["seq"] if logbuf.since(0) else 0
+    eng = build(ledger, Price(1.0))
+    eng.run_cycle()
+    lines = logbuf.since(start)
+    msgs = " | ".join(l["msg"] for l in lines)
+    assert "ciclo #1 começou" in msgs and "entry" in msgs
+    assert any(l["level"] == "TRADE" for l in lines)
+    assert logbuf.label("./live_mainnet.db") == "real" and logbuf.label("shadow.db") == "sim"
+    assert logbuf.label("arena_trend.db") == "lab:tendência"
+
+
+def test_bots_never_sleep_by_default(ledger):
+    from datetime import datetime, timedelta, timezone
+    eng = build(ledger, Price(1.0))
+    until = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(timespec="seconds")
+    ledger.set_state("sleep", {"until": until, "reason": "old", "prices": {}})
+    assert eng.run_cycle()["entries"] == 1          # a leftover sleep is ignored: they watch every cycle

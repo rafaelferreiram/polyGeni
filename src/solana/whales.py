@@ -22,7 +22,24 @@ _trades: dict[str, deque] = defaultdict(deque)       # coin -> (ts, side 'B'/'A'
 _lock = threading.Lock()
 _status = {"connected": False, "since": None, "error": None, "messages": 0}
 _thresholds: dict[str, float] = {}
+_watching: list[str] = []
 _started = False
+
+
+def _universe(ours) -> list[str]:
+    """Our coins first, then every other liquid Hyperliquid perp (≥ $1M daily volume): whales anywhere in crypto."""
+    from src.solana import hyperliquid as hl
+    try:
+        others = [c for c, a in hl.asset_ctxs().items()
+                  if c not in ours and not a.get("isDelisted") and float(a.get("dayNtlVlm") or 0) >= 1e6]
+    except Exception as e:
+        logger.warning(f"whale universe: {e}")
+        others = []
+    return list(ours) + sorted(others)
+
+
+def watching() -> list[str]:
+    return list(_watching)
 
 
 def threshold(coin: str) -> float:
@@ -90,11 +107,13 @@ def status() -> dict:
     return dict(_status)
 
 
-def _run(coins):
+def _run(ours):
     import websocket
     backoff = 2
     while True:
         try:
+            coins = _universe(ours)
+            _watching[:] = coins
             _refresh_thresholds(coins)
             ws = websocket.create_connection(WS_URL, timeout=30)
             for c in coins:

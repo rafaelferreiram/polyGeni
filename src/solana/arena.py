@@ -159,7 +159,7 @@ def leaderboard() -> list[dict]:
         trades = led.closed_trades()
         perf = performance(led.equity_history(100_000)).get("all", {})
         last = eng.llm.last if eng.llm else {}
-        sleep = led.get_state("sleep") or {}
+        sleep = (led.get_state("sleep") or {}) if cfg.BOT_SELF_PAUSE else {}
         needs_key = bool(eng.llm) and not eng.llm.enabled
         paused = led.get_state("paused_reason")
         state = ((f"pausado: {paused}" if paused else "parado") if not led.get_state("running", False)

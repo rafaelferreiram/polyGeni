@@ -112,6 +112,10 @@ class PaperEngine:
     def _agent(self, name: str, **kw):
         agents = self.ledger.get_state("agents", {})
         a = agents.setdefault(name, {"approved": 0, "vetoed": 0})
+        if kw.get("last_reason"):
+            from src.solana import logbuf
+            quiet = "no signal" in kw["last_reason"] or kw["last_reason"].endswith(": passed")
+            logbuf.add(logbuf.label(self.ledger.path), "DEBUG" if quiet else "INFO", f"{name}: {kw['last_reason']}")
         # live view: which agent is acting right now and on what
         self.ledger.set_state("live", {"agent": name, "ts": now_iso(), "detail": kw.get("last_reason", ""),
                                        "cycle": self.cycle, "running": True})
@@ -214,6 +218,8 @@ class PaperEngine:
         self.ledger.set_state("cycle", cycle)
         self.ledger.set_state("heartbeat", {"ts": now_iso(), "cycle": cycle})
         stats = {"cycle": cycle, "candidates": 0, "safe": 0, "signals": 0, "entries": 0, "vetoes": 0}
+        from src.solana import logbuf
+        logbuf.add(logbuf.label(self.ledger.path), "INFO", f"── ciclo #{cycle} começou ──")
         try:
             sync_ok = True
             try:
@@ -253,11 +259,11 @@ class PaperEngine:
                 stats["skipped"] = "kill switch active"
             elif not sync_ok:
                 stats["skipped"] = "exchange unreachable this cycle"
-            elif not self.coffee() and self._sleeping(stats):
+            elif cfg.BOT_SELF_PAUSE and not self.coffee() and self._sleeping(stats):
                 pass
             else:
                 self._entries(stats)
-                if not self.coffee():
+                if cfg.BOT_SELF_PAUSE and not self.coffee():
                     self._maybe_sleep(stats)
         except Exception as e:
             logger.exception("cycle failed")

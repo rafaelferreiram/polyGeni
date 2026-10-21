@@ -128,7 +128,9 @@ WHALE_MIN_USD = float(os.getenv("WHALE_MIN_USD", "25000"))    # whale = ≥ this
 SYNC_FAIL_LIMIT = int(os.getenv("SYNC_FAIL_LIMIT", "6"))   # consecutive unreachable-exchange cycles before the kill switch
 LAB_SCORE_DAYS = float(os.getenv("LAB_SCORE_DAYS", "30"))   # Coordinator ranks bots on their last N days in the lab
 ARENA_START_USDC = _f("ARENA_START_USDC", 20.0)     # each bot gets what the real account would have
-# self-pause: a bot with nothing to do sleeps (up to BOT_MAX_SLEEP_MIN) and wakes early if price moves
+# self-pause: a bot with nothing to do sleeps (up to BOT_MAX_SLEEP_MIN) and wakes early if price moves.
+# Off by default: the bots watch the market every cycle 24/7 (the AI pre-filter already keeps idle cycles free).
+BOT_SELF_PAUSE = os.getenv("BOT_SELF_PAUSE", "0") == "1"
 BOT_MAX_SLEEP_MIN = _i("BOT_MAX_SLEEP_MIN", 120)
 # an AI bot may act on the REAL wallet only after this many lab trades with positive expectancy
 LIVE_MIN_LAB_TRADES = _i("LIVE_MIN_LAB_TRADES", 10)
