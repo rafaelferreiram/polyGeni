@@ -85,7 +85,7 @@ function go(btn) {
   if (!on && KIND === "real") {
     const L = acc?.limits || {};
     const net = acc?.network === "mainnet" ? "MAINNET — DINHEIRO REAL" : "testnet (dinheiro de teste)";
-    if (!confirm(`Ligar os bots na conta REAL (${net})?\n\nLimites: capital ${usd(L.max_capital_usd, 0)}, posição ${usd(L.max_position_usd, 0)}, 1x, stop e alvo na exchange, perda diária ${pct(L.max_daily_loss_pct)}.`)) return;
+    if (!confirm(`Ligar os bots na conta REAL (${net})?\n\nLimites: capital ${usd(L.max_capital_usd, 0)}, posição ${usd(L.max_position_usd, 0)}, alavancagem ${L.leverage}x isolada, stop e alvo na exchange, perda diária ${pct(L.max_daily_loss_pct)}.`)) return;
   }
   run(btn, on ? "Parando…" : "Ligando os bots…",
       () => api(`/account/${on ? "stop" : "start"}`, "POST", { kind: KIND }),
@@ -275,6 +275,7 @@ async function refresh() {
   document.getElementById("room-head").innerHTML = scanning ? '<span class="live-chip">analisando o mercado</span>' : "";
   if (!replay) renderRoom(a);
   renderTeam();
+  renderThermo(a);
   maybeReplay(a);
   renderFoot();
   // feed + trades
@@ -288,7 +289,36 @@ async function refresh() {
     <td>${Number(t.entry_price).toPrecision(6)} → ${Number(t.exit_price).toPrecision(6)}</td>
     <td>${pnl(t.pnl_usd)}<br><span class="muted">${pct(t.pnl_pct)}</span></td><td class="muted">${esc(t.reason)}</td></tr>`));
   const L = a.limits;
-  document.getElementById("limits").textContent = `Limites (iguais na simulação e no real): capital ${usd(L.max_capital_usd, 0)}, posição ${usd(L.max_position_usd, 0)}, ${L.max_positions} de cada vez, 1x só compra, perda diária ${pct(L.max_daily_loss_pct)}, mercados ${L.markets.join(", ")}.`;
+  document.getElementById("limits").textContent = `Limites (iguais na simulação e no real): capital ${usd(L.max_capital_usd, 0)}, posição ${usd(L.max_position_usd, 0)}, ${L.max_positions || "auto"} de cada vez, ${L.leverage}x isolada só compra, perda diária ${pct(L.max_daily_loss_pct)}, mercados ${L.markets.join(", ")}.`;
+}
+
+// ─── thermometer: market temperature (from the bots' own scan) and our performance vs simply holding BTC ───
+const clamp01 = (x) => Math.max(0, Math.min(1, x));
+function gauge(id, score, label) {
+  document.getElementById(`${id}-n`).style.left = `${(clamp01(score / 100) * 100).toFixed(1)}%`;
+  document.getElementById(`${id}-lbl`).textContent = label;
+}
+function renderThermo(a) {
+  const t = a.market_temp || {};
+  if (t.n) {
+    const score = (t.uptrend / t.n) * 60 + clamp01((t.avg_rsi - 30) / 40) * 40;
+    gauge("t-mkt", score, score < 35 ? "❄️ Frio" : score < 65 ? "🌤 Morno" : "🔥 Quente");
+    const coins = (l) => l.map(([s, c]) => `${esc(s)} ${c >= 0 ? "+" : ""}${c.toFixed(1)}%`).join(" · ");
+    document.getElementById("t-mkt-facts").innerHTML = `
+      <span><b>${t.uptrend}/${t.n}</b> moedas em alta</span><span><b>${t.avg_ch24 >= 0 ? "+" : ""}${t.avg_ch24}%</b> média 24h</span>
+      <span><b>${t.near.length}</b> perto de compra${t.near.length ? `: ${esc(t.near.slice(0, 4).join(", "))}` : ""}</span>
+      <span class="wide">⬆ ${coins(t.best)}</span><span class="wide">⬇ ${coins(t.worst)}</span>`;
+  } else {
+    gauge("t-mkt", 50, "–");
+    document.getElementById("t-mkt-facts").innerHTML = "<span>aguardando a primeira análise</span>";
+  }
+  const all = a.performance?.all || {};
+  const ours = all.twr ?? 0, btc = all.hold_btc;
+  const edge = btc == null ? 0 : ours - btc;
+  gauge("t-bot", 50 + edge * 1000, !a.trades.length ? "⏳ Sem trades ainda" : edge > 0.002 ? "🏆 Acima do mercado" : edge < -0.002 ? "📉 Abaixo do mercado" : "⚖️ Empatado");
+  document.getElementById("t-bot-facts").innerHTML = `
+    <span><b>${pct(ours)}</b> nossos bots</span><span><b>${btc == null ? "–" : pct(btc)}</b> só segurar BTC</span>
+    <span><b>${a.trades.length ? pct(a.win_rate) : "–"}</b> acerto</span><span><b>${pnl(a.profit?.net_all ?? 0)}</b> lucro líquido</span>`;
 }
 
 function renderProfit(P) {
@@ -394,8 +424,8 @@ async function loadWallets() {
 
 // ─── team of bots (one shared wallet) + lab results ───
 const MODEL_LOOK = {
-  "rules": { label: "Regras · quedas", color: "#a3b1ab", ico: "📐" },
-  "trend": { label: "Regras · tendência", color: "#67e8f9", ico: "📈" },
+  "rules": { label: "Quedas", color: "#a3b1ab", ico: "📐", role: "compra quando cai numa alta" },
+  "trend": { label: "Tendência", color: "#67e8f9", ico: "📈", role: "compra quando dispara" },
   "claude-fable-5-1": { label: "Fable 5.1", color: "#f5c451", ico: "✨" },
   "claude-opus-5-5": { label: "Opus 5.5", color: "#fb923c", ico: "🎼" },
   "claude-opus-5": { label: "Opus 5", color: "#f97362", ico: "🎻" },
@@ -405,7 +435,7 @@ const MODEL_LOOK = {
 const ACTION_PT = { BUY: "🟢 comprar", HOLD: "⏸ esperar", SELL: "🔵 vender", sleep: "😴 dormindo", wake: "⏰ acordou",
                     entry: "🟢 comprou", exit: "🔵 vendeu", veto: "🟡 bloqueado" };
 const FREE = new Set(["rules", "trend"]);   // deterministic bots: no AI cost
-const look = (m) => MODEL_LOOK[m] || { label: m, color: "#9fe8c7", ico: "🤖" };
+const look = (m) => ({ role: "IA analisa e decide", ...(MODEL_LOOK[m] || { label: m, color: "#9fe8c7", ico: "🤖" }) });
 let lastArena = null;
 
 async function loadArena() {
@@ -425,8 +455,8 @@ function renderTeam() {
   const liveName = acc.live?.running && Date.now() - new Date(acc.live.ts) < 30000 ? acc.live.agent : null;
   const awake = members.filter((m) => lab[m.model]?.running && !lab[m.model]?.needs_key).length;
   document.getElementById("team-head").innerHTML = acc.running
-    ? `<b>${awake}</b> de ${members.length} bots ativos${acc.sleep?.until ? ` · carteira pausada até <b>${hhmm(acc.sleep.until)}</b>` : ""}`
-    : "equipe desligada — clique em ▶ Start";
+    ? `<b>${awake}</b> de ${members.length} ligados`
+    : "desligados — clique em ▶ Start";
   const coffee = acc.running && acc.coffee_until;
   const cb = document.getElementById("btn-coffee");
   cb.classList.toggle("on", !!coffee);
@@ -449,16 +479,19 @@ function renderTeam() {
                  ["Custo IA", isRules ? "grátis" : `${usd(r.ai_cost_usd ?? 0)} · líquido ${pnl(r.net_usd ?? 0)}`],
                  ["Café", coffee ? `☕ atento até ${hhmm(coffee)}` : null]])}
       <div class="wip"><b>Em andamento</b><br>${esc(working ? (r.live?.detail || "analisando os mercados…") : r.sleep_until ? `Dormindo até ${hhmm(r.sleep_until)} — ${r.sleep_reason || "sem sinais"}` : bubble)}</div>`;
+    const open = [...new Set([...(m.open || []), ...(r.open || [])])];
+    const chip = cls === "off" ? "⏸ Desligado" : cls === "nokey" ? "🔑 Falta chave" : cls === "working" ? "⚡ Analisando"
+      : cls === "holding" ? `📦 Em posição: ${open.join(", ")}` : cls === "sleeping" ? `😴 Dorme até ${hhmm(r.sleep_until)}` : "👀 Vigiando";
+    const now = last ? `${last.market ? `<b>${esc(last.market)}</b> · ` : ""}${esc(ACTION_PT[last.action] || last.action || "")}` : "ainda sem decisões";
     return `<div class="tb ${cls}" tabindex="0" style="--c:${L.color}" aria-label="${esc(L.label)}: ${esc(state)}">
-      ${cls === "sleeping" ? '<span class="zz">z z</span>' : ""}${coffee && cls !== "off" ? '<span class="cup" title="com cafeína: sem pausas">☕</span>' : ""}
+      ${coffee && cls !== "off" ? '<span class="cup" title="com cafeína: sem pausas">☕</span>' : ""}
       <div class="head">${botFace(L.color, L.ico)}
-        <div><div class="nm">${esc(L.label)}</div><span class="pill ${cls === "working" || cls === "holding" ? "on" : ""}">${esc(state)}</span></div></div>
-      <div class="bubble">${esc(bubble)}</div>
-      <div class="meta"><span>Na carteira<br><b>${m.trades ?? 0} trades ${pnl(m.pnl_usd ?? 0)}</b></span>
-        <span>Laboratório<br><b>${usd(r.equity)} · ${pct(r.twr)}</b></span>
-        <span>Custo IA<br><b>${FREE.has(m.model) ? "grátis" : usd(r.ai_cost_usd ?? 0)}</b></span>
-        <span>Líquido<br><b>${pnl(r.net_usd ?? 0)}</b></span></div>
-      <div class="tip" role="tooltip">${tip}</div>
+        <div><div class="nm">${esc(L.label)}</div><div class="rl">${esc(L.role)}</div></div></div>
+      <span class="chip">${esc(chip)}</span>
+      <div class="now">Última decisão: ${now}</div>
+      <div class="stats"><span><b>${pnl(m.pnl_usd ?? 0)}</b>resultado</span><span><b>${m.trades ?? 0}</b>trades</span>
+        <span><b>${isRules ? "grátis" : usd(r.ai_cost_usd ?? 0)}</b>custo IA</span></div>
+      <div class="tip" role="tooltip">${tip}<div class="note" style="margin-top:6px">${esc(bubble)}</div></div>
     </div>`;
   }).join(""));
 }

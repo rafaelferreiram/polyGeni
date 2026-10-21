@@ -38,7 +38,8 @@ def build_bot(model: str, db_dir: str = ".", llm_fn=None, scout=None, broker_fac
         decider.name = f"llm:{model}"
     eng = PaperEngine(
         ledger, [scout or hl.HyperliquidScout()], _PerpsSafety(), [RULE_BOTS[model]()] if model in RULE_BOTS else [],
-        DebateAgent(enabled=False), _risk(), ExecutorAgent((broker_factory or hl.HyperliquidPaperBroker)(ledger)),
+        DebateAgent(enabled=False), _risk(),
+        ExecutorAgent(broker_factory(ledger) if broker_factory else hl.HyperliquidPaperBroker(ledger, leverage=cfg.LIVE_LEVERAGE)),
         candles_fn=candles_fn or {hl.VENUE: hl.candles}, bench_fn=bench_prices if candles_fn is None else None,
         llm=decider, profiles={hl.VENUE: {"max_pos_pct": 1.0, "stop_mult": cfg.MARKET_PROFILES.get(hl.VENUE, {}).get("stop_mult", 1.5)}},
     )

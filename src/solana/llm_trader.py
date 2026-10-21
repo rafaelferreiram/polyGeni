@@ -16,7 +16,7 @@ from src.solana.strategies import Signal
 logger = logging.getLogger("solana.llm_trader")
 
 TRADER_SYSTEM = (
-    "You are the trading decision agent of a small, risk-averse 1x long-only crypto bot on Hyperliquid. For the "
+    "You are the trading decision agent of a small, risk-averse long-only crypto bot on Hyperliquid (isolated low leverage, size set by the risk engine). For the "
     "market given, decide whether to open a LONG now (BUY) or do nothing (HOLD). You get precomputed indicators "
     "(RSI, ATR%, EMA50/EMA200 trend, Bollinger dip, funding, the rules engine's own signal, suggested ATR stops) "
     "and the round-trip cost. Evidence from our walk-forward tests: buying dips in a downtrend (price below "

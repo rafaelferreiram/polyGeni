@@ -376,6 +376,7 @@ class PaperEngine:
             ready.append((c, candles, safety, profile))
         # best opportunity first: with one slot, the deepest dip inside an uptrend gets it, not the first coin listed
         ready.sort(key=lambda r: _setup_rank(r[1]))
+        self.ledger.set_state("market_temp", _market_temp(ready))
         for c, candles, safety, profile in ready:
             for strat in self._ordered(c):
                 if hasattr(strat, "decide"):
@@ -449,6 +450,27 @@ def bench_prices() -> dict:
     """Benchmark prices for buy-and-hold comparisons (Hyperliquid mids: one public call)."""
     mids = hl.info({"type": "allMids"})
     return {"SOL": float(mids["SOL"]), "BTC": float(mids["BTC"])}
+
+
+def _market_temp(ready: list) -> dict:
+    """Market thermometer from the candles the bots already fetched: trend breadth, RSI, 24h moves, near-signal coins."""
+    from src.solana.strategies import ema, rsi
+    rows = []
+    for c, candles, *_ in ready:
+        closes = [k["close"] for k in candles]
+        if len(closes) < 30:
+            continue
+        trend = ema(closes[-600:], 200) if len(closes) >= 200 else None
+        rows.append({"symbol": c.symbol, "up": bool(trend and closes[-1] > trend), "rsi": round(rsi(closes), 1),
+                     "ch24": round((closes[-1] / closes[-25] - 1) * 100, 2)})
+    if not rows:
+        return {}
+    by = sorted(rows, key=lambda r: r["ch24"])
+    return {"ts": now_iso(), "n": len(rows), "uptrend": sum(r["up"] for r in rows),
+            "avg_rsi": round(sum(r["rsi"] for r in rows) / len(rows), 1),
+            "avg_ch24": round(sum(r["ch24"] for r in rows) / len(rows), 2),
+            "near": [r["symbol"] for r in rows if r["up"] and r["rsi"] < 40],
+            "best": [[r["symbol"], r["ch24"]] for r in by[-3:][::-1]], "worst": [[r["symbol"], r["ch24"]] for r in by[:3]]}
 
 
 def _setup_rank(candles: list[dict]) -> tuple:

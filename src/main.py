@@ -13,7 +13,7 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 
-app = FastAPI(title="polyGeni", version="1.0.0")
+app = FastAPI(title="Kairos", version="1.0.0")
 
 app.include_router(router, prefix="/api")
 app.include_router(paper_router, prefix="/api/paper")
@@ -35,7 +35,7 @@ if os.path.isdir(frontend_path):
 @app.on_event("startup")
 def startup():
     init_db()
-    logging.getLogger("main").info("polyGeni started. DB initialized.")
+    logging.getLogger("main").info("Kairos started. DB initialized.")
     if solana_cfg.PAPER_AUTOSTART:
         paper_engine.start()
     from src.solana import hl_live

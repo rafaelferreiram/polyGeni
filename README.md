@@ -1,9 +1,12 @@
-# polyGeni
+# Kairos
+
+*Kairos* is Greek for "the right moment": a team of trading bots that watches the whole crypto market 24/7 and acts
+only when the moment is right. (Repository and package name: `polyGeni`.)
 
 > ⚠️ **No real trading by default.** The Polymarket bot only places real orders with `POLY_LIVE_TRADING=1`
 > explicitly set; otherwise every order is a dry run. The Solana bot is **paper trading only**. The Hyperliquid
 > bot trades real money only with `LIVE_TRADING=1`, an API wallet key for that network **and** a click on Start in
-> the dashboard's 💰 Real account, inside hard USD caps (default $20 capital, $12 per position, 1x, long-only).
+> the dashboard's 💰 Real account, inside hard USD caps (default $20 capital, $12 per position, 2x isolated, long-only).
 
 ## Multi-agent crypto + gold/silver bot — paper, simulation and small live account
 
@@ -67,6 +70,11 @@ Same engine and agents; only the broker is real (`HyperliquidLiveBroker`, offici
   candle (one call feeds both). Positions scale with capital (`LIVE_MAX_POSITIONS=0` = capital ÷ position size).
 - **Self-pause:** a bot with nothing to do sleeps (LLM suggests `next_check_min`, or idle-streak back-off up to
   `BOT_MAX_SLEEP_MIN`) and wakes early when price moves `BOT_WAKE_MOVE_PCT` or a position needs watching.
+- **Leverage** `LIVE_LEVERAGE` (default 2x isolated, max 3x): with $18 the team can hold up to 3 positions of ~$12 at
+  once instead of one. Each keeps its own stop and target on the exchange; daily loss (10%) and the kill switch work on
+  equity, so the worst day is still capped.
+- **Thermometer** on the dashboard: market temperature from the bots' own scan (how many of the 29 coins are in an
+  uptrend, average RSI and 24h move, coins close to a buy) and our return vs simply holding BTC.
 - **☕ Coffee** (button next to the bots, `POST /api/paper/account/coffee`): keeps both wallets (simulation and real) and the whole team awake
   (no self-pause, a scan every cycle) for 4 hours. Entry rules do **not** loosen: in the backtest, accepting shallower
   dips (Bollinger k 1.0–1.5, RSI < 40–45, shorter targets) tripled the trades and turned +2.5% into −4% to −19%.

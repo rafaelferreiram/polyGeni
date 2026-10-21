@@ -107,7 +107,7 @@ def buy(br, order_id="o1", usd=12.0, coin="BTC"):
 def test_buy_is_1x_isolated_rounded_and_protected_on_exchange(live):
     ledger, info, ex, br = live
     fill = buy(br)
-    assert ("leverage", "BTC", 1, False) in ex.calls                       # 1x isolated
+    assert ("leverage", "BTC", int(cfg.LIVE_LEVERAGE), False) in ex.calls   # isolated, LIVE_LEVERAGE
     open_call = next(c for c in ex.calls if c[0] == "open")
     assert open_call[2] == 0.00015                                         # 12/80000 floored to 5 decimals
     triggers = [c for c in ex.calls if c[0] == "trigger"]

@@ -111,6 +111,9 @@ LIVE_DB_PATH = os.getenv("LIVE_DB_PATH", f"./live_{HL_NETWORK}.db")
 LIVE_CYCLE_SEC = _i("LIVE_CYCLE_SEC", 300)
 LIVE_MAX_CAPITAL_USD = _f("LIVE_MAX_CAPITAL_USD", 20.0)        # the bots never size off more than this (raise it as the wallet grows)
 LIVE_MAX_POSITION_USD = _f("LIVE_MAX_POSITION_USD", 12.0)      # Hyperliquid minimum order is $10
+# isolated leverage for the real account, its simulation and the lab (max 3): 2x lets $18 hold up to 3 positions of
+# ~$12 at once. Every position keeps its own exchange stop and target; daily loss and kill switch are on equity.
+LIVE_LEVERAGE = min(max(_f("LIVE_LEVERAGE", 2.0), 1.0), 3.0)
 LIVE_MAX_POSITIONS = _i("LIVE_MAX_POSITIONS", 0)               # 0 = auto: capital // position size (max 6)
 LIVE_MAX_DAILY_LOSS_PCT = _f("LIVE_MAX_DAILY_LOSS_PCT", 0.10)
 LIVE_MAX_ENTRIES_PER_DAY = _i("LIVE_MAX_ENTRIES_PER_DAY", 3)

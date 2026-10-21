@@ -4,7 +4,8 @@ Hyperliquid LIVE execution — testnet first. Same agents and engine as paper; o
 Safety model (all enforced here, not in the UI):
 - Two keys: an API ("agent") wallet in .env (it can trade but cannot withdraw) AND an explicit arm action.
   Mainnet additionally requires LIVE_TRADING=1.
-- 1x isolated, long-only; hard USD caps on capital and position size; Hyperliquid's $10 minimum respected.
+- isolated leverage LIVE_LEVERAGE (default 2x, max 3x), long-only; hard USD caps on capital and position size;
+  Hyperliquid's $10 minimum respected.
 - Every entry gets reduce-only stop-loss and take-profit trigger orders ON THE EXCHANGE. If protection cannot be
   placed, the position is closed immediately.
 - Client order ids derived from our order_id make submissions idempotent across crashes/retries.
@@ -196,9 +197,9 @@ class HyperliquidLiveBroker(Broker):
         sz = _floor_sz(usd / mid, szd)
         if sz * mid < MIN_ORDER_USD:
             raise RuntimeError(f"${sz * mid:.2f} is below Hyperliquid's ${MIN_ORDER_USD:.0f} minimum order")
-        lev = ex.update_leverage(1, coin, is_cross=False)       # 1x isolated, every time
+        lev = ex.update_leverage(int(cfg.LIVE_LEVERAGE), coin, is_cross=False)       # isolated, every time
         if not lev or lev.get("status") != "ok":
-            raise RuntimeError(f"could not set 1x isolated leverage: {lev}")
+            raise RuntimeError(f"could not set {int(cfg.LIVE_LEVERAGE)}x isolated leverage: {lev}")
         filled, avg, oid = _parse_fill(ex.market_open(coin, True, sz, slippage=self.slippage, cloid=cloid))
         try:
             prot = self._protect(coin, filled, stop_price, tp_price, szd)
@@ -333,7 +334,8 @@ def _risk() -> RiskAgent:
     return RiskAgent(max_pos_pct=1.0, max_exposure_pct=1.0, max_positions=cfg.LIVE_MAX_POSITIONS,
                      max_daily_loss_pct=cfg.LIVE_MAX_DAILY_LOSS_PCT, min_trade_usd=MIN_ORDER_USD,
                      max_entries_per_day=cfg.LIVE_MAX_ENTRIES_PER_DAY,
-                     max_position_usd=cfg.LIVE_MAX_POSITION_USD, max_capital_usd=cfg.LIVE_MAX_CAPITAL_USD)
+                     max_position_usd=cfg.LIVE_MAX_POSITION_USD, max_capital_usd=cfg.LIVE_MAX_CAPITAL_USD,
+                     leverage=cfg.LIVE_LEVERAGE)
 
 
 class _NoSafety:
@@ -392,7 +394,7 @@ def get_shadow_engine() -> PaperEngine:
         from src.solana.engine import bench_prices
         _shadow = PaperEngine(
             ledger, [hl.HyperliquidScout(cfg.HL_MARKETS)], _NoSafety(), default_strategies(), DebateAgent(),
-            _risk(), ExecutorAgent(hl.HyperliquidPaperBroker(ledger)), candles_fn={hl.VENUE: hl.candles},
+            _risk(), ExecutorAgent(hl.HyperliquidPaperBroker(ledger, leverage=cfg.LIVE_LEVERAGE)), candles_fn={hl.VENUE: hl.candles},
             profiles={hl.VENUE: {"max_pos_pct": 1.0, "stop_mult": cfg.MARKET_PROFILES.get(hl.VENUE, {}).get("stop_mult", 1.5)}},
             llm=team(), coordinator=_coordinate, bench_fn=bench_prices,
         )

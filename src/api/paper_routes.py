@@ -541,7 +541,7 @@ def account(kind: str = "sim"):
                   "trades": len([t for t in trades if t["strategy"] == m.name]),
                   "pnl_usd": round(sum(t["pnl_usd"] for t in trades if t["strategy"] == m.name), 4),
                   "open": [x["symbol"] for x in led.positions() if x["strategy"] == m.name]} for m in eng.team],
-        "sleep": led.get_state("sleep") or {}, "coffee_until": eng.coffee(),
+        "sleep": led.get_state("sleep") or {}, "coffee_until": eng.coffee(), "market_temp": led.get_state("market_temp") or {},
         "profit": profit(eng),
         "equity": round(p.equity, 4), "cash": round(p.cash, 4), "exposure": round(p.exposure, 4),
         "pnl_usd": round(p.equity - led.contributed(), 4), "contributed": led.contributed(),
@@ -553,6 +553,7 @@ def account(kind: str = "sim"):
         "kill_switch": eng.kill_switch(), "live": led.get_state("live", {}), "agents": led.get_state("agents", {}),
         "limits": {"max_capital_usd": cfg.LIVE_MAX_CAPITAL_USD, "max_position_usd": cfg.LIVE_MAX_POSITION_USD,
                    "max_positions": cfg.LIVE_MAX_POSITIONS, "max_daily_loss_pct": cfg.LIVE_MAX_DAILY_LOSS_PCT,
+                   "leverage": cfg.LIVE_LEVERAGE,
                    "markets": cfg.HL_MARKETS if kind == "sim" else cfg.HL_LIVE_MARKETS},
     }
     if kind == "real":

@@ -132,9 +132,10 @@ class HyperliquidPaperBroker(Broker):
 
     def __init__(self, ledger: Ledger, book_fn=l2_book, ctx_fn=asset_ctx, leverage: float = 1.0,
                  now_fn=time.time):
-        if leverage != 1.0:
-            raise LeverageError("phase 1 paper trading is 1x only (notional == margin)")
+        if not 1.0 <= leverage <= 3.0:
+            raise LeverageError("paper leverage must be between 1x and 3x")
         self.ledger, self.book_fn, self.ctx_fn, self.now_fn = ledger, book_fn, ctx_fn, now_fn
+        self.leverage = leverage
 
     def buy(self, order_id, instrument, symbol, usd, decimals=0, *, strategy, stop_price, tp_price, meta=None):
         if (existing := self.ledger.get_fill(order_id)):
@@ -142,8 +143,11 @@ class HyperliquidPaperBroker(Broker):
         coin = coin_of(instrument)
         ctx = self.ctx_fn(coin)
         fee = usd * taker_fee_bps(ctx) / 1e4
-        if usd + fee > self.ledger.cash() + 1e-9:
-            raise LeverageError(f"notional ${usd:.2f} + fee exceeds free cash ${self.ledger.cash():.2f} (1x only)")
+        # isolated margin: open notional may reach (equity at cost) x leverage; at 1x that is just the free cash
+        open_cost = sum(p["cost_usd"] for p in self.ledger.positions_from_fills().values())
+        room = (self.ledger.cash() + open_cost) * self.leverage - open_cost
+        if usd + fee > room + 1e-9:
+            raise LeverageError(f"notional ${usd:.2f} + fee exceeds buying power ${room:.2f} at {self.leverage:g}x")
         book = self.book_fn(coin)
         mid = (book["bids"][0][0] + book["asks"][0][0]) / 2
         qty, _ = walk(book["asks"], usd=usd)

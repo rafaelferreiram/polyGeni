@@ -58,3 +58,21 @@ def test_daily_entry_cap_and_fingerprint():
     assert not r.evaluate(sig(), "M", 0.5, pf(entries_today=2)).approve
     v = r.evaluate(sig(), "M", 0.5, pf(entries_today=1))
     assert v.approve and len(v.detail["fingerprint"]) == 64
+
+
+def test_two_x_leverage_fits_three_positions_on_18_dollars():
+    r = RiskAgent(max_pos_pct=1.0, max_exposure_pct=1.0, max_positions=0, max_daily_loss_pct=0.1, min_trade_usd=10,
+                  max_position_usd=12, max_capital_usd=20, leverage=2.0)
+    p = pf(equity=18.4, cash=18.4, day_start_equity=18.4)
+    sizes = []
+    for mint in ("A", "B", "C"):
+        v = r.evaluate(sig(), mint, 1.0, p)
+        assert v.approve and v.detail["max_positions"] == 3
+        sizes.append(v.detail["size_usd"])
+        p = pf(equity=18.4, cash=p.cash - sizes[-1], exposure=p.exposure + sizes[-1], open_mints=p.open_mints | {mint},
+               day_start_equity=18.4)
+    assert sizes[:2] == [12, 12] and 10 <= sizes[2] < 12          # the third one is trimmed to the margin left
+    assert not r.evaluate(sig(), "D", 1.0, p).approve               # a 4th never fits
+    one_x = RiskAgent(max_pos_pct=1.0, max_exposure_pct=1.0, max_positions=0, min_trade_usd=10,
+                      max_position_usd=12, max_capital_usd=20)
+    assert one_x.evaluate(sig(), "A", 1.0, pf(equity=18.4, cash=18.4, day_start_equity=18.4)).detail["max_positions"] == 1

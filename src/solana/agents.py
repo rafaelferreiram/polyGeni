@@ -254,13 +254,14 @@ class RiskAgent:
     def __init__(self, max_pos_pct=cfg.RISK_MAX_POSITION_PCT, max_exposure_pct=cfg.RISK_MAX_EXPOSURE_PCT,
                  max_positions=cfg.RISK_MAX_POSITIONS, max_daily_loss_pct=cfg.RISK_MAX_DAILY_LOSS_PCT,
                  min_trade_usd=cfg.RISK_MIN_TRADE_USD, max_entries_per_day=cfg.RISK_MAX_ENTRIES_PER_DAY,
-                 max_position_usd: float | None = None, max_capital_usd: float | None = None):
+                 max_position_usd: float | None = None, max_capital_usd: float | None = None, leverage: float = 1.0):
         self.max_pos_pct, self.max_exposure_pct = max_pos_pct, max_exposure_pct
         self.max_positions, self.max_daily_loss_pct = max_positions, max_daily_loss_pct
         self.min_trade_usd = min_trade_usd
         self.max_entries_per_day = max_entries_per_day
         # hard USD caps (live trading): never size off more than max_capital_usd, never a bigger position
         self.max_position_usd, self.max_capital_usd = max_position_usd, max_capital_usd
+        self.leverage = leverage
 
     def daily_loss_breached(self, p: Portfolio) -> bool:
         return p.day_start_equity > 0 and (p.day_start_equity - p.equity) / p.day_start_equity >= self.max_daily_loss_pct
@@ -281,15 +282,17 @@ class RiskAgent:
         max_pos = self.max_positions
         if not max_pos and self.max_position_usd:      # 0 = auto: one slot per max_position_usd of capital
             cap = min(p.equity, self.max_capital_usd) if self.max_capital_usd else p.equity
-            max_pos = max(1, min(6, int(cap // self.max_position_usd)))
+            max_pos = max(1, min(6, int(cap * self.leverage // self.max_position_usd)))
         d["max_positions"] = max_pos
         if len(p.open_mints) >= max_pos:
             return Vote("risk", False, f"max positions ({max_pos}) reached", d)
         eq = min(p.equity, self.max_capital_usd) if self.max_capital_usd else p.equity
-        strategy_room = eq * capital_pct - p.strategy_exposure.get(sig.strategy, 0)
-        exposure_room = eq * self.max_exposure_pct - p.exposure
-        # 1x only: notional is capped by cash, i.e. never more than the capital allocated to the market
-        size = min(eq * (max_pos_pct or self.max_pos_pct), strategy_room, exposure_room, p.cash * 0.98,
+        lev = self.leverage
+        strategy_room = eq * lev * capital_pct - p.strategy_exposure.get(sig.strategy, 0)
+        exposure_room = eq * lev * self.max_exposure_pct - p.exposure
+        # margin: at 1x notional is capped by cash; with isolated leverage by equity x leverage, 3% kept for fees/slippage
+        margin_room = p.cash * 0.98 if lev == 1 else eq * lev * 0.97 - p.exposure
+        size = min(eq * (max_pos_pct or self.max_pos_pct), strategy_room, exposure_room, margin_room,
                    self.max_position_usd or float("inf"))
         d.update(size_usd=round(size, 2), strategy_room=round(strategy_room, 2), exposure_room=round(exposure_room, 2))
         if size < self.min_trade_usd:

@@ -226,3 +226,12 @@ def test_setup_rank_prefers_oversold_uptrend():
     down = [{"close": 300 - i * 0.5} for i in range(250)]
     ranked = sorted([("up", up), ("dip", dip), ("down", down)], key=lambda r: _setup_rank(r[1]))
     assert [n for n, _ in ranked] == ["dip", "up", "down"]
+
+
+def test_market_temp_summarises_breadth_and_moves():
+    from types import SimpleNamespace
+    from src.solana.engine import _market_temp
+    up = [{"close": 100 + i * 0.5} for i in range(250)]
+    down = [{"close": 300 - i * 0.5} for i in range(250)]
+    t = _market_temp([(SimpleNamespace(symbol="UP"), up), (SimpleNamespace(symbol="DOWN"), down)])
+    assert t["n"] == 2 and t["uptrend"] == 1 and t["best"][0][0] == "UP" and t["worst"][0][0] == "DOWN"

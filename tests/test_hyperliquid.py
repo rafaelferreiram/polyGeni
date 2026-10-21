@@ -56,12 +56,17 @@ def test_sell_walks_bids_and_charges_fee(ledger):
     assert t["venue"] == "hyperliquid"
 
 
-def test_rejects_leverage_above_1x(ledger):
+def test_leverage_is_capped_and_sets_buying_power(ledger):
     with pytest.raises(hl.LeverageError):
-        hl.HyperliquidPaperBroker(ledger, leverage=2.0)
+        hl.HyperliquidPaperBroker(ledger, leverage=4.0)
     with pytest.raises(hl.LeverageError):      # $100 cash cannot carry a $150 notional at 1x
         broker(ledger).buy("o1", "hl:BTC", "BTC", 150.0, strategy="m", stop_price=90, tp_price=120)
     assert ledger.fills() == []
+    b2 = broker(ledger)
+    b2.leverage = 2.0                          # 2x isolated: $150 fits in $200 of buying power, another $60 does not
+    b2.buy("o2", "hl:BTC", "BTC", 150.0, strategy="m", stop_price=90, tp_price=120)
+    with pytest.raises(hl.LeverageError):
+        b2.buy("o3", "hl:xyz:GOLD", "xyz:GOLD", 60.0, strategy="m", stop_price=90, tp_price=120)
 
 
 def test_refuses_orders_deeper_than_book(ledger):
