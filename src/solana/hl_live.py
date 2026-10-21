@@ -85,6 +85,21 @@ def _floor_sz(sz: float, sz_decimals: int) -> float:
     return math.floor(sz * f + 1e-9) / f      # epsilon: 0.00015 * 1e5 is 14.999999… in floating point
 
 
+def _order_size(usd: float, mid: float, sz_decimals: int, max_over: float = 0.2) -> float:
+    """Coin size for a USD order on the exchange's lot grid. Expensive coins with coarse lots (ZEC ≈ $1,300 trades
+    in 0.01 = $13) can floor to below the $10 minimum: then take one lot more if it costs at most max_over (20%)
+    above what Risk approved; otherwise refuse."""
+    f = 10 ** sz_decimals
+    sz = _floor_sz(usd / mid, sz_decimals)
+    if sz * mid >= MIN_ORDER_USD:
+        return sz
+    up = math.ceil(usd / mid * f - 1e-9) / f
+    if MIN_ORDER_USD <= up * mid <= usd * (1 + max_over):
+        return up
+    raise RuntimeError(f"${usd:.2f} cannot be sized on {mid:.6g} with lot {1 / f:g}: the nearest lot is "
+                       f"${up * mid:.2f} (Hyperliquid minimum ${MIN_ORDER_USD:.0f})")
+
+
 def _parse_fill(resp) -> tuple[float, float, int]:
     """(filled_size, avg_px, oid) from an IOC order response, or raise with the exchange's message."""
     if not resp or resp.get("status") != "ok":
@@ -194,9 +209,7 @@ class HyperliquidLiveBroker(Broker):
             raise RuntimeError(f"order {order_id} already exists on the exchange but not in the ledger — reconcile manually")
         szd = self._sz_decimals(coin)
         mid = self._mid(coin)
-        sz = _floor_sz(usd / mid, szd)
-        if sz * mid < MIN_ORDER_USD:
-            raise RuntimeError(f"${sz * mid:.2f} is below Hyperliquid's ${MIN_ORDER_USD:.0f} minimum order")
+        sz = _order_size(usd, mid, szd)
         lev = ex.update_leverage(int(cfg.LIVE_LEVERAGE), coin, is_cross=False)       # isolated, every time
         if not lev or lev.get("status") != "ok":
             raise RuntimeError(f"could not set {int(cfg.LIVE_LEVERAGE)}x isolated leverage: {lev}")

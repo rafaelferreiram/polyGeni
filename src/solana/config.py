@@ -117,7 +117,8 @@ LIVE_MAX_POSITION_USD = _f("LIVE_MAX_POSITION_USD", 12.0)      # Hyperliquid min
 LIVE_LEVERAGE = min(max(_f("LIVE_LEVERAGE", 2.0), 1.0), 3.0)
 LIVE_MAX_POSITIONS = _i("LIVE_MAX_POSITIONS", 0)               # 0 = auto: capital // position size (max 6)
 LIVE_MAX_DAILY_LOSS_PCT = _f("LIVE_MAX_DAILY_LOSS_PCT", 0.10)
-LIVE_MAX_ENTRIES_PER_DAY = _i("LIVE_MAX_ENTRIES_PER_DAY", 3)
+LIVE_MAX_ENTRIES_PER_DAY = _i("LIVE_MAX_ENTRIES_PER_DAY", 12)   # trade whenever there is a valid signal; the real brakes are
+#   max simultaneous positions, stops, and the 10% daily loss kill switch (coffee doubles this to 24)
 HL_LIVE_MARKETS = [m for m in os.getenv("HL_LIVE_MARKETS", HL_BROAD).split(",") if m] + _METALS
 
 # ─── Model arena: one paper bot per LLM, same markets and risk limits, separate portfolios ───
@@ -129,8 +130,11 @@ WHALE_MIN_USD = float(os.getenv("WHALE_MIN_USD", "25000"))    # whale = ≥ this
 # daily goals shown to the user and logged by the bots (targets to measure against, never a reason to force a trade):
 # profit ≈ 0.5%/day is what the backtested edge supports at this size; 2 trades/day; one analysis every cycle.
 DAILY_GOAL_PCT = float(os.getenv("DAILY_GOAL_PCT", "0.005"))
-DAILY_GOAL_TRADES = int(os.getenv("DAILY_GOAL_TRADES", "2"))
+DAILY_GOAL_TRADES = int(os.getenv("DAILY_GOAL_TRADES", "4"))
 SYNC_FAIL_LIMIT = int(os.getenv("SYNC_FAIL_LIMIT", "6"))   # consecutive unreachable-exchange cycles before the kill switch
+# bots allowed to spend real money without first proving themselves in the lab (validated by backtest; "trend"
+# enabled by the user on 2026-10-21). Any other bot needs LIVE_MIN_LAB_TRADES profitable lab trades.
+REAL_TRUSTED_BOTS = [m for m in os.getenv("REAL_TRUSTED_BOTS", "rules,trend").split(",") if m]
 LAB_SCORE_DAYS = float(os.getenv("LAB_SCORE_DAYS", "30"))   # Coordinator ranks bots on their last N days in the lab
 ARENA_START_USDC = _f("ARENA_START_USDC", 20.0)     # each bot gets what the real account would have
 # self-pause: a bot with nothing to do sleeps (up to BOT_MAX_SLEEP_MIN) and wakes early if price moves.

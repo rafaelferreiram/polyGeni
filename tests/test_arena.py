@@ -89,7 +89,9 @@ def test_real_wallet_only_trusts_bots_with_lab_evidence(tmp_path, monkeypatch):
                              symbol="BTC", strategy="x", qty=10, decimals=0, usd_gross=10 * px, fee_usd=0, price=px, quote_price=px))
     team = [TeamMember("rules"), TeamMember("claude-opus-5"), TeamMember("claude-haiku-5-5")]
     assert [m.model for m in arena.eligible_for_real(team)] == ["rules", "claude-opus-5"]
-    # the trend bot is free but unproven: no lab trades yet -> it stays out of the real wallet
+    # trusted rule bots trade real money from day one; untrusted ones need lab evidence
+    assert "trend" in [m.model for m in arena.eligible_for_real([TeamMember("trend")])]
+    monkeypatch.setattr(cfg, "REAL_TRUSTED_BOTS", ["rules"])
     assert "trend" not in [m.model for m in arena.eligible_for_real([TeamMember("trend")])]
     # the Coordinator follows RECENT results: those 2026-10-0x trades are older than a 1-day window
     monkeypatch.setattr(cfg, "LAB_SCORE_DAYS", 1)

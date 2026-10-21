@@ -81,7 +81,7 @@ Same engine and agents; only the broker is real (`HyperliquidLiveBroker`, offici
   credits). CoinMarketCap and TradingView are MCP connectors used by Claude in the morning/evening routine.
 - **Lucro real** has a toggle to show profit with or without the AI cost.
 - **☕ Coffee** (button next to the bots, `POST /api/paper/account/coffee`): keeps both wallets (simulation and real) and the whole team awake
-  (no self-pause, a scan every cycle) for 4 hours and doubles the daily entry cap (3 → 6) for day trading. Entry rules and stops do **not** loosen: in the backtest, accepting shallower
+  (no self-pause, a scan every cycle) for 4 hours and doubles the daily entry cap (12 → 24) for day trading. Entry rules and stops do **not** loosen: in the backtest, accepting shallower
   dips (Bollinger k 1.0–1.5, RSI < 40–45, shorter targets) tripled the trades and turned +2.5% into −4% to −19%.
 - Markets: the whole liquid crypto market, not one coin — 29 perps (`HL_BROAD`): CoinMarketCap top-50 by market cap
   plus Hyperliquid's most traded, each with ≥ 208 days of history and ≥ $1M daily volume on Hyperliquid (BTC, ETH, SOL,
@@ -206,7 +206,7 @@ a bull window — better risk-adjusted, not yet "beats the market".
 
 No strategy wins in both halves: mean reversion works in calm markets, trend following in strong trends. So both run
 as free lab bots (`rules` = dips, `trend` = strong trend) and the Coordinator gives each market to the bot with the best
-**last 30 days** in the lab (`LAB_SCORE_DAYS`); a new bot reaches real money only after ≥ 10 profitable lab trades.
+**last 30 days** in the lab (`LAB_SCORE_DAYS`); both rule bots trade real money (`REAL_TRUSTED_BOTS=rules,trend`, trend enabled by the user on 2026-10-21); AI bots reach real money only after ≥ 10 profitable lab trades.
 Arbitrage is not used: cross-exchange gaps on liquid coins are smaller than two taker fees, and funding/basis trades
 need shorts and capital on two venues — not worth it on $20. CoinAPI (`COINAPI_KEY`) is configured but the account has
 no credits yet; CoinMarketCap context is used by the morning/evening routine.

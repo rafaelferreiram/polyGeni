@@ -101,7 +101,7 @@ function scanNow(btn) {
 function giveCoffee(btn) {
   if (!acc?.running) return toast("Clique em ▶ Start primeiro", true);
   run(btn, "Preparando o café…", () => api("/account/coffee", "POST", { kind: KIND, hours: 4 }),
-      (r) => `☕ Equipe com cafeína até ${hhmm(r.coffee_until)} nas contas simulada e real — modo day trade, até 6 compras por dia`);
+      (r) => `☕ Equipe com cafeína até ${hhmm(r.coffee_until)} nas contas simulada e real — modo day trade, até 24 compras por dia`);
 }
 
 function setMode(mode, btn) {
@@ -344,7 +344,7 @@ function renderGoals(a) {
     card(g.hit, "💰 Lucro do dia", `${pnl(g.profit.done_usd)} <small>de +$${g.profit.target_usd.toFixed(2)} (${(g.profit.target_pct * 100).toFixed(1)}%)</small>`,
          pctOf(g.profit.done_usd, g.profit.target_usd), `limite de perda do dia: −$${Math.abs(g.loss_limit_usd).toFixed(2)} (kill switch)`),
     card(g.trades.done >= g.trades.target, "🔁 Trades abertos hoje", `${g.trades.done} <small>de ${g.trades.target}</small>`,
-         pctOf(g.trades.done, g.trades.target), `${g.trades.closed} fechados · ${g.trades.wins} com lucro · só com sinal válido`),
+         pctOf(g.trades.done, g.trades.target), `${g.trades.closed} fechados · ${g.trades.wins} com lucro · sem limite baixo: até ${a.coffee_until ? 24 : 12}/dia com sinal válido`),
     card(g.analyses.done >= g.analyses.target_so_far, "🔍 Análises (ciclos) hoje", `${g.analyses.done} <small>de ${g.analyses.target_so_far} até agora</small>`,
          pctOf(g.analyses.done, g.analyses.target_so_far), "1 ciclo a cada 5 min, 29 moedas por ciclo"),
   ].join(""));

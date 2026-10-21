@@ -259,3 +259,10 @@ def test_daily_report_counts_wins_losses_and_net(live, tmp_path, monkeypatch):
     assert today["trades"] == 2 and today["wins"] == 1 and today["losses"] == 1 and today["win_rate"] == 0.5
     assert today["ai_cost_usd"] == pytest.approx(0.01) and today["net_usd"] == pytest.approx(today["pnl_usd"] - 0.01)
     assert today["best"]["pnl_usd"] > 0 > today["worst"]["pnl_usd"]
+
+
+def test_order_size_rounds_up_one_lot_for_expensive_coins():
+    assert hl_live._order_size(12, 1300, 2) == 0.01                 # ZEC: floor 0.00 → one lot of $13 (≤ +20%)
+    assert hl_live._order_size(12, 83000, 5) == 0.00014              # BTC: normal floor
+    with pytest.raises(RuntimeError):
+        hl_live._order_size(12, 9000, 0)                             # one lot = $9,000 → refused

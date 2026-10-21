@@ -66,11 +66,11 @@ def score(model: str, market: str | None = None, days: float | None = None) -> t
 
 
 def eligible_for_real(members: list) -> list:
-    """Real money only for bots with evidence: the rules bot (validated in study_v2), and every other bot (trend,
-    AI) once it has ≥ LIVE_MIN_LAB_TRADES lab trades and positive expectancy after its AI cost."""
+    """Real money only for bots with evidence: REAL_TRUSTED_BOTS (backtest-validated rule bots), and every other bot
+    (AI) once it has ≥ LIVE_MIN_LAB_TRADES lab trades and positive expectancy after its AI cost."""
     ok = []
     for m in members:
-        if m.model == "rules":
+        if m.model in cfg.REAL_TRUSTED_BOTS:
             ok.append(m)
             continue
         exp, n = score(m.model)
