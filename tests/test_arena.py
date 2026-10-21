@@ -301,3 +301,21 @@ def _fresh(tmp_path, model):
     from src.solana.broker import PaperBroker
     led = Ledger(str(tmp_path / f"{model}.db"), 100.0)
     return PaperEngine(led, [], SafetyAgent(), [], DebateAgent(enabled=False), RiskAgent(), ExecutorAgent(PaperBroker(led)))
+
+
+def test_user_can_promote_a_reserve_with_12_wins_and_35pct(tmp_path, monkeypatch):
+    from src.solana import evolution
+    monkeypatch.setattr(evolution, "PATH", str(tmp_path / "lineage.json"))
+    bots, _ = make_bots(tmp_path, {"claude-haiku-5-5": "{}"})
+    monkeypatch.setattr(arena, "_bots", bots)
+    led = bots["claude-haiku-5-5"].ledger
+    fake = [{"pnl_usd": 0.1 if i < 12 else -0.1} for i in range(30)]          # 12 wins of 30 = 40%
+    monkeypatch.setattr(type(led), "closed_trades", lambda self: fake)
+    assert arena.can_promote("claude-haiku-5-5")["ok"]
+    arena.promote("claude-haiku-5-5")
+    assert arena.is_titular("claude-haiku-5-5") and arena.green_light("claude-haiku-5-5").get("promoted")
+    assert not arena.can_promote("claude-haiku-5-5")["ok"]                   # already titular
+    fake[:] = [{"pnl_usd": 0.1}] * 11
+    monkeypatch.setattr(evolution, "load", lambda: {"active": [], "bots": {}, "promoted": []})
+    with pytest.raises(ValueError, match="12 vitórias"):
+        arena.promote("claude-haiku-5-5")

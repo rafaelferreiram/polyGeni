@@ -457,7 +457,7 @@ function sellPos(mint, btn) {
   const p = acc.positions.find((x) => x.mint === mint);
   const res = p ? (p.mark_value ?? p.cost_usd) - p.cost_usd : 0;
   if (!confirm(`Vender ${p?.symbol || mint} agora a preço de mercado${KIND === "real" ? " com DINHEIRO REAL" : " (simulação)"}?\n\nResultado atual ≈ ${res >= 0 ? "+" : "−"}$${Math.abs(res).toFixed(2)}. O stop e o alvo na corretora são cancelados.`)) return;
-  run(btn, "Vendendo…", () => api("/account/close", "POST", { kind: KIND, mint }),
+  run(btn, "Vendendo… (os bots pausam a análise, alguns segundos)", () => api("/account/close", "POST", { kind: KIND, mint }),
       (r) => { closePos(); return `✓ Vendeu ${r.symbol} a ${fmtPx(r.price)} · resultado ${r.pnl_usd >= 0 ? "+" : "−"}$${Math.abs(r.pnl_usd).toFixed(2)}`; });
 }
 setInterval(() => { if (openMint) safe(() => openPos(openMint)); }, 15000);
@@ -659,7 +659,7 @@ function renderTeam() {
   cb.textContent = coffee ? `☕ até ${hhmm(coffee)}` : "☕ Café";
   const rankOf = Object.fromEntries([...members].sort((x, y) => ((lab[y.model]?.reward?.points) ?? 0) - ((lab[x.model]?.reward?.points) ?? 0)).map((m, i) => [m.model, i + 1]));
   const shown = members.filter((m) => !teamFilterBy || (teamFilterBy === "titular") === isTitular(m));
-  setHTML("team-grid", shown.map((m) => {
+  const card = (m) => {
     const L = look(m.model), r = lab[m.model] || {};
     const working = acc.running && (liveName === m.name || (r.state === "trabalhando" || r.state === "a trabalhar"));
     const cls = !acc.running || !r.running ? "off" : r.needs_key ? "nokey" : working ? "working" : (m.open || []).length || r.open?.length ? "holding" : r.sleep_until ? "sleeping" : "";
@@ -682,8 +682,9 @@ function renderTeam() {
     const chip = cls === "off" ? "⏸ Desligado" : cls === "nokey" ? "🔑 Falta chave" : cls === "working" ? "⚡ Analisando"
       : cls === "holding" ? `📦 Em posição: ${open.join(", ")}` : cls === "sleeping" ? `😴 Dorme até ${hhmm(r.sleep_until)}` : "👀 Vigiando";
     const now = last ? `${last.market ? `<b>${esc(last.market)}</b> · ` : ""}${esc(ACTION_PT[last.action] || last.action || "")}` : "ainda sem decisões";
-    return `<div class="tb ${cls}" tabindex="0" style="--c:${L.color}" aria-label="${esc(L.label)}: ${esc(state)}"
+    return `<div class="tb ${cls} ${isTitular(m) ? "tit" : "res"}" tabindex="0" style="--c:${L.color}" aria-label="${esc(L.label)}: ${esc(state)}"
       onclick="openBot('${esc(m.model)}')" onkeydown="if (event.key === 'Enter') openBot('${esc(m.model)}')" title="clique para ver tudo sobre o bot">
+      <span class="shirt">${isTitular(m) ? "⚽ TITULAR" : "🪑 RESERVA"}</span>
       ${coffee && cls !== "off" ? '<span class="cup" title="com cafeína: sem pausas">☕</span>' : ""}
       <div class="head">${botFace(L.color, L.ico)}
         <div><div class="nm">${esc(L.label)}${r.model_now && r.model_now !== m.model ? ` <small class="green">🚀 ${esc(look(r.model_now).label)}</small>` : reviewOn(r) ? ` <small class="green">🚀 ${esc(look(reviewOn(r).model).label)}</small>` : ""}</div><div class="rl">${esc(L.role)}</div></div></div>
@@ -694,7 +695,13 @@ function renderTeam() {
         <span><b>${isRules ? "grátis" : usd(r.ai_cost_usd ?? 0)}</b>custo IA</span></div>
       <div class="tip" role="tooltip">${tip}<div class="note" style="margin-top:6px">${esc(bubble)}</div></div>
     </div>`;
-  }).join(""));
+  };
+  const byRank = (a, b) => (rankOf[a.model] || 99) - (rankOf[b.model] || 99);
+  const tit = shown.filter(isTitular).sort(byRank), res = shown.filter((m) => !isTitular(m)).sort(byRank);
+  const head = (cls, ico, title, sub) => `<div class="squad ${cls}"><span class="ico">${ico}</span><b>${title}</b><span>${sub}</span></div>`;
+  setHTML("team-grid",
+    (tit.length ? head("pitch", "⚽", `Em campo · ${tit.length} titular${tit.length === 1 ? "" : "es"}`, "operam dinheiro real") + tit.map(card).join("") : "") +
+    (res.length ? head("bench", "🪑", `Banco de reservas · ${res.length}`, "treinam no laboratório até ganhar a vaga") + res.map(card).join("") : ""));
 }
 
 // ─── AI turbo: a stronger model for N cycles, then back to Haiku ───
@@ -813,6 +820,7 @@ function paintBotModal() {
       </div>
       ${g.ok ? "" : `<h4>Rumo à conta real</h4><div class="bm-card"><div class="t"><span>${g.trades || 0} de ${g.needed_trades || 20} trades · ${g.wins || 0} de ${g.needed || 12} vitórias</span><span>${pct0(prog)}</span></div>
         <div class="bm-prog"><i style="width:${prog * 100}%"></i></div><span class="muted">Falta: ${esc((g.missing || []).join(", ") || "—")}</span></div>`}
+      ${promoteCard(d, r)}
       ${evolutionCard(d, r)}
       <h4>Resultado por dia</h4>${daysChart(d.days)}
       ${REMOTE ? "" : `<div class="bm-actions">${trainButton(d.model, r)}${coffeeButton(d.model, r)}</div>`}`;
@@ -846,6 +854,24 @@ function paintBotModal() {
     <div class="bm-body">${body}</div>`;
   document.querySelector(".bm-body").scrollTop = scrollTop;
 }
+// manual promotion (the user's rule: 12+ lab wins and win rate ≥ 35%)
+function promoteCard(d, r) {
+  const c = r.can_promote;
+  if (d.titular || !c) return "";
+  const why = `${c.wins} de ${c.need_wins} vitórias · acerto ${pct0(c.win_rate)} (mínimo ${pct0(c.need_win_rate)})`;
+  return `<h4>⬆️ Subir para titular</h4><div class="bm-card"><div class="t"><span>${c.ok ? "✅ Pode subir para o time titular" : "Ainda não pode subir"}</span></div>
+    <span class="muted">${why}. Titular opera dinheiro real (posição de $10, mesmos limites).</span>
+    ${c.ok && (d.stats?.pnl_usd ?? 0) < 0 ? `<div class="bm-card" style="margin-top:10px;border-color:rgba(251,191,36,.45)">⚠️ <b>Atenção:</b> no laboratório ele está no prejuízo
+      (${pnl(d.stats.pnl_usd)}, fator de lucro ${d.stats.profit_factor ?? "–"}): perde mais nas derrotas do que ganha nas vitórias. Promovido, deve perder dinheiro real.</div>` : ""}
+    ${c.ok && !REMOTE ? `<div class="bm-actions"><button class="promote" onclick="promoteBot('${esc(d.model)}', this)">⬆️ Promover ${esc(look(d.model).label)} a titular</button></div>` : ""}</div>`;
+}
+function promoteBot(model, btn) {
+  if (REMOTE) return;
+  if (!confirm(`Promover ${look(model).label} a TITULAR?\n\nEle passa a operar DINHEIRO REAL na Hyperliquid, com posições de $10 e os mesmos limites dos outros titulares.`)) return;
+  run(btn, "Promovendo…", () => api("/arena/promote", "POST", { bot: model }), `⚽ ${look(model).label} subiu para o time titular!`)
+    .then(() => { safe(loadArena); setTimeout(() => safe(renderBotModal), 600); });
+}
+
 // evolution: reserves are judged every 20h of life; a weak one is replaced by an improved successor
 function evolutionCard(d, r) {
   const lin = r.lineage, v = r.last_verdict;
