@@ -232,8 +232,8 @@ def test_real_account_simulation_mirrors_live_limits(tmp_path, monkeypatch):
     monkeypatch.setattr(eng, "run_cycle", lambda: {"ok": True})
     hl_live.shadow_cycle()
     assert eng.decision_mode() == "llm"                                    # mirrors the real account
-    from src.solana.strategies import SHORT_BOTS
-    assert [m.model for m in eng.team] == [m for m in cfg.ARENA_MODELS if m not in SHORT_BOTS]   # same team as the real wallet (no shorts)
+    from src.solana.strategies import LAB_ONLY_BOTS
+    assert [m.model for m in eng.team] == [m for m in cfg.ARENA_MODELS if m not in LAB_ONLY_BOTS]   # same team as the real wallet (no shorts)
 
 
 def test_unified_account_equity_comes_from_spot(live):

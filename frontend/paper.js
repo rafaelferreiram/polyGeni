@@ -337,7 +337,8 @@ async function refresh() {
 
 // ─── open positions: how each trade is doing between its stop and its target ───
 const fmtPx = (v) => (v == null ? "–" : `$${Number(v) >= 100 ? Number(v).toFixed(2) : Number(v).toPrecision(4)}`);
-const STRAT_MODEL = { trend: "trend", trend4h: "trend4h", whales: "whales", copy: "copy", short: "short", rules: "rules", mean_reversion_atr: "rules" };
+const STRAT_MODEL = { trend: "trend", trend4h: "trend4h", whales: "whales", copy: "copy", short: "short", rules: "rules", mean_reversion_atr: "rules",
+  trend4h_15m: "trend4h_15m", whales_15m: "whales_15m", copy_15m: "copy_15m" };
 const botName = (s) => (s === "manual" ? "Manual" : look(s?.startsWith("llm:") ? s.slice(4) : STRAT_MODEL[s] || "rules").label);
 function renderPositions(a) {
   const ps = a.positions || [];
@@ -621,6 +622,9 @@ const MODEL_LOOK = {
   "whales": { label: "Evair", color: "#60a5fa", ico: "🐋", role: "segue as baleias quando compram forte" },
   "copy": { label: "Veiga", color: "#f472b6", ico: "👑", role: "copia os 10 melhores traders da Hyperliquid" },
   "short": { label: "Estêvão", color: "#f87171", ico: "📉", role: "short: lucra quando o preço cai (só laboratório)" },
+  "trend4h_15m": { label: "Gabriel Jesus 15m", color: "#fbbf24", ico: "⏱", role: "treino: tendências em velas de 15 min (só laboratório)" },
+  "whales_15m": { label: "Evair 15m", color: "#60a5fa", ico: "⏱", role: "treino: segue baleias com saídas de 15 min (só laboratório)" },
+  "copy_15m": { label: "Veiga 15m", color: "#f472b6", ico: "⏱", role: "treino: copia top traders com saídas de 15 min (só laboratório)" },
   "claude-fable-5-1": { label: "Fable 5.1", color: "#f5c451", ico: "✨" },
   "claude-opus-5-5": { label: "Opus 5.5", color: "#fb923c", ico: "🎼" },
   "claude-opus-5": { label: "Opus 5", color: "#f97362", ico: "🎻" },
@@ -629,7 +633,7 @@ const MODEL_LOOK = {
 };
 const ACTION_PT = { BUY: "🟢 comprar", HOLD: "⏸ esperar", SELL: "🔵 vender", sleep: "😴 dormindo", wake: "⏰ acordou",
                     entry: "🟢 comprou", exit: "🔵 vendeu", veto: "🟡 bloqueado" };
-const FREE = new Set(["rules", "trend", "trend4h", "whales", "copy", "short"]);   // deterministic bots: no AI cost
+const FREE = new Set(["rules", "trend", "trend4h", "whales", "copy", "short", "trend4h_15m", "whales_15m", "copy_15m"]);   // deterministic bots: no AI cost
 const look = (m) => ({ role: "IA analisa e decide", ...(MODEL_LOOK[m] || { label: m, color: "#9fe8c7", ico: "🤖" }) });
 let lastArena = null;
 

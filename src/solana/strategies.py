@@ -342,10 +342,27 @@ class ShortFade:
                       {"rsi": r, "atr": a, "upper_band": upper, "side": "short"})
 
 
+def fast(cls, label: str, hold_h: float = 6):
+    """A 15-minute twin of a rule bot for the lab: same rules counted in 15m bars (so EMAs, breakouts and ATR stops
+    are 4x shorter), positions closed within hold_h. Lab-only: it adds experience/data, never trades real money."""
+    def init(self, *a, **kw):
+        cls.__init__(self, *a, **kw)
+        self.name, self.max_hold_h = label, hold_h          # dataclass parents set their own name on the instance
+    return type(f"{cls.__name__}15m", (cls,), {"__init__": init, "name": label, "max_hold_h": hold_h, "timeframe": "15m"})
+
+
+Trend4h15 = fast(type("Trend15", (TrendFollow,), {"__init__": lambda s: TrendFollow.__init__(s, fast=20, slow=50, breakout=6, stop_atr=2.0, tp_atr=3.0)}),
+                 "trend4h_15m")
+WhaleFollow15 = fast(WhaleFollow, "whales_15m")
+CopyTop15 = fast(CopyTop, "copy_15m")
+
+
 # deterministic bots (no LLM, no API cost): model name -> strategy
 RULE_BOTS = {"rules": MeanReversionATR, "trend": TrendStrong, "trend4h": Trend4h, "whales": WhaleFollow, "copy": CopyTop,
-             "short": ShortFade}
+             "short": ShortFade, "trend4h_15m": Trend4h15, "whales_15m": WhaleFollow15, "copy_15m": CopyTop15}
 SHORT_BOTS = {"short"}          # lab only: the real account (and its simulation) never short
+FAST_BOTS = {"trend4h_15m", "whales_15m", "copy_15m"}      # 15-minute lab twins (experience only)
+LAB_ONLY_BOTS = SHORT_BOTS | FAST_BOTS
 
 
 def features(candles: list[dict]) -> dict:

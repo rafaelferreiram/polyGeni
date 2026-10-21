@@ -432,9 +432,9 @@ def team() -> list:
     """All bots propose for the one shared wallet; LLM bots reuse their lab decision for the same candle."""
     from src.solana import arena
     from src.solana.llm_trader import TeamMember
-    from src.solana.strategies import SHORT_BOTS
-    # short bots are lab-only: they never propose for the real account or its simulation (both are long-only)
-    return [TeamMember(m, lab_lookup=arena.lab_decider) for m in cfg.ARENA_MODELS if m not in SHORT_BOTS]
+    from src.solana.strategies import LAB_ONLY_BOTS
+    # lab-only bots (shorts, 15-minute twins) never propose for the real account or its simulation
+    return [TeamMember(m, lab_lookup=arena.lab_decider) for m in cfg.ARENA_MODELS if m not in LAB_ONLY_BOTS]
 
 
 def _coordinate(market, members):

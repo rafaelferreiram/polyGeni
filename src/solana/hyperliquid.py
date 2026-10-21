@@ -95,6 +95,7 @@ def taker_fee_bps(ctx: dict) -> float:
 
 
 _candle_cache: dict[tuple, tuple[int, list[dict]]] = {}
+INTERVAL_S = {"1h": 3600, "15m": 900}          # live, cached intervals (1h for every bot, 15m for the lab's 15m twins)
 _candle_lock = threading.Lock()
 
 
@@ -103,17 +104,19 @@ def candles(coin: str, interval: str = "1h", start_ms: int | None = None, end_ms
     # Live use (default window): every engine (real, simulation, lab bots) asks for the same 29 coins each cycle.
     # Closed 1h candles only change once an hour, so one fetch per coin per hour is shared by all of them —
     # without this, ~150 heavy candleSnapshot calls per round exceed Hyperliquid's 1200 weight/min and return 429.
-    if start_ms is None and end_ms is None and interval == "1h":
+    step = INTERVAL_S.get(interval, 3600)
+    if start_ms is None and end_ms is None and interval in INTERVAL_S:
         with _candle_lock:            # one fetch even when several engines miss at once (e.g. right after a restart)
-            hour = int(time.time()) // 3600
-            hit = _candle_cache.get((coin, url))
-            if hit and hit[0] == hour:
+            bucket = int(time.time()) // step
+            key = (coin, url) if interval == "1h" else (coin, url, interval)
+            hit = _candle_cache.get(key)
+            if hit and hit[0] == bucket:
                 return hit[1]
             rows = candles(coin, interval, end_ms=int(time.time() * 1000), url=url)
-            _candle_cache[(coin, url)] = (hour, rows)
+            _candle_cache[key] = (bucket, rows)
             return rows
     end_ms = end_ms or int(time.time() * 1000)
-    start_ms = start_ms or end_ms - 400 * 3600 * 1000      # ≥ 200 closed bars for EMA200
+    start_ms = start_ms or end_ms - 400 * step * 1000        # 400 bars: ≥ 200 closed bars for EMA200
     rows = info({"type": "candleSnapshot", "req": {"coin": split_coin(coin)[1], "interval": interval,
                                                   "startTime": start_ms, "endTime": end_ms}}, url)
     return [dict(t=r["t"] // 1000, open=float(r["o"]), high=float(r["h"]), low=float(r["l"]),
