@@ -718,6 +718,31 @@ def logs(after: int = 0, limit: int = 400):
     return {"lines": rows, "last": rows[-1]["seq"] if rows else after}
 
 
+@router.get("/news")
+def news_feed(coin: str | None = None, hours: float = 24):
+    """Crypto news (CoinDesk, Cointelegraph, Decrypt, The Block) tagged with the coins they mention."""
+    from src.solana import news
+    return {"status": news.status(), "items": news.latest(coin, min(hours, 72), 60)}
+
+
+@router.get("/candles")
+def candles(coin: str):
+    """1h candles of a market the bots watch (shared hourly cache — no extra exchange load)."""
+    from src.solana import hyperliquid as hl
+    if coin not in cfg.HL_MARKETS and coin not in cfg.HL_LIVE_MARKETS:
+        raise HTTPException(400, "unknown market")
+    return {"coin": coin, "candles": hl.candles(coin)[-240:]}
+
+
+@router.get("/account/equity")
+def account_equity(kind: str = "sim", points: int = 400):
+    """Equity over time and BTC price, for the 'us vs holding BTC' chart (thinned to `points`)."""
+    rows = _account_engine(kind).ledger.equity_history(100_000)
+    step = max(1, len(rows) // max(points, 1))
+    return {"rows": [{"ts": r["ts"], "equity": r["equity"], "contributed": r["contributed"], "btc": r["btc_price"]}
+                     for r in rows[::step]]}
+
+
 @router.get("/whales")
 def whales_board():
     """Whale flow per coin (last 1h / 4h) and the latest whale trades, from the live Hyperliquid trades feed."""

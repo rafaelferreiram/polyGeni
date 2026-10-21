@@ -73,6 +73,7 @@ let acc = null;
 
 function setKind(k) {
   KIND = k;
+  setTimeout(() => { safe(loadChart); safe(loadEquityChart); }, 800);
   setTimeout(() => safe(loadDaily), 0);
   try { localStorage.setItem("acct", k); } catch (e) { /* ignore */ }
   replay = null;
@@ -358,7 +359,7 @@ function renderRadar(a) {
   document.getElementById("radar-all").textContent = radarAll ? "Ver só as melhores" : `Ver todas (${w.length})`;
   const near = w.filter((r) => r.status === "pronto" || r.status === "perto").length;
   document.getElementById("radar-head").textContent = a.market_temp?.ts ? `${near} perto de compra · atualizado há ${ago(a.market_temp.ts)}` : "aguardando a primeira análise";
-  const rows = (radarAll ? w : w.slice(0, 8)).map((r) => `<tr>
+  const rows = (radarAll ? w : w.slice(0, 8)).map((r) => `<tr onclick="showChart('${esc(r.symbol)}')" title="ver gráfico">
     <td><b>${esc(r.symbol)}</b><br><span class="muted">${r.ch24 >= 0 ? "+" : ""}${r.ch24}% 24h</span></td>
     <td>${fmtPx(r.price)}</td>
     <td>${r.strong ? "⬆⬆ forte" : r.up ? "⬆ alta" : "⬇ baixa"}<br><span class="muted">RSI ${r.rsi}</span></td>
@@ -731,6 +732,80 @@ async function loadWhales() {
 }
 safe(loadWhales);
 setInterval(() => safe(loadWhales), 10000);
+
+// ─── charts (TradingView lightweight-charts): candles + EMAs + entry/stop/target + the bots' buy levels ───
+let chart = null, candleS = null, ema50S = null, ema200S = null, priceLines = [], eqChart = null, eqS = null, btcS = null;
+const CHART_OPTS = { layout: { background: { color: "transparent" }, textColor: "#8a9690" },
+  grid: { vertLines: { color: "rgba(255,255,255,.04)" }, horzLines: { color: "rgba(255,255,255,.04)" } },
+  rightPriceScale: { borderColor: "#222a26" }, timeScale: { borderColor: "#222a26", timeVisible: true }, autoSize: true };
+const emaSeries = (vals, n) => { const k = 2 / (n + 1); let e = vals[0].value; return vals.map((v) => ({ time: v.time, value: (e = v.value * k + e * (1 - k)) })); };
+function showChart(coin) {
+  document.getElementById("chart-coin").value = coin;
+  safe(loadChart);
+  document.getElementById("grafico").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+async function loadChart() {
+  if (!window.LightweightCharts || !acc) return;
+  const sel = document.getElementById("chart-coin");
+  if (!sel.options.length) {
+    sel.innerHTML = acc.limits.markets.map((m) => `<option>${esc(m)}</option>`).join("");
+    sel.value = acc.positions[0]?.symbol || acc.market_temp?.watch?.[0]?.symbol || "BTC";
+  }
+  const coin = sel.value;
+  const { candles } = await api(`/candles?coin=${encodeURIComponent(coin)}`);
+  if (!chart) {
+    chart = LightweightCharts.createChart(document.getElementById("chart"), CHART_OPTS);
+    candleS = chart.addCandlestickSeries({ upColor: "#34d399", downColor: "#f87171", borderVisible: false, wickUpColor: "#34d399", wickDownColor: "#f87171" });
+    ema50S = chart.addLineSeries({ color: "#7dd3fc", lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
+    ema200S = chart.addLineSeries({ color: "#fbbf24", lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
+  }
+  const data = candles.map((c) => ({ time: c.t, open: c.open, high: c.high, low: c.low, close: c.close }));
+  candleS.setData(data);
+  const closes = data.map((d) => ({ time: d.time, value: d.close }));
+  ema50S.setData(emaSeries(closes, 50).slice(50));
+  ema200S.setData(emaSeries(closes, 200).slice(150));
+  priceLines.forEach((l) => candleS.removePriceLine(l));
+  priceLines = [];
+  const line = (price, color, title, style = 0) => price && priceLines.push(candleS.createPriceLine({ price, color, lineWidth: 1, lineStyle: style, axisLabelVisible: true, title }));
+  const pos = acc.positions.find((p) => p.symbol === coin);
+  if (pos) { line(pos.entry_price, "#e8eeeb", "entrada"); line(pos.stop_price, "#f87171", "stop"); line(pos.tp_price, "#34d399", "alvo"); }
+  const r = (acc.market_temp?.watch || []).find((x) => x.symbol === coin);
+  if (r && !pos) { if (r.up) line(r.dip_at, "#a3b1ab", "Quedas compra abaixo", 2); if (r.strong) line(r.break_at, "#67e8f9", "Tendência compra acima", 2); }
+  document.getElementById("chart-legend").innerHTML = `<span><span style="color:#7dd3fc">━</span> EMA50</span><span><span style="color:#fbbf24">━</span> EMA200 (preço acima = tendência de alta)</span>` +
+    (pos ? `<span>posição aberta: entrada ${fmtPx(pos.entry_price)} · stop ${fmtPx(pos.stop_price)} · alvo ${fmtPx(pos.tp_price)}</span>`
+         : r ? `<span>linhas tracejadas = onde os bots comprariam · ${esc(STATUS_PT[r.status] || r.status)}</span>` : "");
+}
+async function loadEquityChart() {
+  if (!window.LightweightCharts) return;
+  const { rows } = await api(`/account/equity?kind=${KIND}`);
+  if (!rows.length) return;
+  if (!eqChart) {
+    eqChart = LightweightCharts.createChart(document.getElementById("equity-chart"), CHART_OPTS);
+    eqS = eqChart.addLineSeries({ color: "#34d399", lineWidth: 2, priceLineVisible: false });
+    btcS = eqChart.addLineSeries({ color: "#fbbf24", lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
+  }
+  const pts = rows.map((r) => ({ ...r, time: Math.floor(new Date(r.ts) / 1000) })).filter((r, i, a) => !i || r.time > a[i - 1].time);
+  const b0 = pts.find((r) => r.btc)?.btc, e0 = pts[0].equity;
+  eqS.setData(pts.map((r) => ({ time: r.time, value: r.equity })));
+  btcS.setData(b0 ? pts.filter((r) => r.btc).map((r) => ({ time: r.time, value: e0 * r.btc / b0 })) : []);
+}
+setTimeout(() => { safe(loadChart); safe(loadEquityChart); }, 2500);
+setInterval(() => safe(loadChart), 60000);
+setInterval(() => safe(loadEquityChart), 60000);
+
+// ─── news: crypto outlets, tagged by coin ───
+async function loadNews() {
+  const sel = document.getElementById("news-coin");
+  if (sel.options.length === 1 && acc) sel.innerHTML += acc.limits.markets.map((m) => `<option>${esc(m)}</option>`).join("");
+  const r = await api(`/news${sel.value ? `?coin=${encodeURIComponent(sel.value)}` : ""}`);
+  const tag = document.getElementById("news-tag");
+  tag.textContent = r.status.ok ? `${r.items.length} nas últimas 24h` : "sem dados";
+  setHTML("news", r.items.length ? r.items.map((i) => `<div class="ni"><span class="w">há ${ago(new Date(i.ts * 1000).toISOString())}</span>
+    <span><a href="${esc(i.url)}" target="_blank" rel="noopener">${esc(i.title)}</a>${i.coins.map((c) => `<span class="coin-tag">${esc(c)}</span>`).join("")}
+    <br><span class="src">${esc(i.source)}</span></span></div>`).join("") : '<div class="empty">Sem notícias para este filtro nas últimas 24h.</div>');
+}
+setTimeout(() => safe(loadNews), 1500);
+setInterval(() => safe(loadNews), 120000);
 
 // ─── connections: exchange, data, AI and RPC providers ───
 async function loadHealth() {

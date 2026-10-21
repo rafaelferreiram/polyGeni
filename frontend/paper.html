@@ -240,6 +240,12 @@
     .st-chip.pronto { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); }
     .st-chip.perto { color: var(--yellow); border-color: rgba(251,191,36,.5); }
     .legend b { color: var(--text); }
+    .chartbox { height: 360px; width: 100%; } .chartbox.small { height: 170px; margin-top: 6px; }
+    .news { display: grid; gap: 2px; max-height: 420px; overflow-y: auto; }
+    .ni { display: grid; grid-template-columns: 70px 1fr; gap: 10px; padding: 8px 4px; border-bottom: 1px solid var(--border); font-size: 13px; }
+    .ni .w { color: var(--muted); font-size: 12px; } .ni a { color: var(--text); text-decoration: none; } .ni a:hover { color: var(--accent); }
+    .ni .src { color: var(--muted); font-size: 11.5px; } .coin-tag { display: inline-block; font-size: 11px; padding: 0 6px; margin-left: 4px; border-radius: 999px; border: 1px solid var(--border); color: var(--accent); }
+    #radar-table tbody tr { cursor: pointer; } #radar-table tbody tr:hover { background: var(--surface-2); }
     .boost { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-top: 14px; padding: 10px 12px;
              border: 1px dashed var(--border); border-radius: 12px; font-size: 13px; }
     .boost select, .boost input { padding: 6px 8px; }
@@ -361,7 +367,7 @@
     </div>
   </header>
   <div class="statusbar"><div class="sb-items" id="statusbar-items"></div>
-    <nav class="sb-nav" aria-label="Seções"><a href="#g-visao">Visão geral</a><a href="#posicoes">Posições</a><a href="#radar">Radar</a><a href="#baleias">Baleias</a><a href="#team">Bots</a><a href="#logs">Logs</a><a href="#g-hist">Histórico</a><a href="#g-sist">Sistema</a></nav></div>
+    <nav class="sb-nav" aria-label="Seções"><a href="#g-visao">Visão geral</a><a href="#posicoes">Posições</a><a href="#radar">Radar</a><a href="#grafico">Gráfico</a><a href="#baleias">Baleias</a><a href="#noticias">Notícias</a><a href="#team">Bots</a><a href="#logs">Logs</a><a href="#g-hist">Histórico</a><a href="#g-sist">Sistema</a></nav></div>
   <div class="alert" id="alert" hidden><span>🛑 <span id="alert-text"></span></span><button onclick="killReset(this)">Rearmar</button></div>
   <div class="scanbar" id="scanbar" hidden><span class="spin"></span><span id="scan-text">Analisando o mercado…</span></div>
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
@@ -412,6 +418,8 @@
         <div class="net"><span class="l" id="f-net-l">Lucro líquido</span><b id="f-net">–</b><span class="s" id="f-net-s">–</span></div>
       </div>
       <div class="budget"><div class="bar"><span id="budget-bar"></span></div></div>
+      <div class="note" style="margin-top:14px">Evolução do saldo · <span style="color:#34d399">■ nossos bots</span> · <span style="color:#fbbf24">■ se tivesse só segurado BTC</span></div>
+      <div id="equity-chart" class="chartbox small"></div>
     </section>
 
     <h3 class="band" id="g-oport">Oportunidades</h3>
@@ -422,6 +430,13 @@
       <div class="legend"><span>📐 <b>Quedas</b> compra se o preço cair abaixo da linha <i>e</i> o RSI ficar abaixo de 30</span><span>📈 <b>Tendência</b> compra se romper a máxima de 24h numa tendência forte</span><span>🧠 <b>IA</b> só é consultada quando há uma queda numa alta</span></div>
       <div class="legend"><span>✅ <b>pronto</b> = há sinal agora → o Coordenador escolhe o bot, o Risk confere vagas e limites, o Executor compra com stop e alvo → aparece em <b>Posições abertas</b></span><span>👀 <b>perto</b> = a menos de ~1,5% da linha de compra</span><span>⏳ <b>aguardando</b> = em alta, mas longe da linha</span><span>⬇ <b>sem tendência</b> = em baixa: os bots não compram</span></div>
     </section>
+    <section class="panel" id="grafico">
+      <h2><span>📈 Gráfico <span class="tag">velas de 1h · Hyperliquid</span></span>
+        <span class="ctrls"><select id="chart-coin" aria-label="Moeda" onchange="loadChart()"></select></span></h2>
+      <div id="chart" class="chartbox"></div>
+      <div class="legend" id="chart-legend"></div>
+    </section>
+
     <section class="panel" id="baleias">
       <h2><span>🐋 Baleias <span class="tag" id="whale-tag">–</span></span><span class="note" id="whale-head"></span></h2>
       <div class="whale-grid">
@@ -430,6 +445,13 @@
         <div><div class="note" style="margin-bottom:8px">Últimas ordens de baleia</div><div class="tbl"><table id="whale-recent"></table></div></div>
       </div>
       <div class="legend"><span>🐋 baleia = ordem a mercado ≥ $25 mil e ≥ 0,02% do volume diário da moeda</span><span>🟢 comprando / 🔴 vendendo = mais de 30% de diferença entre compras e vendas</span><span>🧠 o bot de IA recebe este fluxo antes de decidir</span></div>
+    </section>
+
+    <section class="panel" id="noticias">
+      <h2><span>📰 Notícias <span class="tag" id="news-tag">–</span></span>
+        <span class="ctrls"><select id="news-coin" aria-label="Moeda" onchange="loadNews()"><option value="">Todas as moedas</option></select></span></h2>
+      <div class="news" id="news"></div>
+      <div class="legend"><span>Fontes: CoinDesk, Cointelegraph, Decrypt, The Block (atualiza a cada 5 min)</span><span>🧠 o bot de IA lê as manchetes das últimas 12h da moeda antes de decidir</span><span>X.com não incluído: a API do X não tem leitura gratuita</span></div>
     </section>
 
     <h3 class="band" id="g-bots">Bots ao vivo</h3>
@@ -514,6 +536,7 @@
     </details>
   </main>
 
-  <script src="/static/paper.js?v=43"></script>
+  <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+  <script src="/static/paper.js?v=44"></script>
 </body>
 </html>

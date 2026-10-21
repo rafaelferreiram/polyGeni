@@ -74,6 +74,11 @@ Same engine and agents; only the broker is real (`HyperliquidLiveBroker`, offici
 - **Leverage** `LIVE_LEVERAGE` (default 2x isolated, max 3x): with $18 the team can hold up to 3 positions of ~$12 at
   once instead of one. Each keeps its own stop and target on the exchange; daily loss (10%) and the kill switch work on
   equity, so the worst day is still capped.
+- **News** (`src/solana/news.py`, `GET /api/paper/news`): CoinDesk, Cointelegraph, Decrypt and The Block RSS every 5 min,
+  tagged with the coins they mention; shown on the dashboard and given to the AI bot (headlines of the last 12h for the
+  coin). X.com is not used: its API has no free read access.
+- **Charts**: 1h candles with EMA50/EMA200, the open position's entry/stop/target and the bots' buy levels
+  (`GET /api/paper/candles`); equity curve vs holding BTC (`GET /api/paper/account/equity`). Click a radar row to chart it.
 - **AI turbo** (`POST /api/paper/arena/boost`, dashboard "🚀 Turbo da IA"): run the AI bot with Sonnet, Opus or
   Fable for N cycles (1 cycle = 5 min), then it returns to Haiku. It re-decides every market of the current candle with
   the stronger model; cost still counts against the bot's reward and the profit-linked AI allowance.
