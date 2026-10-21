@@ -186,7 +186,6 @@ def turbo(model: str) -> dict:
     hours = max((midnight - now).total_seconds() / 3600, 1)
     until = midnight.astimezone(timezone.utc).isoformat(timespec="seconds")
     eng.ledger.set_state("turbo_until", until)
-    eng.ledger.set_state("fast_exits", True)        # the user's choice: turbo bots trade with short holds from now on
     if eng.ledger.get_state("train_boost_until", "") < until:
         boost_training(model, hours)
     _top_up(eng)
@@ -198,7 +197,9 @@ def turbo(model: str) -> dict:
 def fast_exit_hold(strategy: str) -> float | None:
     """Max hours a position may stay open for a bot trained with turbo (None = its normal hold)."""
     eng = (_bots or {}).get(strategy)
-    if not eng or not eng.ledger.get_state("fast_exits", False) or is_titular(strategy) or evolution.no_fast_exit(strategy):
+    # forced short holds were dropped (2026-10-22): 29 of Evair's 33 lab trades closed by the 2h limit, −$0.65 in all
+    if not cfg.TURBO_FAST_EXITS or not eng or not eng.ledger.get_state("fast_exits", False) or is_titular(strategy) \
+            or evolution.no_fast_exit(strategy):
         return None              # titulares keep their strategy's own exits (a forced 2h exit cost Evair money)
     return cfg.TURBO_FAST_MAX_HOLD_H if strategy in FAST_BOTS else cfg.TURBO_MAX_HOLD_H
 
@@ -513,7 +514,7 @@ def set_running(on: bool):
     if on and sch.get_job("chatter") is None:
         from datetime import datetime as _dtc
         from src.solana import teamchat
-        sch.add_job(teamchat.chatter, "interval", seconds=900, id="chatter", max_instances=1, coalesce=True,
+        sch.add_job(teamchat.chatter, "interval", seconds=300, id="chatter", max_instances=1, coalesce=True,
                     next_run_time=_dtc.now() + timedelta(minutes=1))
     if on and sch.get_job("evolution") is None:
         from datetime import datetime as _dt

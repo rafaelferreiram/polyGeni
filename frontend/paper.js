@@ -978,7 +978,7 @@ function trainButton(model, r) {
 }
 function trainBoost(model, btn) {
   if (REMOTE || !btn || btn.disabled) return;
-  if (!confirm(`Turbinar o ${look(model).label} até a meia-noite? No laboratório (dinheiro falso) ele passa a ler o mercado a cada minuto, com todas as vagas e sem limite diário, e fecha cada posição em até ${model.endsWith("_15m") ? 1 : 2}h (meta: 10+ trades por dia). As regras de compra, stops e alvos não mudam. Atenção: depois do turbo o bot passa a operar sempre com saídas rápidas, inclusive na conta real quando for promovido.`)) return;
+  if (!confirm(`Turbinar o ${look(model).label} até a meia-noite? No laboratório (dinheiro falso) ele passa a ler o mercado a cada 2 minutos, com todas as vagas e sem limite diário,. As regras de compra, stops, alvos e o tempo de cada posição não mudam.`)) return;
   run(btn, "Turbinando…", () => api("/arena/turbo", "POST", { bot: model }),
       `⚡ ${look(model).label} turbinado até a meia-noite: analisa o mercado a cada minuto`);
 }
@@ -1287,7 +1287,8 @@ function copyAddr(btn) {
     .then(() => toast("📋 Endereço copiado — envie só USDC na rede Arbitrum One"), () => toast("✖ não foi possível copiar", true));
 }
 safe(loadFunding);
-setInterval(() => safe(loadFunding), 120000);
+// only while the "Adicionar fundos" panel is open: it reads the MetaMask side on Arbitrum
+setInterval(() => { if (!document.getElementById("fundos")?.classList.contains("collapsed")) safe(loadFunding); }, 120000);
 
 // ─── top 10 traders of Hyperliquid: who, what they hold, what they just did ───
 let lastTop = null;

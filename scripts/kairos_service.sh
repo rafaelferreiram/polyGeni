@@ -28,7 +28,6 @@ install() {
   <key>WorkingDirectory</key><string>$DIR</string>
   <key>EnvironmentVariables</key>
   <dict>
-    <key>PAPER_AUTOSTART</key><string>1</string>
     <key>PAPER_CYCLE_SEC</key><string>300</string>
     <key>PAPER_DB_PATH</key><string>./paper.db</string>
     <key>PATH</key><string>/usr/bin:/bin:/usr/sbin:/sbin</string>

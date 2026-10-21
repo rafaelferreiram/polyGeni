@@ -192,6 +192,7 @@ BOT_WAKE_MOVE_PCT = _f("BOT_WAKE_MOVE_PCT", 0.015)
 ARENA_CYCLE_SEC = _i("ARENA_CYCLE_SEC", 300)
 TURBO_CYCLE_SEC = _i("TURBO_CYCLE_SEC", 120)        # a bot in "turbo do dia" analyses this often (1 min caused 429s)
 # a bot trained with turbo closes positions sooner (lab and, once promoted, real account): more round trips per day
+TURBO_FAST_EXITS = os.getenv("TURBO_FAST_EXITS", "0") == "1"   # off: forced 2h exits closed trades before their target
 TURBO_MAX_HOLD_H = _f("TURBO_MAX_HOLD_H", 2.0)
 TURBO_FAST_MAX_HOLD_H = _f("TURBO_FAST_MAX_HOLD_H", 1.0)   # 15-minute twins          # lab bots scan with the accounts (candles are shared, cheap)
 
