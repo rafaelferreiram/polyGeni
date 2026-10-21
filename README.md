@@ -126,6 +126,24 @@ docker-compose publishes `127.0.0.1:8000` only (inside Docker set `PAPER_TRUSTED
   wallet to its public address; withdrawals only to an allow-listed address with daily limits; real swaps via
   Jupiter only with `LIVE_TRADING=1` **after** 4–8 weeks of 24/7 paper trading that beats hold SOL after costs.
 
+### Strategy v2 (`reports/study_v2_*.md`) — what changed and why
+Out-of-sample May→Oct 2026, Hyperliquid BTC/ETH/SOL/HYPE/XRP 1h, taker fees + spread + hourly funding:
+
+| | Return | Max DD | Sharpe | Trades | Win rate |
+|---|---:|---:|---:|---:|---:|
+| Old mean reversion (fixed % stops, what ran before) | −4.7% | 20.7% | −0.19 | 154 | 49% |
+| **Mean reversion ATR + uptrend filter** (walk-forward) | +6.1% | 1.9% | 2.42 | 29 | 76% |
+| Same, fixed default parameters (no selection) | +2.5% | 3.0% | 0.82 | 54 | 54% |
+| Same, without the uptrend filter | −16.1% | 18.6% | −2.03 | 304 | 47% |
+| Trend following | +0.9% | 11.5% | 0.21 | 174 | 40% |
+| Buy-and-hold basket of the 5 coins | +24.9% | 22.4% | 1.23 | – | – |
+
+Adopted: `MeanReversionATR` (fixed defaults) for the rules bot and paper; ATR-sized stops (no extra widening);
+LLM bots now receive the same indicators (RSI, ATR%, EMA50/200, band, funding, the rules signal, suggested
+ATR stops), the round-trip cost and the lesson "no dip-buying in downtrends"; AI bots trade the real wallet only
+after `LIVE_MIN_LAB_TRADES` lab trades with positive expectancy. Still below buy-and-hold in absolute return over
+a bull window — better risk-adjusted, not yet "beats the market".
+
 ### Backtest (walk-forward, out-of-sample Jun→Oct 2026, net of costs)
 Params (incl. a SMA200 regime filter on/off) are chosen in-sample on the previous fold and traded on the next.
 

@@ -335,7 +335,7 @@ def get_live_engine() -> PaperEngine:
             default_strategies(), DebateAgent(), _risk(), ExecutorAgent(HyperliquidLiveBroker(ledger)),
             candles_fn={hl.VENUE: lambda coin: hl.candles(coin, url=url)},
             profiles={hl.VENUE: {"max_pos_pct": 1.0, "stop_mult": cfg.MARKET_PROFILES.get(hl.VENUE, {}).get("stop_mult", 1.5)}},
-            llm=team(), coordinator=_coordinate,
+            llm=team(), coordinator=_coordinate_real,
         )
     return _live
 
@@ -350,6 +350,12 @@ def team() -> list:
 def _coordinate(market, members):
     from src.solana import arena
     return arena.rank(market, members)
+
+
+def _coordinate_real(market, members):
+    """Like the simulation, but only bots with lab evidence may spend real money."""
+    from src.solana import arena
+    return arena.rank(market, arena.eligible_for_real(members))
 
 
 _shadow: PaperEngine | None = None

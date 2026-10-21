@@ -347,6 +347,8 @@ class PaperEngine:
             self._agent("safety", last_reason=f"{c.symbol}: passed", approved=1)
             try:
                 candles = self._candles(c)[:-1]  # drop the still-open candle
+                if candles and "funding_1h" in (c.price_change or {}):
+                    candles[-1] = {**candles[-1], "funding": c.price_change["funding_1h"]}
                 age_h = (time.time() - candles[-1]["t"]) / 3600 if candles else None
                 if age_h is None or age_h > cfg.STALE_CANDLE_H:
                     self.ledger.log_decision("veto", cycle=self.cycle, mint=c.mint, symbol=c.symbol,

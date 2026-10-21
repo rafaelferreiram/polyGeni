@@ -61,6 +61,20 @@ def score(model: str, market: str | None = None) -> tuple[float, int]:
     return sum(t["pnl_usd"] for t in trades) / (len(trades) + 3), len(trades)
 
 
+def eligible_for_real(members: list) -> list:
+    """Real money only for bots with evidence: the rules bot (validated in study_v2) and AI bots with
+    ≥ LIVE_MIN_LAB_TRADES lab trades and positive expectancy."""
+    ok = []
+    for m in members:
+        if m.model == "rules":
+            ok.append(m)
+            continue
+        exp, n = score(m.model)
+        if n >= cfg.LIVE_MIN_LAB_TRADES and exp > 0:
+            ok.append(m)
+    return ok
+
+
 def rank(market: str, members: list) -> list:
     """Coordinator: best lab track record on this market first, then overall, then the configured order."""
     order = {m: i for i, m in enumerate(cfg.ARENA_MODELS)}

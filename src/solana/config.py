@@ -63,7 +63,8 @@ RISK_MIN_TRADE_USD = _f("RISK_MIN_TRADE_USD", 5.0)
 RISK_MAX_HOLD_H = _f("RISK_MAX_HOLD_H", 72)
 RISK_MAX_ENTRIES_PER_DAY = _i("RISK_MAX_ENTRIES_PER_DAY", 6)
 STALE_CANDLE_H = _f("STALE_CANDLE_H", 3)   # refuse signals computed on candles older than this
-PAPER_STRATEGIES = [s for s in os.getenv("PAPER_STRATEGIES", "mean_reversion").split(",") if s]
+# study_v2 (reports/): ATR-sized mean reversion with an uptrend filter beat the old fixed-% version OOS
+PAPER_STRATEGIES = [s for s in os.getenv("PAPER_STRATEGIES", "mean_reversion_atr").split(",") if s]
 
 # Optional LLM debate (veto-only). Disabled without a key.
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
@@ -86,7 +87,7 @@ HL_ALLOW_SHORT = False  # long-only in phase 1
 import json as _json
 MARKET_PROFILES = {
     "jupiter": {"max_pos_pct": 0.05, "stop_mult": 1.0},
-    "hyperliquid": {"max_pos_pct": 0.15, "stop_mult": 1.5},
+    "hyperliquid": {"max_pos_pct": 0.15, "stop_mult": 1.0},   # stops are ATR-sized now; no extra widening
     **_json.loads(os.getenv("MARKET_PROFILES", "{}")),
 }
 
@@ -116,6 +117,8 @@ ARENA_MODELS = [m for m in os.getenv("ARENA_MODELS", "rules,claude-fable-5-1,cla
 ARENA_START_USDC = _f("ARENA_START_USDC", 20.0)     # each bot gets what the real account would have
 # self-pause: a bot with nothing to do sleeps (up to BOT_MAX_SLEEP_MIN) and wakes early if price moves
 BOT_MAX_SLEEP_MIN = _i("BOT_MAX_SLEEP_MIN", 120)
+# an AI bot may act on the REAL wallet only after this many lab trades with positive expectancy
+LIVE_MIN_LAB_TRADES = _i("LIVE_MIN_LAB_TRADES", 10)
 BOT_WAKE_MOVE_PCT = _f("BOT_WAKE_MOVE_PCT", 0.015)
 ARENA_CYCLE_SEC = _i("ARENA_CYCLE_SEC", 900)
 

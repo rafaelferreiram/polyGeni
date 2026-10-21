@@ -99,7 +99,7 @@ def dexscreener_pairs(token_addresses: list[str]) -> list[dict]:
 
 # ─── GeckoTerminal candles ───────────────────────────────────────────────────
 
-def pool_candles(pool_address: str, timeframe: str = "hour", limit: int = 200) -> list[dict]:
+def pool_candles(pool_address: str, timeframe: str = "hour", limit: int = 400) -> list[dict]:
     """OHLCV oldest→newest as dicts {t, open, high, low, close, volume}."""
     data = request_json(
         "GET", f"{cfg.GECKOTERMINAL_BASE}/networks/solana/pools/{pool_address}/ohlcv/{timeframe}",

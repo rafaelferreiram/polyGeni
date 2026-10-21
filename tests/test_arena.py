@@ -73,3 +73,18 @@ def test_coordinator_ranks_by_lab_results(tmp_path, monkeypatch):
                              symbol="SOL", strategy=model, qty=10, decimals=0, usd_gross=10 * exit_px, fee_usd=0, price=exit_px, quote_price=exit_px))
     team = [TeamMember("claude-opus-5"), TeamMember("claude-sonnet-5-5")]
     assert [m.model for m in arena.rank("SOL", team)] == ["claude-sonnet-5-5", "claude-opus-5"]
+
+
+def test_real_wallet_only_trusts_bots_with_lab_evidence(tmp_path, monkeypatch):
+    from src.solana.llm_trader import TeamMember
+    bots, _ = make_bots(tmp_path, {"claude-opus-5": "{}", "claude-haiku-5-5": "{}"})
+    monkeypatch.setattr(arena, "_bots", bots)
+    monkeypatch.setattr(cfg, "LIVE_MIN_LAB_TRADES", 2)
+    led = bots["claude-opus-5"].ledger
+    for i, px in enumerate((1.1, 1.2)):                      # two winning lab trades for opus, none for haiku
+        led.append_fill(dict(order_id=f"b{i}", ts=f"2026-10-0{i + 1}T00:00:00+00:00", venue="hyperliquid", side="buy", mint="hl:BTC",
+                             symbol="BTC", strategy="x", qty=10, decimals=0, usd_gross=10, fee_usd=0, price=1, quote_price=1))
+        led.append_fill(dict(order_id=f"s{i}", ts=f"2026-10-0{i + 1}T01:00:00+00:00", venue="hyperliquid", side="sell", mint="hl:BTC",
+                             symbol="BTC", strategy="x", qty=10, decimals=0, usd_gross=10 * px, fee_usd=0, price=px, quote_price=px))
+    team = [TeamMember("rules"), TeamMember("claude-opus-5"), TeamMember("claude-haiku-5-5")]
+    assert [m.model for m in arena.eligible_for_real(team)] == ["rules", "claude-opus-5"]

@@ -89,7 +89,8 @@ def default_strategies(names: list[str] | None = None) -> list:
     +4.1% on Solana tokens; momentum lost on every venue/timeframe, so it is off unless PAPER_STRATEGIES enables it."""
     from src.solana import config as cfg
     names = names or cfg.PAPER_STRATEGIES
-    available = {"mean_reversion": MeanReversion, "momentum": MomentumBreakout}
+    available = {"mean_reversion": MeanReversion, "momentum": MomentumBreakout,
+                 "mean_reversion_atr": MeanReversionATR, "trend": TrendFollow}
     share = 1.0 / len(names)
     return [available[n](capital_pct=share) for n in names]
 
@@ -114,3 +115,115 @@ class RegimeFiltered:
         if candles[-1]["close"] <= mean(c["close"] for c in candles[-self.n:]):
             return None
         return self.inner.signal(candles)
+
+
+# ─── volatility-aware candidates (v2) ─────────────────────────────────────────
+
+def ema(values: list[float], n: int) -> float:
+    k = 2 / (n + 1)
+    e = values[0]
+    for v in values[1:]:
+        e = v * k + e * (1 - k)
+    return e
+
+
+def atr(candles: list[dict], n: int = 14) -> float:
+    trs = [max(c["high"] - c["low"], abs(c["high"] - p["close"]), abs(c["low"] - p["close"]))
+           for p, c in zip(candles[-n - 1:-1], candles[-n:])]
+    return sum(trs) / len(trs) if trs else 0.0
+
+
+def _atr_stops(candles, stop_atr, tp_atr) -> tuple[float, float, float]:
+    a, close = atr(candles), candles[-1]["close"]
+    stop = min(max(stop_atr * a / close, 0.005), 0.15)
+    tp = min(max(tp_atr * a / close, 0.005), 0.30)
+    return stop, tp, a
+
+
+def _crowded(candles, max_funding) -> bool:
+    """Skip longs when hourly funding says the long side is crowded (unknown funding = not crowded)."""
+    f = candles[-1].get("funding")
+    return f is not None and f > max_funding
+
+
+@dataclass
+class MeanReversionATR:
+    """Oversold dip (below lower Bollinger + low RSI), optionally only in an uptrend (close > EMA),
+    with stop/target sized by ATR so they fit each coin's volatility; skips crowded longs."""
+    period: int = 20
+    k: float = 2.0
+    rsi_period: int = 14
+    rsi_max: float = 30
+    trend_ema: int = 200
+    trend: bool = True
+    stop_atr: float = 2.0
+    tp_atr: float = 2.5
+    max_funding: float = 0.0001
+    capital_pct: float = 1.0
+    name: str = "mean_reversion_atr"
+
+    def signal(self, candles: list[dict]) -> Signal | None:
+        need = max(self.period, self.rsi_period + 1, self.trend_ema if self.trend else 0) + 1
+        if len(candles) < need:
+            return None
+        closes = [c["close"] for c in candles]
+        window = closes[-self.period:]
+        lower = mean(window) - self.k * pstdev(window)
+        r = rsi(closes, self.rsi_period)
+        if not (closes[-1] < lower and r < self.rsi_max) or _crowded(candles, self.max_funding):
+            return None
+        trend = ema(closes[-3 * self.trend_ema:], self.trend_ema) if self.trend else None
+        if trend is not None and closes[-1] <= trend:
+            return None
+        stop, tp, a = _atr_stops(candles, self.stop_atr, self.tp_atr)
+        return Signal(self.name, closes[-1], stop, tp,
+                      f"dip below band {lower:.6g}, RSI {r:.0f}" + (f", uptrend (EMA{self.trend_ema} {trend:.6g})" if trend else ""),
+                      {"rsi": r, "atr": a, "lower_band": lower, "ema_trend": trend})
+
+
+@dataclass
+class TrendFollow:
+    """Time-series momentum: close > EMA fast > EMA slow and a fresh N-bar breakout; ATR stop/target."""
+    fast: int = 50
+    slow: int = 200
+    breakout: int = 24
+    stop_atr: float = 2.0
+    tp_atr: float = 4.0
+    max_funding: float = 0.0001
+    capital_pct: float = 1.0
+    name: str = "trend"
+
+    def signal(self, candles: list[dict]) -> Signal | None:
+        if len(candles) < self.slow + 1:
+            return None
+        closes = [c["close"] for c in candles]
+        f, s = ema(closes[-3 * self.fast:], self.fast), ema(closes[-3 * self.slow:], self.slow)
+        prior_high = max(c["high"] for c in candles[-self.breakout - 1:-1])
+        if not (closes[-1] > f > s and closes[-1] > prior_high) or _crowded(candles, self.max_funding):
+            return None
+        stop, tp, a = _atr_stops(candles, self.stop_atr, self.tp_atr)
+        return Signal(self.name, closes[-1], stop, tp,
+                      f"uptrend (EMA{self.fast} {f:.6g} > EMA{self.slow} {s:.6g}) and {self.breakout}h breakout",
+                      {"ema_fast": f, "ema_slow": s, "atr": a, "prior_high": prior_high})
+
+
+def features(candles: list[dict]) -> dict:
+    """Indicators handed to the LLM bots so they reason on the same facts as the rules (no raw-candle guessing)."""
+    if len(candles) < 30:
+        return {}
+    closes = [c["close"] for c in candles]
+    a = atr(candles)
+    e50 = ema(closes[-150:], 50)
+    e200 = ema(closes[-600:], 200) if len(closes) >= 200 else None
+    window = closes[-20:]
+    lower = mean(window) - 2 * pstdev(window)
+    rules = MeanReversionATR().signal(candles)
+    return {
+        "price": closes[-1], "rsi14": round(rsi(closes), 1), "atr_pct": round(a / closes[-1] * 100, 3),
+        "ema50": e50, "ema200": e200, "uptrend": bool(e200 and closes[-1] > e200 and e50 > e200),
+        "below_lower_band": closes[-1] < lower, "change_24h_pct": round((closes[-1] / closes[-25] - 1) * 100, 2) if len(closes) > 25 else None,
+        "funding_1h": candles[-1].get("funding"),
+        "suggested_stop_pct": round(min(max(2 * a / closes[-1], 0.005), 0.15), 4),
+        "suggested_tp_pct": round(min(max(2.5 * a / closes[-1], 0.005), 0.30), 4),
+        "rules_signal": rules.reason if rules else None,
+    }

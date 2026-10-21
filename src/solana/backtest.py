@@ -234,3 +234,71 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+# ─── v2 study: current live strategy (fixed) vs volatility-aware candidates (walk-forward) ───
+
+def study_v2(markets: list[str], days: int = 208, folds: int = 4, out_dir: str = "reports") -> str:
+    from src.solana.strategies import MeanReversionATR, TrendFollow
+    end = int(time.time() * 1000)
+    start = end - days * 86_400_000
+    raw = {m: hl.candles(m, "1h", start, end) for m in markets}
+    raw = {m: c for m, c in raw.items() if len(c) > 1000}
+    funding = {m: hl.funding_history(m, start, end) for m in raw}
+    data = align(raw)
+    for m, cs in data.items():                      # funding known at decision time = previous hour's rate
+        for c in cs:
+            c["funding"] = funding[m].get(c["t"] // 3600 * 3600 - 3600)
+    costs = {m: hl.taker_fee_bps(hl.asset_ctx(m)) + HL_SPREAD_BPS for m in data}
+    n = len(next(iter(data.values())))
+    edges = [round(n * k / folds) for k in range(folds + 1)]
+    kw = dict(cost_bps=costs, funding=funding)
+    stop_mult = cfg.MARKET_PROFILES.get("hyperliquid", {}).get("stop_mult", 1.5)
+
+    current = MeanReversion()
+    current.stop_pct, current.tp_pct = current.stop_pct * stop_mult, current.tp_pct * stop_mult
+    candidates = {
+        "mean_reversion_atr": [MeanReversionATR(rsi_max=r, stop_atr=sa, trend=t)
+                               for r, sa, t in itertools.product([25, 30], [1.5, 2.5], [True, False])],
+        "trend": [TrendFollow(breakout=b, tp_atr=tp) for b, tp in itertools.product([24, 48], [3.0, 5.0])],
+    }
+    n_configs = 1 + sum(len(g) for g in candidates.values())
+    res = {}
+    # current live config: no selection, traded over the same OOS span
+    r = simulate(current, data, edges[1], n, **kw)
+    res["current (live today)"] = _metrics([100.0] + r["equity"], r["trades"])
+    for name, grid in candidates.items():
+        curve, trades = [100.0], []
+        for k in range(1, folds):
+            ins = [(s, _metrics(x["equity"], x["trades"])) for s in grid
+                   for x in [simulate(s, data, max(edges[k - 1], 210), edges[k], **kw)]]
+            best = max(ins, key=lambda z: (z[1]["sharpe"], z[1]["return_pct"]))[0]
+            x = simulate(best, data, edges[k], edges[k + 1], capital=curve[-1], **kw)
+            curve += x["equity"]
+            trades += x["trades"]
+        res[name] = _metrics(curve, trades)
+        res[name]["avg_trade_usd"] = round(sum(trades) / len(trades), 4) if trades else None
+    res["current (live today)"]["avg_trade_usd"] = round(sum(r["trades"]) / len(r["trades"]), 4) if r["trades"] else None
+    holds = {m: _metrics([100.0] + hold(data[m], edges[1], n, cost_bps=costs[m])["equity"], []) for m in data}
+    ew = [sum(h) / len(h) for h in zip(*[[100.0] + hold(data[m], edges[1], n, cost_bps=costs[m])["equity"] for m in data])]
+    holds["equal-weight basket"] = _metrics(ew, [])
+    first = next(iter(data.values()))
+    span = (datetime.fromtimestamp(first[edges[1]]["t"], timezone.utc).date(), datetime.fromtimestamp(first[-1]["t"], timezone.utc).date())
+    lines = [f"# Strategy study v2 — Hyperliquid crypto 1h ({datetime.now(timezone.utc).date()})", "",
+             f"- Markets: {', '.join(data)} · out-of-sample {span[0]} → {span[1]} ({n - edges[1]} bars, {folds - 1} folds)",
+             f"- Costs: taker fee + {HL_SPREAD_BPS} bps per side, hourly funding on open longs; next-bar-open fills",
+             f"- Configurations tried: {n_configs} (beware of selection bias)", "",
+             "| Strategy | Net return | Max DD | Sharpe | Trades | Win rate | Avg trade (USD per $100) |", "|---|---:|---:|---:|---:|---:|---:|"]
+    for name, m in res.items():
+        wr = "–" if m["win_rate"] is None else f"{m['win_rate']}%"
+        lines.append(f"| {name} | {m['return_pct']}% | {m['max_dd_pct']}% | {m['sharpe']} | {m['trades']} | {wr} | {m.get('avg_trade_usd')} |")
+    lines += ["", "| Buy-and-hold | Return | Max DD | Sharpe |", "|---|---:|---:|---:|"]
+    lines += [f"| {k} | {v['return_pct']}% | {v['max_dd_pct']}% | {v['sharpe']} |" for k, v in holds.items()]
+    text = "\n".join(lines) + "\n"
+    os.makedirs(out_dir, exist_ok=True)
+    path = os.path.join(out_dir, f"study_v2_{datetime.now(timezone.utc).date()}.md")
+    with open(path, "w") as f:
+        f.write(text)
+    with open(path.replace(".md", ".json"), "w") as f:
+        json.dump({"strategies": res, "holds": holds}, f, indent=1)
+    return text

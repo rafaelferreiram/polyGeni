@@ -16,10 +16,14 @@ from src.solana.strategies import Signal
 logger = logging.getLogger("solana.llm_trader")
 
 TRADER_SYSTEM = (
-    "You are the trading decision agent of a small, risk-averse spot/1x-perp trading bot. For the market given, "
-    "decide whether to open a LONG now (BUY) or do nothing (HOLD). No shorts, no leverage. Use the candles, "
-    "market data and, if useful, web search for very recent news. Prefer HOLD unless the setup is clearly "
-    "favourable after fees. A separate risk engine sets the position size and can refuse your trade. "
+    "You are the trading decision agent of a small, risk-averse 1x long-only crypto bot on Hyperliquid. For the "
+    "market given, decide whether to open a LONG now (BUY) or do nothing (HOLD). You get precomputed indicators "
+    "(RSI, ATR%, EMA50/EMA200 trend, Bollinger dip, funding, the rules engine's own signal, suggested ATR stops) "
+    "and the round-trip cost. Evidence from our walk-forward tests: buying dips in a downtrend (price below "
+    "EMA200) lost money; dips inside an uptrend with ATR-sized stops made money. So: BUY only in an uptrend, "
+    "only when the expected move to target is at least 3x the round-trip cost, and prefer the suggested ATR "
+    "stop/target. When in doubt, HOLD — not trading is a valid and often optimal decision. Use web search only "
+    "for very recent, material news. A separate risk engine sets the size and can refuse your trade. "
     'Reply with ONLY JSON: {"action": "BUY"|"HOLD", "stop_pct": number, "tp_pct": number, '
     '"confidence": number 0-1, "reason": string, "next_check_min": number}. stop_pct/tp_pct are fractions '
     "(0.03 = 3%). next_check_min: if HOLD, how many minutes until this market is worth looking at again "
@@ -86,7 +90,10 @@ class LLMDecider:
         if self.router:
             self.model = self.router(market) or self.model
         try:
-            out = _json(self.llm_fn(json.dumps({"market": context, "candles_1h_tohlcv": _candles_brief(candles)},
+            from src.solana.strategies import features
+            out = _json(self.llm_fn(json.dumps({"market": context, "indicators": features(candles),
+                                                "round_trip_cost_pct": context.get("round_trip_cost_pct", 0.13),
+                                                "candles_1h_tohlcv": _candles_brief(candles, 24)},
                                                default=str), self.entry_system))
         except Exception as e:
             self.last[market] = {"action": "HOLD", "reason": f"LLM error: {e}"[:200]}
@@ -134,10 +141,10 @@ class TeamMember:
     capital_pct = 1.0
 
     def __init__(self, model: str, lab_lookup=None, llm_fn=None):
-        from src.solana.strategies import MeanReversion
+        from src.solana.strategies import MeanReversionATR
         self.model = model
         self.name = "rules" if model == "rules" else f"llm:{model}"
-        self._rules = MeanReversion() if model == "rules" else None
+        self._rules = MeanReversionATR() if model == "rules" else None
         self._llm = None if model == "rules" else LLMDecider(model=model, llm_fn=llm_fn)
         self.lab_lookup = lab_lookup          # model -> lab bot's LLMDecider (or None)
         self.last: dict[str, dict] = {}

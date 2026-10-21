@@ -85,7 +85,7 @@ def taker_fee_bps(ctx: dict) -> float:
 def candles(coin: str, interval: str = "1h", start_ms: int | None = None, end_ms: int | None = None,
             url: str | None = None) -> list[dict]:
     end_ms = end_ms or int(time.time() * 1000)
-    start_ms = start_ms or end_ms - 250 * 3600 * 1000
+    start_ms = start_ms or end_ms - 400 * 3600 * 1000      # ≥ 200 closed bars for EMA200
     rows = info({"type": "candleSnapshot", "req": {"coin": split_coin(coin)[1], "interval": interval,
                                                   "startTime": start_ms, "endTime": end_ms}}, url)
     return [dict(t=r["t"] // 1000, open=float(r["o"]), high=float(r["h"]), low=float(r["l"]),
