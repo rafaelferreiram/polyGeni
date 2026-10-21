@@ -680,7 +680,7 @@ function renderTeam() {
         <div><div class="nm">${esc(L.label)}${r.model_now && r.model_now !== m.model ? ` <small class="green">🚀 ${esc(look(r.model_now).label)}</small>` : reviewOn(r) ? ` <small class="green">🚀 ${esc(look(reviewOn(r).model).label)}</small>` : ""}</div><div class="rl">${esc(L.role)}</div></div></div>
       <span class="chip">${esc(chip)}</span>
       <div class="now">Última decisão: ${now}</div>
-      ${rewardLine(r.reward, rankOf[m.model])}${greenLine(r.green_light)}${trainButton(m.model, r)}${coffeeButton(m.model, r)}
+      ${rewardLine(r.reward, rankOf[m.model])}${greenLine(r.green_light)}${learnedLine(r.learned)}${trainButton(m.model, r)}${coffeeButton(m.model, r)}
       <div class="stats"><span><b>${pnl(m.pnl_usd ?? 0)}</b>resultado</span><span><b>${m.trades ?? 0}</b>trades</span>
         <span><b>${isRules ? "grátis" : usd(r.ai_cost_usd ?? 0)}</b>custo IA</span></div>
       <div class="tip" role="tooltip">${tip}<div class="note" style="margin-top:6px">${esc(bubble)}</div></div>
@@ -744,6 +744,16 @@ function greenLine(g) {
   const w = Math.min(clamp01(g.wins / g.needed), clamp01(g.trades / (g.needed_trades || 1))) * 100;
   return `<div class="gl" title="Para a conta real: ${g.needed_trades} trades no laboratório, ${g.needed} vencedores, acerto ≥ 60%, fator de lucro ≥ 1,2, lucro líquido > 0. Falta: ${(g.missing || []).join(", ")}">
     <span>🚦 ${g.trades}/${g.needed_trades} trades · ✅ ${g.wins}/${g.needed} · ❌ ${g.trades - g.wins}${g.trades ? ` · acerto ${pct(g.win_rate)} · ${pnl(g.net_usd)}` : ""}</span><i style="width:${w.toFixed(0)}%"></i></div>`;
+}
+// self-learning: what the bot learned from its own closed trades (it skips situations it keeps losing in)
+function learnedLine(l) {
+  if (!l || !l.seen) return "";
+  const fmt = (x) => `${esc(x.tag)} (${x.wins}/${x.n}, ${x.pnl >= 0 ? "+" : "−"}$${Math.abs(x.pnl).toFixed(2)})`;
+  const tip = [l.avoid.length ? `Evita: ${l.avoid.map(fmt).join(", ")}` : "", l.best.length ? `Vai melhor em: ${l.best.map(fmt).join(", ")}` : ""]
+    .filter(Boolean).join(" · ") || "ainda sem padrão claro — precisa de 6+ trades na mesma situação";
+  const txt = l.avoid.length ? `evita ${l.avoid.slice(0, 2).map((x) => esc(x.tag)).join(", ")}`
+    : l.best.length ? `melhor em ${l.best.slice(0, 2).map((x) => esc(x.tag)).join(", ")}` : `aprendendo · ${l.seen} trades analisados`;
+  return `<div class="gl learn" title="${esc(tip)}">🧠 ${txt}</div>`;
 }
 function trainButton(model, r) {
   if (!r?.green_light || r.green_light.ok) return "";

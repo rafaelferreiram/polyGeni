@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from src.solana import config as cfg
+from src.solana import learning
 from src.solana import market_data as md
 from src.solana.agents import (DebateAgent, ExecutorAgent, Portfolio, RiskAgent, SafetyAgent,
                                ScoutAgent, Vote)
@@ -176,6 +177,12 @@ class PaperEngine:
         for msg in issues:
             self.ledger.log_decision("reconcile", cycle=self.cycle, reason=msg)
         return issues
+
+    def _learn_ledger(self, strategy: str):
+        """Where a bot's experience lives: its lab ledger (the accounts learn from the same bot's lab record)."""
+        from src.solana import arena
+        eng = (arena._bots or {}).get(strategy)
+        return eng.ledger if eng else self.ledger
 
     # ─── exits ───
     def mark_and_exit(self):
@@ -507,6 +514,15 @@ class PaperEngine:
                 if (c.mint, strat.name, candles[-1]["t"]) in entered:
                     self._agent(strat.name, last_reason=f"{c.symbol}: sinal já usado neste candle")
                     continue
+                tags = learning.situation(candles, c.symbol)
+                if cfg.SELF_LEARNING:
+                    rec = learning.record(self._learn_ledger(strat.name), strat.name)
+                    if avoided := learning.avoid(rec, tags):
+                        why = ", ".join(f"'{t}' ({rec[t]['wins']}/{rec[t]['n']} ganhos, ${rec[t]['pnl']:+.2f})" for t in avoided)
+                        self.ledger.log_decision("veto", cycle=self.cycle, mint=c.mint, symbol=c.symbol, strategy=strat.name,
+                                                 signals={"tags": tags}, reason=f"aprendizado: evita {why}")
+                        stats["vetoes"] += 1
+                        continue
                 stats["signals"] += 1
                 self._agent(strat.name, last_reason=f"{c.symbol}: {sig.reason}", approved=1)
                 strat_vote = Vote(strat.name, True, sig.reason, sig.indicators)
@@ -537,7 +553,7 @@ class PaperEngine:
                 chain = [v for v in (safety, strat_vote, research_vote, debate, risk) if v is not None]
                 votes = _votes(*chain)
                 signals = {**c.summary(), "venue": c.venue, **sig.indicators, "ref_price": sig.ref_price,
-                           "stop_price": sig.stop_price, "tp_price": sig.tp_price}
+                           "stop_price": sig.stop_price, "tp_price": sig.tp_price, "tags": tags}
                 vetoer = next((v for v in chain if not v.approve), None)
                 if vetoer:
                     stats["vetoes"] += 1

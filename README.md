@@ -125,6 +125,11 @@ the others must first show ≥ 10 profitable lab trades.
 - **At most 6 titulares** (`MAX_TITULARES`): when more bots qualify for real money, only the best 6 (reward points,
   then lab profit) trade it. Gabriel Jesus 15m was retired (15-minute breakouts lost to fees). The turbo does not switch
   on the AI bot's paid every-coin scan; that stays a separate choice.
+- **Self-learning** (`learning.py`, `SELF_LEARNING=1`): every entry is saved with its situation (trend, RSI band, dip /
+  breakout setups, coin). From each bot's own closed trades of the last 30 days, a situation with ≥ 6 trades, win rate
+  < 35% and a net loss is avoided from then on (veto "aprendizado: evita …"); it is allowed again when the record
+  recovers. It can only skip trades — never add size or loosen stops. The real account uses the same bot's lab record.
+  Each card shows what the bot learned (🧠 evita … / melhor em … / aprendendo).
 - **Titulares vs reservas — perks**: titulares can get ☕ coffee any time (their card or the team ☕ button: 4h of day-trade
   mode on both accounts) and a better **model for N account cycles** (`POST /api/paper/arena/boost`): their signals are
   reviewed by Sonnet/Opus/Fable instead of Haiku, then it goes back. Reserves get **1 coffee per Lisbon day** in the lab

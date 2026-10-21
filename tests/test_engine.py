@@ -373,3 +373,30 @@ def test_no_reentry_on_the_same_signal_candle(ledger):
     eng.run_cycle()
     eng.run_cycle()
     assert len(ledger.closed_trades()) == 1 and ledger.positions() == []
+
+
+def test_bot_learns_to_avoid_a_situation_it_keeps_losing_in(ledger, monkeypatch):
+    from src.solana import config as cfg, learning
+    monkeypatch.setattr(learning, "CACHE_S", 0)
+    monkeypatch.setattr(cfg, "LEARN_MIN_TRADES", 3)
+    price = Price(1.0)
+    eng = build(ledger, price)
+    eng.rests_on_goal = False
+    for _ in range(3):                                # same situation, stopped out three times
+        price.p = 1.0
+        eng.__dict__.get("_entered", set()).clear()
+        eng.run_cycle()
+        price.p = 0.9
+        eng.strategies[0].fire = False
+        eng.run_cycle()
+        eng.strategies[0].fire = True
+    assert len(ledger.closed_trades()) == 3 and all(t["pnl_usd"] < 0 for t in ledger.closed_trades())
+    assert ledger.decisions(kind="entry")[0]["signals"]["tags"]           # each entry keeps its situation
+    price.p = 1.0
+    eng.__dict__.get("_entered", set()).clear()
+    eng.risk.max_daily_loss_pct = 1.0                 # the daily loss stop must not be what blocks it
+    eng.run_cycle()
+    assert len(ledger.closed_trades()) == 3 and ledger.positions() == []
+    assert "aprendizado: evita" in ledger.decisions(kind="veto")[0]["reason"]
+    summary = learning.summary(learning.record(ledger))
+    assert summary["avoid"] and summary["seen"] == 3

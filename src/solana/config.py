@@ -154,6 +154,11 @@ TRAIN_BOOST_MAX_POSITIONS = _i("TRAIN_BOOST_MAX_POSITIONS", 29)
 TRAIN_BOOST_CAPITAL_USD = _f("TRAIN_BOOST_CAPITAL_USD", 400.0)   # fake money: 29 slots x ~$12 fit
 # green light to real money (bots not in REAL_TRUSTED_BOTS): at least GREEN_LIGHT_TRADES closed lab trades with
 # GREEN_LIGHT_WINS winners, net profit after AI cost, win rate and profit factor at least these (user's rule: 20 trades, 12 wins)
+# self-learning: a bot stops entering situations its own last LEARN_DAYS of trades keep losing in (it only skips trades)
+SELF_LEARNING = os.getenv("SELF_LEARNING", "1") == "1"
+LEARN_DAYS = _i("LEARN_DAYS", 30)
+LEARN_MIN_TRADES = _i("LEARN_MIN_TRADES", 6)
+LEARN_MAX_WIN_RATE = _f("LEARN_MAX_WIN_RATE", 0.35)
 MAX_TITULARES = _i("MAX_TITULARES", 6)          # the real account fields at most this many bots: the best ones
 GREEN_LIGHT_TRADES = _i("GREEN_LIGHT_TRADES", 20)
 GREEN_LIGHT_WINS = _i("GREEN_LIGHT_WINS", 12)
