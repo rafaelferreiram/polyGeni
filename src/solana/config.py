@@ -145,7 +145,8 @@ ARENA_START_USDC = _f("ARENA_START_USDC", 20.0)     # each bot gets what the rea
 # the user's timezone (Lisbon): daily reports, goals, messages and the dashboard all use it
 from zoneinfo import ZoneInfo
 TZ = ZoneInfo(os.getenv("KAIROS_TZ", "Europe/Lisbon"))
-TRAINING_DB_PATH = os.getenv("TRAINING_DB_PATH", "./training.db")   # training center samples (see trainer.py)
+TRAINING_DB_PATH = os.getenv("TRAINING_DB_PATH", "./training.db")
+TEAM_CHAT_DB_PATH = os.getenv("TEAM_CHAT_DB_PATH", "./team_chat.db")    # the bots' group chat (teamchat.py)   # training center samples (see trainer.py)
 LAB_CAPITAL_USD = _f("LAB_CAPITAL_USD", 100.0)
 LAB_MAX_POSITIONS = _i("LAB_MAX_POSITIONS", 8)
 LAB_MAX_ENTRIES_PER_DAY = _i("LAB_MAX_ENTRIES_PER_DAY", 48)
@@ -160,6 +161,9 @@ LEARN_DAYS = _i("LEARN_DAYS", 30)
 LEARN_MIN_TRADES = _i("LEARN_MIN_TRADES", 6)
 LEARN_MAX_WIN_RATE = _f("LEARN_MAX_WIN_RATE", 0.35)
 MAX_TITULARES = _i("MAX_TITULARES", 6)
+# margin of error before a buy (edge.py): skip only when confident (this much evidence) that even the optimistic odds lose
+EDGE_CHECK = os.getenv("EDGE_CHECK", "1") == "1"
+EDGE_MIN_EVIDENCE = _i("EDGE_MIN_EVIDENCE", 30)
 # daily quota: a titular behind DAILY_MIN_TRADES completed trades (Lisbon day, pro rata) loosens its entry a notch or two
 # and aims at a closer target, so it completes buy+sell round trips; size, stops and the account limits do not change
 DAILY_MIN_TRADES = _i("DAILY_MIN_TRADES", 5)
@@ -167,7 +171,7 @@ DAILY_MIN_TRADES = _i("DAILY_MIN_TRADES", 5)
 PROMOTE_MIN_WINS = _i("PROMOTE_MIN_WINS", 12)
 PROMOTE_MIN_WIN_RATE = _f("PROMOTE_MIN_WIN_RATE", 0.35)
 # evolution: every EVOLVE_PERIOD_H of a reserve's life, under EVOLVE_MIN_WIN_RATE (or no trade) -> replaced by a successor
-EVOLVE_PERIOD_H = _f("EVOLVE_PERIOD_H", 20)
+EVOLVE_PERIOD_H = _f("EVOLVE_PERIOD_H", 12)
 EVOLVE_MIN_WIN_RATE = _f("EVOLVE_MIN_WIN_RATE", 0.6)          # the real account fields at most this many bots: the best ones
 GREEN_LIGHT_TRADES = _i("GREEN_LIGHT_TRADES", 20)
 GREEN_LIGHT_WINS = _i("GREEN_LIGHT_WINS", 12)
@@ -186,7 +190,7 @@ BOT_MAX_SLEEP_MIN = _i("BOT_MAX_SLEEP_MIN", 120)
 LIVE_MIN_LAB_TRADES = _i("LIVE_MIN_LAB_TRADES", 10)
 BOT_WAKE_MOVE_PCT = _f("BOT_WAKE_MOVE_PCT", 0.015)
 ARENA_CYCLE_SEC = _i("ARENA_CYCLE_SEC", 300)
-TURBO_CYCLE_SEC = _i("TURBO_CYCLE_SEC", 60)          # a bot in "turbo do dia" analyses this often
+TURBO_CYCLE_SEC = _i("TURBO_CYCLE_SEC", 120)        # a bot in "turbo do dia" analyses this often (1 min caused 429s)
 # a bot trained with turbo closes positions sooner (lab and, once promoted, real account): more round trips per day
 TURBO_MAX_HOLD_H = _f("TURBO_MAX_HOLD_H", 2.0)
 TURBO_FAST_MAX_HOLD_H = _f("TURBO_FAST_MAX_HOLD_H", 1.0)   # 15-minute twins          # lab bots scan with the accounts (candles are shared, cheap)

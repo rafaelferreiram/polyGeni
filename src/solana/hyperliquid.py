@@ -48,12 +48,21 @@ def info(body: dict, url: str | None = None):
     return request_json("POST", url or cfg.HYPERLIQUID_INFO_URL, json=body)
 
 
+_book_cache: dict[str, tuple[float, dict]] = {}
+BOOK_TTL_S = 20      # the lab's paper bots mark dozens of positions a minute: share one book per coin (avoids 429s)
+
+
 def l2_book(coin: str) -> dict:
-    """{'bids': [(px, sz)...] best first, 'asks': [...]} — levels[0] are bids, levels[1] asks."""
+    """{'bids': [(px, sz)...] best first, 'asks': [...]} — levels[0] are bids, levels[1] asks. Cached BOOK_TTL_S per coin."""
+    hit = _book_cache.get(coin)
+    if hit and time.time() - hit[0] < BOOK_TTL_S:
+        return hit[1]
     raw = info({"type": "l2Book", "coin": split_coin(coin)[1]})
     bids, asks = raw["levels"]
-    return {"bids": [(float(l["px"]), float(l["sz"])) for l in bids],
+    book = {"bids": [(float(l["px"]), float(l["sz"])) for l in bids],
             "asks": [(float(l["px"]), float(l["sz"])) for l in asks]}
+    _book_cache[coin] = (time.time(), book)
+    return book
 
 
 _ctx_cache: dict[tuple, tuple[float, dict]] = {}

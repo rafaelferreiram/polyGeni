@@ -33,8 +33,9 @@ def record(ledger, strategy: str | None = None) -> dict[str, dict]:
     if hit and hit[0] > time.time() - CACHE_S:
         return hit[1]
     since = (datetime.now(timezone.utc) - timedelta(days=cfg.LEARN_DAYS)).isoformat()
-    tags_of = {d["order_id"]: d["signals"].get("tags") for d in ledger.decisions(5000, kind="entry")
-               if d.get("order_id") and d["signals"].get("tags")}
+    tags_of = {**(ledger.get_state("tags_backfill") or {}),
+               **{d["order_id"]: d["signals"].get("tags") for d in ledger.decisions(5000, kind="entry")
+                  if d.get("order_id") and d["signals"].get("tags")}}
     out: dict[str, dict] = {}
     for t in ledger.closed_trades():
         if t["exit_ts"] < since or (strategy and t["strategy"] != strategy):
@@ -64,6 +65,96 @@ def avoid(rec: dict[str, dict], tags: list[str], inherited=()) -> list[str]:
     predecessor count until it has its own LEARN_MIN_TRADES trades in that situation."""
     total = _total(rec)
     return [t for t in tags if (t in rec and bad(rec[t], total)) or (t in inherited and rec.get(t, {}).get("n", 0) < cfg.LEARN_MIN_TRADES)]
+
+
+def backfill(ledger, interval: str = "1h") -> int:
+    """Trades made before situations were recorded: rebuild each one's situation from the candles that had closed when
+    it was bought, so the bot (and the team network) learn from its whole history at once."""
+    from datetime import datetime
+    from src.solana import hyperliquid as hl
+    known = {**(ledger.get_state("tags_backfill") or {}),
+             **{d["order_id"]: 1 for d in ledger.decisions(5000, kind="entry") if d.get("order_id") and d["signals"].get("tags")}}
+    step = hl.INTERVAL_S.get(interval, 3600)
+    out, cache = dict(ledger.get_state("tags_backfill") or {}), {}
+    for t in ledger.closed_trades():
+        oid = (t.get("order_id") or "").removeprefix("exit-")
+        if not oid or oid in known or t["symbol"].endswith("~short"):
+            continue
+        try:
+            candles = cache.get(t["symbol"]) or cache.setdefault(t["symbol"], hl.candles(t["symbol"], interval))
+        except Exception:
+            continue
+        at = datetime.fromisoformat(t["entry_ts"]).timestamp()
+        past = [c for c in candles if c["t"] + step <= at]
+        if len(past) >= 210:
+            out[oid] = situation(past, t["symbol"])
+    if len(out) != len(ledger.get_state("tags_backfill") or {}):
+        ledger.set_state("tags_backfill", out)
+        _cache.clear()
+    return len(out)
+
+
+# ─── the team's shared network: every bot's closed trades feed one common record ───
+def team_record() -> dict[str, dict]:
+    """Per situation, the whole team's record (all lab bots' closed trades, cached briefly)."""
+    from src.solana import arena
+    hit = _cache.get("team")
+    if hit and hit[0] > time.time() - CACHE_S:
+        return hit[1]
+    out: dict[str, dict] = {}
+    for eng in list((arena._bots or {}).values()):
+        for tag, r in record(eng.ledger).items():
+            t = out.setdefault(tag, {"n": 0, "wins": 0, "pnl": 0.0})
+            t["n"] += r["n"]
+            t["wins"] += r["wins"]
+            t["pnl"] = round(t["pnl"] + r["pnl"], 4)
+    _cache["team"] = (time.time(), out)
+    from src.solana import teamchat
+    total = _total(out)
+    teamchat.team_lessons([{"tag": t, **r} for t, r in out.items() if r["n"] >= 2 * cfg.LEARN_MIN_TRADES and bad(r, total)])
+    return out
+
+
+def team_avoid(own: dict[str, dict], team: dict[str, dict], tags: list[str]) -> list[str]:
+    """Situations the whole team keeps losing in (twice the evidence a single bot needs), unless this bot itself does
+    well there: a lesson learned by one teammate protects the others."""
+    total, own_total = _total(team), _total(own)
+    out = []
+    for t in tags:
+        r, mine = team.get(t), own.get(t)
+        if not r or r["n"] < 2 * cfg.LEARN_MIN_TRADES or not bad(r, total):
+            continue
+        if mine and mine["n"] >= cfg.LEARN_MIN_TRADES and mine["wins"] / mine["n"] >= 0.5:
+            continue
+        if mine and mine["n"] > own_total / 2:    # it is this bot's own core move: the evolution cut judges that, not the team
+            continue
+        out.append(t)
+    return out
+
+
+def better_teammate(model: str, tags: list[str], margin: float = 0.02) -> tuple[str, str] | None:
+    """The teammate whose own record in this situation is clearly better than `model`'s (by average result per trade
+    over the tags where it has evidence). Returns (teammate, why) or None."""
+    from src.solana import arena
+    def score(m: str) -> tuple[float, list[str]]:
+        eng = (arena._bots or {}).get(m)
+        rec = record(eng.ledger) if eng else {}
+        total = _total(rec)
+        hits = [(t, rec[t]) for t in tags if t in rec and rec[t]["n"] >= cfg.LEARN_MIN_TRADES and rec[t]["n"] <= total * 0.8]
+        if not hits:
+            return 0.0, []
+        return sum(r["pnl"] / r["n"] for _, r in hits) / len(hits), [f"'{t}' {r['wins']}/{r['n']}" for t, r in hits]
+    mine, _ = score(model)
+    best = None
+    for other in (arena._bots or {}):
+        if other == model:
+            continue
+        s, why = score(other)
+        if why and s > 0 and s > max(mine, 0) + margin and (best is None or s > best[0]):
+            best = (s, other, why)
+    if not best:
+        return None
+    return best[1], f"vai melhor nessa situação ({', '.join(best[2][:3])}; média ${best[0]:+.3f}/trade vs ${mine:+.3f})"
 
 
 def summary(rec: dict[str, dict]) -> dict:

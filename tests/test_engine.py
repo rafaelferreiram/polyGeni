@@ -424,3 +424,38 @@ def test_a_manual_order_makes_a_running_cycle_stop_early(ledger):
     assert eng.run_cycle()["entries"] == 0 and ledger.positions() == []
     eng._yield = False
     assert eng.run_cycle()["entries"] == 1
+
+
+def test_learning_backfills_situations_of_old_trades(monkeypatch):
+    from types import SimpleNamespace
+    from src.solana import hyperliquid as hl, learning
+    from tests.conftest import flat_candles
+    candles = flat_candles(300)
+    state = {}
+    led = SimpleNamespace(path="x", get_state=lambda k, d=None: state.get(k, d), set_state=lambda k, v: state.__setitem__(k, v),
+                          decisions=lambda n, kind=None: [],
+                          closed_trades=lambda: [{"order_id": "exit-o1", "symbol": "BTC", "strategy": "s", "pnl_usd": -0.1,
+                                                  "entry_ts": __import__("datetime").datetime.fromtimestamp(candles[250]["t"] + 3600, __import__("datetime").timezone.utc).isoformat(),
+                                                  "exit_ts": "2099-01-01T00:00:00+00:00"}])
+    monkeypatch.setattr(hl, "candles", lambda coin, interval="1h": candles)
+    monkeypatch.setattr(learning, "CACHE_S", 0)
+    assert learning.backfill(led) == 1 and "moeda BTC" in state["tags_backfill"]["o1"]
+    assert learning.record(led)["moeda BTC"]["n"] == 1          # the old trade now counts
+
+
+def test_margin_of_error_skips_only_confident_losers():
+    from src.solana import edge
+    bad = {"RSI alto": {"n": 40, "wins": 8}, "moeda A": {"n": 50, "wins": 25}, "moeda B": {"n": 50, "wins": 25}}
+    e = edge.estimate(["RSI alto"], {}, bad, avg_win=0.10, avg_loss=0.10)     # the team won 8 of 40 in this situation
+    assert e["skip"] and e["p"] < 0.3 and e["ev_usd"] < 0
+    good = {"queda numa alta": {"n": 40, "wins": 26}, "moeda A": {"n": 100, "wins": 50}}
+    assert not edge.estimate(["queda numa alta"], {}, good, 0.10, 0.10)["skip"]
+    # wins rarely but wins big: 30% at +$0.40 vs −$0.10 is still a good trade
+    assert not edge.estimate(["RSI alto"], {}, {**bad, "RSI alto": {"n": 40, "wins": 12}}, 0.40, 0.10)["skip"]
+    # a label on every trade is the strategy itself: never judged here
+    assert not edge.estimate(["alta"], {}, {"alta": {"n": 100, "wins": 20}, "moeda A": {"n": 100, "wins": 20}}, 0.1, 0.1)["skip"]
+    # judged against the bot's usual: a 20% situation for a bot that usually wins 25% is not "clearly worse"
+    assert not edge.estimate(["RSI alto"], {}, bad, 0.10, 0.10, baseline=0.25)["skip"]
+    assert edge.estimate(["RSI alto"], {}, bad, 0.10, 0.10, baseline=0.55)["skip"]
+    thin = edge.estimate(["RSI alto"], {"RSI alto": {"n": 3, "wins": 0}}, {}, 0.10, 0.10)
+    assert not thin["skip"] and thin["margin"] > 0.2            # too little evidence: wide margin, never blocks

@@ -51,6 +51,7 @@ def build_bot(model: str, db_dir: str = ".", llm_fn=None, scout=None, broker_fac
     ledger.set_state("decision_mode", "rules" if model in RULE_BOTS else "llm")
     eng.rests_on_goal = False                 # the lab keeps measuring all day
     ledger.set_state("model", model)
+    eng.lab_model = model                     # lab bots share knowledge and pass opportunities to each other
     return eng
 
 
@@ -218,6 +219,36 @@ def _schedule_turbo(model: str, eng):
                     next_run_time=datetime.now())
 
 
+# ─── opportunity handoffs: a bot passes a signal to the teammate who does best in that situation ───
+_handoffs: dict[str, list[dict]] = {}
+HANDOFF_TTL_S = 1800
+
+
+def post_handoff(to: str, symbol: str, sig, sender: str, why: str):
+    _handoffs.setdefault(to, []).append({"symbol": symbol, "ref_price": sig.ref_price, "stop_pct": sig.stop_pct,
+                                         "tp_pct": sig.tp_pct, "reason": sig.reason, "from": sender, "why": why,
+                                         "ts": datetime.now(timezone.utc).timestamp()})
+    for model, delta in ((sender, "handoffs_sent"), (to, "handoffs_received")):
+        eng = (_bots or {}).get(model)
+        if eng:
+            eng.ledger.set_state(delta, (eng.ledger.get_state(delta, 0) or 0) + 1)
+
+
+def take_handoff(model: str, symbol: str, strategy: str):
+    """A fresh opportunity a teammate passed to `model` for this coin, as its own signal (None if there is none)."""
+    from src.solana.strategies import Signal
+    now = datetime.now(timezone.utc).timestamp()
+    queue = [h for h in _handoffs.get(model, []) if now - h["ts"] < HANDOFF_TTL_S]
+    hit = next((h for h in queue if h["symbol"] == symbol), None)
+    _handoffs[model] = [h for h in queue if h is not hit]
+    if not hit:
+        return None
+    sig = Signal(strategy, hit["ref_price"], hit["stop_pct"], hit["tp_pct"],
+                 f"📨 recebida de {hit['from']}: {hit['reason']}"[:300], {"handoff_from": hit["from"]})
+    sig.handed = True
+    return sig
+
+
 def can_promote(model: str) -> dict:
     """The user's manual promotion rule: a reserve with ≥ PROMOTE_MIN_WINS winning lab trades and win rate ≥
     PROMOTE_MIN_WIN_RATE may be made titular from its modal (the automatic green light stays stricter)."""
@@ -232,10 +263,10 @@ def can_promote(model: str) -> dict:
 
 
 def advise(model: str, now: datetime | None = None) -> dict | None:
-    """My read on a reserve, in plain words: ⭐ promote, 🌱 promising, 👀 watching, 🔻 likely cut at the next 20h check.
+    """My read on a reserve, in plain words: ⭐ promote, 🌱 promising, 👀 watching, 🔻 likely cut at the next EVOLVE_PERIOD_H check.
     Promotion needs more than the user's minimum (12 wins, 35%): it must also make money (net > 0, profit factor ≥ 1.2,
     20+ trades), because a bot that wins often but loses big would lose real money. The cut flag mirrors the evolution
-    rule on the current 20h period, plus clearly losing records."""
+    rule on the current period, plus clearly losing records."""
     if is_titular(model):
         return None
     eng = bots().get(model)
@@ -264,7 +295,7 @@ def advise(model: str, now: datetime | None = None) -> dict | None:
         reasons.append("bate a regra de promoção e dá lucro: ganha mais do que perde")
     elif period and period["trades"] >= 3 and period["win_rate"] < cfg.EVOLVE_MIN_WIN_RATE and (now.isoformat() < period["ends"]):
         flag, label = "cut", "🔻 Risco de corte"
-        reasons.append(f"neste período de 20h: {period['wins']}/{period['trades']} ({period['win_rate']:.0%}) — abaixo de "
+        reasons.append(f"neste período de {cfg.EVOLVE_PERIOD_H:.0f}h: {period['wins']}/{period['trades']} ({period['win_rate']:.0%}) — abaixo de "
                        f"{cfg.EVOLVE_MIN_WIN_RATE:.0%}; se seguir assim, nasce um sucessor melhor ajustado no corte")
     elif n >= 15 and (pf < 0.8 or net < -1):
         flag, label = "cut", "🔻 Risco de corte"
@@ -479,6 +510,11 @@ def set_running(on: bool):
             eng.ledger.set_state("paused_reason", None)
         eng.ledger.log_decision("arena", reason=f"arena {'started' if on else 'stopped'} {now_iso()}")
     sch = paper_engine.scheduler()
+    if on and sch.get_job("chatter") is None:
+        from datetime import datetime as _dtc
+        from src.solana import teamchat
+        sch.add_job(teamchat.chatter, "interval", seconds=900, id="chatter", max_instances=1, coalesce=True,
+                    next_run_time=_dtc.now() + timedelta(minutes=1))
     if on and sch.get_job("evolution") is None:
         from datetime import datetime as _dt
         sch.add_job(evolution.check, "interval", seconds=600, id="evolution", max_instances=1, coalesce=True,
@@ -532,6 +568,7 @@ def leaderboard() -> list[dict]:
             "learned": learning.summary(learning.record(led, model)),
             "lineage": evolution.load()["bots"].get(model), "born_at": led.get_state("born_at"),
             "last_verdict": led.get_state("last_verdict"), "quota": quota_today(model), "can_promote": can_promote(model),
+            "handoffs": {"sent": led.get_state("handoffs_sent", 0) or 0, "received": led.get_state("handoffs_received", 0) or 0},
             "advice": advise(model),
             "last_decision": next(({"market": k, **{x: v.get(x) for x in ("action", "reason", "model")}}
                                    for k, v in sorted(last.items(), key=lambda kv: -(kv[1].get("t") or 0))), None)
@@ -546,10 +583,23 @@ def _rules_last(led) -> dict | None:
     return {"market": d["symbol"] or "", "action": d["kind"], "reason": d["reason"]} if d else None
 
 
+def backfill_learning():
+    """Give every lab bot (and so the team network) the situations of its trades made before learning existed."""
+    import threading
+    def run():
+        for model, eng in list(bots().items()):
+            try:
+                learning.backfill(eng.ledger, "15m" if model in FAST_BOTS else "1h")
+            except Exception as e:
+                logger.warning(f"learning backfill {model}: {e}")
+    threading.Thread(target=run, daemon=True, name="learning-backfill").start()
+
+
 def resume_if_running():
     """After a restart, bots that were on keep working (state lives in each bot's ledger)."""
     if any(e.ledger.get_state("running", False) for e in bots().values()):
         set_running(True)
+    backfill_learning()
     now = datetime.now(timezone.utc).isoformat()
     for model, eng in bots().items():           # a turbo survives a restart until its midnight
         if (eng.ledger.get_state("turbo_until") or "") > now:

@@ -614,6 +614,7 @@ async function loadArena() {
   renderTeam();
   renderBoost();
   renderRanking();
+  renderChat(false);          // names for @mentions come with the arena
 }
 
 // ─── ranking: the bots compete in the lab (same rules, same fake money) ───
@@ -690,7 +691,7 @@ function renderTeam() {
         <div><div class="nm">${esc(L.label)}${r.model_now && r.model_now !== m.model ? ` <small class="green">🚀 ${esc(look(r.model_now).label)}</small>` : reviewOn(r) ? ` <small class="green">🚀 ${esc(look(reviewOn(r).model).label)}</small>` : ""}</div><div class="rl">${esc(L.role)}</div></div></div>
       <span class="chip">${esc(chip)}</span>
       <div class="now">Última decisão: ${now}</div>
-      ${rewardLine(r.reward, rankOf[m.model])}${adviceLine(r.advice)}${greenLine(r.green_light)}${quotaLine(r.quota)}${learnedLine(r.learned)}${trainButton(m.model, r)}${coffeeButton(m.model, r)}
+      ${rewardLine(r.reward, rankOf[m.model])}${adviceLine(r.advice)}${greenLine(r.green_light)}${quotaLine(r.quota)}${learnedLine(r.learned, r.handoffs)}${trainButton(m.model, r)}${coffeeButton(m.model, r)}
       <div class="stats"><span><b>${pnl(m.pnl_usd ?? 0)}</b>resultado</span><span><b>${m.trades ?? 0}</b>trades</span>
         <span><b>${isRules ? "grátis" : usd(r.ai_cost_usd ?? 0)}</b>custo IA</span></div>
       <div class="tip" role="tooltip">${tip}<div class="note" style="margin-top:6px">${esc(bubble)}</div></div>
@@ -845,7 +846,12 @@ function paintBotModal() {
     body = `<p class="note" style="margin:0 0 12px">Cada compra guarda a situação em que foi feita. Quando uma situação junta 6+ trades com acerto abaixo de 35% e prejuízo, o bot passa a evitá-la — até o histórico melhorar.</p>
       <div class="bm-two"><div class="bm-card"><div class="t">🚫 Evita</div>${d.learned.avoid.length ? `<div class="bm-rows">${d.learned.avoid.map(item).join("")}</div>` : '<span class="muted">Nada ainda.</span>'}</div>
       <div class="bm-card"><div class="t">✅ Vai melhor em</div>${d.learned.best.length ? `<div class="bm-rows">${d.learned.best.map(item).join("")}</div>` : '<span class="muted">Nada ainda.</span>'}</div></div>
-      <p class="note">${d.learned.seen} trades analisados nos últimos 30 dias.</p>`;
+      <p class="note">${d.learned.seen} trades analisados nos últimos 30 dias.</p>
+      <h4>📡 Rede do time</h4>
+      <p class="note" style="margin:0 0 10px">Os bots compartilham o que aprendem: uma situação em que o time todo perde é evitada por todos (a menos que o próprio bot vá bem nela), e quando um bot vê uma oportunidade que combina mais com o perfil de outro, passa para ele. Base: ${d.team.seen} trades do time.</p>
+      <div class="bm-two"><div class="bm-card"><div class="t">🚫 O time evita</div>${d.team.avoid.length ? `<div class="bm-rows">${d.team.avoid.map(item).join("")}</div>` : '<span class="muted">Nada ainda — o time precisa de 6+ trades na mesma situação.</span>'}</div>
+      <div class="bm-card"><div class="t">📨 Passes</div><div class="bm-rows">${[...d.team.sent.map((x) => `<div><span>↗ ${dt(x.ts)} ${esc(x.reason)}</span></div>`),
+        ...d.team.received.map((x) => `<div><span>↙ ${dt(x.ts)} ${esc(x.symbol)}: ${esc(x.reason)}</span></div>`)].join("") || '<span class="muted">Nenhum passe ainda.</span>'}</div></div></div>`;
   }
   document.getElementById("bm-body").innerHTML = `
     <div class="bm-top" style="--c:${L.color}"><div class="bm-head">${botFace(L.color, L.ico)}
@@ -869,6 +875,41 @@ function adviceCard(r) {
     <div class="bm-rows">${a.reasons.map((x) => `<div><span>• ${esc(x)}</span></div>`).join("")}</div></div>`;
 }
 
+// ─── 💬 Vestiário: the bots' group chat ───
+let chatMsgs = [], chatSince = 0, chatBy = "";
+const CHAT_KINDS = { trade: ["entry", "exit"], handoff: ["handoff", "tip", "chat"], learn: ["lesson", "network", "evolution", "quota"] };
+function chatFilter(btn) {
+  chatBy = btn.dataset.c;
+  document.querySelectorAll("#chat-filter button").forEach((b) => b.classList.toggle("on", b === btn));
+  renderChat(true);
+}
+async function loadChat() {
+  const r = await api(`/team/chat?limit=120&since=${chatSince}`);
+  if (!r.messages.length) return;
+  chatMsgs = [...chatMsgs, ...r.messages].slice(-200);
+  chatSince = chatMsgs[chatMsgs.length - 1].id;
+  renderChat(false);
+}
+// @Name -> highlighted (names come from the team, so "@São Marcos" works with its space)
+function mentions(html) {
+  const names = (lastArena?.leaderboard || []).map((r) => look(r.model).label).sort((a, b) => b.length - a.length);
+  return names.reduce((h, n) => h.split(`@${esc(n)}`).join(`<b class="mention">@${esc(n)}</b>`), html);
+}
+function renderChat(force) {
+  const box = document.getElementById("chat");
+  const atBottom = force || box.scrollHeight - box.scrollTop - box.clientHeight < 60;
+  const shown = chatMsgs.filter((m) => !chatBy || CHAT_KINDS[chatBy].includes(m.kind));
+  box.innerHTML = shown.length ? shown.map((m) => {
+    const net = m.author === "rede", L = net ? { label: "Rede do time", color: "#34d399", ico: "📡" } : look(m.author);
+    const res = m.kind === "exit" ? (/\+\$/.test(m.text) ? " win" : /−\$/.test(m.text) ? " loss" : "") : "";
+    return `<div class="msg k-${m.kind}${res}" style="--c:${L.color}">${net ? "" : `<div class="av">${botFace(L.color, L.ico)}</div>`}
+      <div class="bub"><div class="who">${esc(L.ico || "")} ${esc(L.label)}<small>${hhmm(m.ts)}</small></div>${mentions(esc(m.text))}</div></div>`;
+  }).join("") : '<div class="empty">Ninguém falou ainda — as mensagens aparecem quando os bots comprarem, venderem, passarem oportunidades ou aprenderem algo.</div>';
+  if (atBottom) box.scrollTop = box.scrollHeight;
+}
+safe(loadChat);
+setInterval(() => safe(loadChat), 6000);
+
 // manual promotion (the user's rule: 12+ lab wins and win rate ≥ 35%)
 function promoteCard(d, r) {
   const c = r.can_promote;
@@ -887,16 +928,15 @@ function promoteBot(model, btn) {
     .then(() => { safe(loadArena); setTimeout(() => safe(renderBotModal), 600); });
 }
 
-// evolution: reserves are judged every 20h of life; a weak one is replaced by an improved successor
+// evolution: reserves are judged every 12h of life; a weak one is replaced by an improved successor
 function evolutionCard(d, r) {
   const lin = r.lineage, v = r.last_verdict;
   if (d.titular && !lin) return "";
-  const next = r.born_at ? (() => { const born = new Date(r.born_at), h = 20 * 3600e3, k = Math.floor((Date.now() - born) / h) + 1;
-    return new Date(born.getTime() + k * h); })() : null;
+  const next = r.advice?.period?.ends ? new Date(r.advice.period.ends) : null;
   return `<h4>🧬 Evolução</h4><div class="bm-card">${lin ? `<div class="t"><span>Geração ${lin.gen} · filho de ${esc(lin.parent_label || lin.parent)}</span><span class="muted">nasceu ${dt(lin.born_at)}</span></div>
       <div class="bm-rows">${lin.why.map((w) => `<div><span>✨ ${esc(w)}</span></div>`).join("")}
       ${lin.inherited_avoid.length ? `<div><span>📚 Já nasceu evitando: ${lin.inherited_avoid.map(esc).join(", ")}</span></div>` : ""}</div>` : ""}
-    ${!d.titular ? `<p class="note" style="margin:${lin ? "10px" : "0"} 0 0">A cada 20h de vida, se o acerto do período ficar abaixo de 60% (ou sem trades), ele é aposentado e nasce um sucessor melhorado com nome de campeão da Libertadores.
+    ${!d.titular ? `<p class="note" style="margin:${lin ? "10px" : "0"} 0 0">A cada 12h de vida, se o acerto do período ficar abaixo de 60% (ou sem trades), ele é aposentado e nasce um sucessor melhorado com nome de campeão da Libertadores.
       ${next ? `Próximo corte: <b>${dt(next.toISOString())}</b>.` : ""}${v ? ` Último corte: ${v.wins}/${v.trades} (${pct0(v.win_rate)}) ${v.pass ? "✅ passou" : "❌"}` : ""}</p>` : ""}</div>`;
 }
 function daysChart(days) {
@@ -918,14 +958,15 @@ function quotaLine(q) {
 }
 
 // self-learning: what the bot learned from its own closed trades (it skips situations it keeps losing in)
-function learnedLine(l) {
-  if (!l || !l.seen) return "";
+function learnedLine(l, h) {
+  const passes = h && (h.sent || h.received) ? ` · 📨 ${h.sent}↗ ${h.received}↙` : "";
+  if (!l || !l.seen) return passes ? `<div class="gl learn">🧠 aprendendo${passes}</div>` : "";
   const fmt = (x) => `${esc(x.tag)} (${x.wins}/${x.n}, ${x.pnl >= 0 ? "+" : "−"}$${Math.abs(x.pnl).toFixed(2)})`;
   const tip = [l.avoid.length ? `Evita: ${l.avoid.map(fmt).join(", ")}` : "", l.best.length ? `Vai melhor em: ${l.best.map(fmt).join(", ")}` : ""]
     .filter(Boolean).join(" · ") || "ainda sem padrão claro — precisa de 6+ trades na mesma situação";
   const txt = l.avoid.length ? `evita ${l.avoid.slice(0, 2).map((x) => esc(x.tag)).join(", ")}`
     : l.best.length ? `melhor em ${l.best.slice(0, 2).map((x) => esc(x.tag)).join(", ")}` : `aprendendo · ${l.seen} trades analisados`;
-  return `<div class="gl learn" title="${esc(tip)}">🧠 ${txt}</div>`;
+  return `<div class="gl learn" title="${esc(tip)}">🧠 ${txt}${passes}</div>`;
 }
 function trainButton(model, r) {
   if (!r?.green_light || r.green_light.ok) return "";

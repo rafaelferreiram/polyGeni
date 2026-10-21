@@ -1060,6 +1060,20 @@ def _opportunities(model: str, watch: list[dict], held: set[str]) -> list[dict]:
     return sorted(out, key=lambda o: -o["progress"])[:8]
 
 
+def _team_network(model: str, eng) -> dict:
+    """What the shared network gives this bot: situations the team avoids, and the opportunities passed in and out."""
+    from src.solana import learning
+    team = learning.team_record()
+    total = learning._total(team)
+    avoid = [{"tag": t, **r} for t, r in sorted(team.items(), key=lambda kv: kv[1]["pnl"])
+             if r["n"] >= 2 * cfg.LEARN_MIN_TRADES and learning.bad(r, total)][:6]
+    moves = [{"ts": d["ts"], "symbol": d["symbol"], "reason": d["reason"]} for d in eng.ledger.decisions(300, kind="handoff")][:8]
+    received = [{"ts": d["ts"], "symbol": d["symbol"], "reason": d["reason"]} for d in eng.ledger.decisions(300, kind="entry")
+                if "recebida de" in (d["reason"] or "")][:8]
+    return {"avoid": avoid, "seen": sum(r["n"] for t, r in team.items() if t.startswith("moeda ")),
+            "sent": moves, "received": received}
+
+
 @router.get("/arena/bot/{model}")
 def arena_bot(model: str):
     """Everything about one bot for its card's modal: record (lab and real), trades, daily results, mood,
@@ -1108,10 +1122,18 @@ def arena_bot(model: str):
             "positions_lab": pos_lab, "positions_real": pos_real, "trades": trades,
             "days": [{"day": k, **v} for k, v in sorted(days.items(), reverse=True)][:14],
             "mood": _mood(lab, open_pnl), "learned": learning.summary(learning.record(eng.ledger, model)),
+            "team": _team_network(model, eng),
             "opportunities": _opportunities(model, _market_temp().get("watch") or [],
                                             {p["symbol"] for p in pos_lab} | {p["symbol"] for p in pos_real}),
             "projection": {**proj, "trades_per_day": round(tpd, 1), "expectancy": round(exp, 4), "sample": len(pnls),
                            "real_size": arena.is_titular(model)}}
+
+
+@router.get("/team/chat")
+def team_chat(limit: int = 80, since: int = 0):
+    """The bots' group chat: what they did, passed to each other and learned (newest last)."""
+    from src.solana import teamchat
+    return {"messages": teamchat.recent(min(limit, 300), since)}
 
 
 @router.get("/admin/live")

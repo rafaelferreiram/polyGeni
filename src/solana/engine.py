@@ -549,6 +549,10 @@ class PaperEngine:
                 if sig is not None and profile.get("stop_mult", 1) != 1:
                     sig.stop_pct = min(sig.stop_pct * profile["stop_mult"], 0.5)
                     sig.tp_pct *= profile["stop_mult"]
+                lab_model = self.__dict__.get("lab_model")
+                if sig is None and lab_model:          # an opportunity a teammate passed to this bot
+                    from src.solana import arena
+                    sig = arena.take_handoff(lab_model, c.symbol, strat.name)
                 if sig is None:
                     self._agent(strat.name, last_reason=f"{c.symbol}: no signal")
                     continue
@@ -565,13 +569,41 @@ class PaperEngine:
                 if cfg.SELF_LEARNING:
                     rec = learning.record(self._learn_ledger(strat.name), strat.name)
                     from src.solana import evolution
-                    if avoided := learning.avoid(rec, tags, evolution.inherited_avoid(strat.name)):
-                        why = ", ".join(f"'{t}' ({rec[t]['wins']}/{rec[t]['n']} ganhos, ${rec[t]['pnl']:+.2f})" if t in rec
-                                        else f"'{t}' (lição herdada)" for t in avoided)
+                    team = learning.team_record()
+                    avoided = learning.avoid(rec, tags, evolution.inherited_avoid(strat.name))
+                    shared = [t for t in learning.team_avoid(rec, team, tags) if t not in avoided]
+                    if avoided or shared:
+                        why = ", ".join([f"'{t}' ({rec[t]['wins']}/{rec[t]['n']} ganhos, ${rec[t]['pnl']:+.2f})" if t in rec
+                                         else f"'{t}' (lição herdada)" for t in avoided] +
+                                        [f"'{t}' (rede do time: {team[t]['wins']}/{team[t]['n']} ganhos)" for t in shared])
                         self.ledger.log_decision("veto", cycle=self.cycle, mint=c.mint, symbol=c.symbol, strategy=strat.name,
                                                  signals={"tags": tags}, reason=f"aprendizado: evita {why}")
                         stats["vetoes"] += 1
                         continue
+                if lab_model and cfg.SELF_LEARNING and not getattr(sig, "handed", False):
+                    from src.solana import arena
+                    if mate := learning.better_teammate(lab_model, tags):
+                        arena.post_handoff(mate[0], c.symbol, sig, lab_model, mate[1])
+                        self.ledger.log_decision("handoff", cycle=self.cycle, mint=c.mint, symbol=c.symbol, strategy=strat.name,
+                                                 signals={"tags": tags, "to": mate[0]},
+                                                 reason=f"📨 passou {c.symbol} para {mate[0]}: {mate[1]}")
+                        continue
+                if cfg.EDGE_CHECK:                      # margin of error: odds of this trade from every memory we have
+                    from src.solana import arena, edge as edge_mod
+                    mine = self._learn_ledger(strat.name)
+                    pay = edge_mod.payoff(mine.closed_trades(), edge_mod.payoff(
+                        [t for e in list((arena._bots or {}).values()) for t in e.ledger.closed_trades()]))
+                    done = mine.closed_trades()
+                    base = sum(t["pnl_usd"] > 0 for t in done) / len(done) if len(done) >= 10 else None
+                    est = edge_mod.estimate(tags, learning.record(mine, strat.name), learning.team_record(), *pay, baseline=base)
+                    if est["skip"]:
+                        self.ledger.log_decision("veto", cycle=self.cycle, mint=c.mint, symbol=c.symbol, strategy=strat.name,
+                                                 signals={"tags": tags, "edge": est},
+                                                 reason=f"margem de erro: {edge_mod.describe(est)} — nem no melhor caso compensa")
+                        stats["vetoes"] += 1
+                        continue
+                    sig.reason = f"{sig.reason} · {edge_mod.describe(est)}"
+                    sig.indicators = {**(sig.indicators or {}), "edge": est}
                 stats["signals"] += 1
                 self._agent(strat.name, last_reason=f"{c.symbol}: {sig.reason}", approved=1)
                 strat_vote = Vote(strat.name, True, sig.reason, sig.indicators)
