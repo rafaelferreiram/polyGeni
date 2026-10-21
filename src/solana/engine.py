@@ -181,8 +181,8 @@ class PaperEngine:
                 reason = f"stop-loss hit ({price:.6g} <= {pos['stop_price']:.6g})"
             elif pos["tp_price"] and price >= pos["tp_price"]:
                 reason = f"take-profit hit ({price:.6g} >= {pos['tp_price']:.6g})"
-            elif held_h >= self.max_hold_h:
-                reason = f"max holding time {self.max_hold_h:.0f}h reached"
+            elif held_h >= (limit := _max_hold(pos["strategy"], self.max_hold_h)):
+                reason = f"max holding time {limit:.0f}h reached"
             elif self.decision_mode() == "llm" and self.team and pos.get("pool_address"):
                 # the bot that opened the position manages its exit
                 owner = next((d for d in self.team if d.name == pos["strategy"]), self.llm)
@@ -402,7 +402,9 @@ class PaperEngine:
             ready.append((c, candles, safety, profile))
         # best opportunity first: with one slot, the deepest dip inside an uptrend gets it, not the first coin listed
         ready.sort(key=lambda r: _setup_rank(r[1]))
-        self.ledger.set_state("market_temp", _market_temp(ready))
+        mt = _market_temp(ready)
+        self.ledger.set_state("market_temp", mt)
+        breadth = {k: mt.get(k) for k in ("n", "uptrend", "avg_rsi", "avg_ch24")}   # whole-market context for the AI
         held = {x["mint"] for x in self.ledger.positions()}
         for c, candles, safety, profile in ready:
             if c.mint in held:          # already holding it: its stop/target and exit review handle it — no AI tokens
@@ -414,7 +416,7 @@ class PaperEngine:
                         continue
                     from src.solana import whales
                     sig = strat.decide(candles, {**c.summary(), "symbol": c.symbol, "venue": c.venue,
-                                                 "whale_flow": whales.summary(c.symbol)})
+                                                 "whale_flow": whales.summary(c.symbol), "market_breadth": breadth})
                     d = strat.last.get(c.symbol, {})
                     msg = f"{c.symbol}: {d.get('action', 'HOLD')} — {d.get('reason', '')}"[:200]
                     self._agent(strat.name, last_reason=msg, approved=int(sig is not None))
@@ -485,6 +487,12 @@ def bench_prices() -> dict:
     """Benchmark prices for buy-and-hold comparisons (Hyperliquid mids: one public call)."""
     mids = hl.info({"type": "allMids"})
     return {"SOL": float(mids["SOL"]), "BTC": float(mids["BTC"])}
+
+
+def _max_hold(strategy: str, default: float) -> float:
+    """Day-trade bots close their positions sooner (e.g. trend: 24h); others use the engine default."""
+    from src.solana.strategies import RULE_BOTS
+    return getattr(RULE_BOTS.get(strategy), "max_hold_h", None) or default
 
 
 def _market_temp(ready: list) -> dict:

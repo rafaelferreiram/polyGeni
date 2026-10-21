@@ -299,3 +299,8 @@ def test_bots_rest_after_the_daily_goal(ledger, monkeypatch):
     assert s["entries"] == 0 and "meta do dia batida" in s["skipped"]
     eng.rests_on_goal = False                                 # lab bots keep going
     assert "skipped" not in eng.run_cycle()
+
+
+def test_trend_positions_are_day_trades():
+    from src.solana.engine import _max_hold
+    assert _max_hold("trend", 72) == 24 and _max_hold("rules", 72) == 72 and _max_hold("llm:claude-haiku-5-5", 72) == 72
