@@ -549,6 +549,10 @@ class PaperEngine:
                 if sig is not None and profile.get("stop_mult", 1) != 1:
                     sig.stop_pct = min(sig.stop_pct * profile["stop_mult"], 0.5)
                     sig.tp_pct *= profile["stop_mult"]
+                lab_model = self.__dict__.get("lab_model")
+                if sig is None and lab_model:          # an opportunity a teammate passed to this bot
+                    from src.solana import arena
+                    sig = arena.take_handoff(lab_model, c.symbol, strat.name)
                 if sig is None:
                     self._agent(strat.name, last_reason=f"{c.symbol}: no signal")
                     continue
@@ -565,12 +569,24 @@ class PaperEngine:
                 if cfg.SELF_LEARNING:
                     rec = learning.record(self._learn_ledger(strat.name), strat.name)
                     from src.solana import evolution
-                    if avoided := learning.avoid(rec, tags, evolution.inherited_avoid(strat.name)):
-                        why = ", ".join(f"'{t}' ({rec[t]['wins']}/{rec[t]['n']} ganhos, ${rec[t]['pnl']:+.2f})" if t in rec
-                                        else f"'{t}' (lição herdada)" for t in avoided)
+                    team = learning.team_record()
+                    avoided = learning.avoid(rec, tags, evolution.inherited_avoid(strat.name))
+                    shared = [t for t in learning.team_avoid(rec, team, tags) if t not in avoided]
+                    if avoided or shared:
+                        why = ", ".join([f"'{t}' ({rec[t]['wins']}/{rec[t]['n']} ganhos, ${rec[t]['pnl']:+.2f})" if t in rec
+                                         else f"'{t}' (lição herdada)" for t in avoided] +
+                                        [f"'{t}' (rede do time: {team[t]['wins']}/{team[t]['n']} ganhos)" for t in shared])
                         self.ledger.log_decision("veto", cycle=self.cycle, mint=c.mint, symbol=c.symbol, strategy=strat.name,
                                                  signals={"tags": tags}, reason=f"aprendizado: evita {why}")
                         stats["vetoes"] += 1
+                        continue
+                if lab_model and cfg.SELF_LEARNING and not getattr(sig, "handed", False):
+                    from src.solana import arena
+                    if mate := learning.better_teammate(lab_model, tags):
+                        arena.post_handoff(mate[0], c.symbol, sig, lab_model, mate[1])
+                        self.ledger.log_decision("handoff", cycle=self.cycle, mint=c.mint, symbol=c.symbol, strategy=strat.name,
+                                                 signals={"tags": tags, "to": mate[0]},
+                                                 reason=f"📨 passou {c.symbol} para {mate[0]}: {mate[1]}")
                         continue
                 stats["signals"] += 1
                 self._agent(strat.name, last_reason=f"{c.symbol}: {sig.reason}", approved=1)

@@ -338,3 +338,49 @@ def test_advisor_flags_promotion_potential_and_cut_risk(tmp_path, monkeypatch):
     monkeypatch.setattr(arena, "net_of_cost", lambda m: (-3.35, 0.0, -3.35))
     a = arena.advise("claude-haiku-5-5", now)
     assert a["flag"] == "cut" and any("não recomendo" in r for r in a["reasons"])
+
+
+def test_team_network_shares_lessons_and_routes_opportunities(monkeypatch):
+    from types import SimpleNamespace
+    from src.solana import learning
+    from src.solana.strategies import Signal
+    monkeypatch.setattr(learning, "CACHE_S", 0)
+    monkeypatch.setattr(cfg, "LEARN_MIN_TRADES", 3)
+    recs = {
+        "a": {"moeda X": {"n": 8, "wins": 4, "pnl": 0.0}, "rompimento 1h": {"n": 4, "wins": 1, "pnl": -0.2}},
+        "b": {"moeda X": {"n": 8, "wins": 6, "pnl": 0.6}, "rompimento 1h": {"n": 4, "wins": 4, "pnl": 0.4},
+              "RSI alto": {"n": 4, "wins": 0, "pnl": -0.3}},
+        "c": {"moeda X": {"n": 8, "wins": 4, "pnl": 0.0}, "RSI alto": {"n": 3, "wins": 0, "pnl": -0.2}},
+    }
+    bots = {m: SimpleNamespace(ledger=SimpleNamespace(path=m, set_state=lambda *a: None, get_state=lambda k, d=None: d)) for m in recs}
+    monkeypatch.setattr(arena, "_bots", bots)
+    monkeypatch.setattr(learning, "record", lambda led, strategy=None: recs[led.path])
+    # b and c both lost in 'RSI alto' (7 trades, 0 wins): a, who never traded it, avoids it too
+    assert learning.team_avoid(recs["a"], learning.team_record(), ["RSI alto", "moeda X"]) == ["RSI alto"]
+    # but never a bot's own core move (on most of its trades): c is a "RSI alto" specialist
+    core = {"moeda X": {"n": 4, "wins": 0, "pnl": -0.3}, "RSI alto": {"n": 4, "wins": 0, "pnl": -0.3}}
+    assert learning.team_avoid(core, learning.team_record(), ["RSI alto"]) == []
+    # a sees a breakout but b is clearly better at breakouts: the opportunity goes to b
+    mate = learning.better_teammate("a", ["rompimento 1h"])
+    assert mate and mate[0] == "b"
+    arena.post_handoff("b", "BTC", Signal("a", 100.0, 0.02, 0.03, "rompeu"), "a", mate[1])
+    sig = arena.take_handoff("b", "BTC", "b")
+    assert sig.strategy == "b" and sig.handed and "recebida de a" in sig.reason
+    assert arena.take_handoff("b", "BTC", "b") is None            # used once
+
+
+def test_bots_talk_in_the_group_chat(tmp_path):
+    from src.solana import teamchat
+    from src.solana.ledger import Ledger
+    led = Ledger(str(tmp_path / "arena_whales.db"), 100.0)
+    led.set_state("model", "whales")
+    led.log_decision("entry", mint="hl:BTC", symbol="BTC", strategy="whales", reason="baleias compraram $2M em 1h; size $10",
+                     signals={"tags": ["alta"]})
+    led.log_decision("exit", mint="hl:BTC", symbol="BTC", strategy="whales", reason="take-profit hit (1 >= 1)", signals={"pnl_usd": 0.12})
+    led.log_decision("handoff", mint="hl:ETH", symbol="ETH", strategy="whales", reason="📨 passou ETH para trend: vai melhor")
+    msgs = teamchat.recent()
+    assert [m["kind"] for m in msgs] == ["entry", "exit", "handoff"] and all(m["author"] == "whales" for m in msgs)
+    assert "bateu o alvo" in msgs[1]["text"] and "+$0.12" in msgs[1]["text"]
+    teamchat.team_lessons([{"tag": "RSI alto", "n": 12, "wins": 2, "pnl": -0.8}])
+    teamchat.team_lessons([{"tag": "RSI alto", "n": 12, "wins": 2, "pnl": -0.8}])        # said once
+    assert sum(m["kind"] == "network" for m in teamchat.recent()) == 1

@@ -1,5 +1,5 @@
 """
-Natural selection for the reserves. Every EVOLVE_PERIOD_H (20h) of a reserve's life its trades of that period are
+Natural selection for the reserves. Every EVOLVE_PERIOD_H (12h) of a reserve's life its trades of that period are
 judged: win rate below EVOLVE_MIN_WIN_RATE (60%) — or no trade at all — and the bot is retired. Its place goes to a
 successor named after a Palmeiras Libertadores champion (1999, 2020, 2021), same family of strategy, born with:
   1. adjusted exits learned from how the parent lost (wider stop if stops did the damage, closer target if the target

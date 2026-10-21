@@ -316,6 +316,10 @@ class Ledger:
         source = logbuf.label(self.path)
         logbuf.add(source, logbuf.DECISION_LEVEL.get(kind, "INFO"),
                    f"{kind}{f' {symbol}' if symbol else ''}{f' [{strategy}]' if strategy else ''}: {reason}")
+        if source == "real" or source.startswith("lab:"):          # the bots' group chat (the simulation would echo the real one)
+            from src.solana import teamchat
+            teamchat.from_decision(source, self.get_state("model") if source.startswith("lab:") else strategy,
+                                   kind, symbol, reason, signals or {})
         if kind in ("entry", "exit") and symbol:
             trade = next((t for t in self.closed_trades() if t["symbol"] == symbol), None) if kind == "exit" else None
             notify.trade_event(source, kind, symbol, strategy, reason, trade)

@@ -131,9 +131,20 @@ the others must first show ≥ 10 profitable lab trades.
   its latest trades with dates, amounts and exit reasons. Turbo/coffee buttons are there too.
 - **Real account**: at most 5 positions at a time and no daily trade cap (`LIVE_MAX_POSITIONS=5`,
   `LIVE_MAX_ENTRIES_PER_DAY` high in `.env`); the 10% daily loss stop and the kill switch stay.
+- **💬 Vestiário** (`teamchat.py`, `team_chat.db`, `GET /api/paper/team/chat`): the bots' group chat and shared memory
+  — buys, sells with results, passes to a teammate, situations skipped, team lessons, cuts and newborns. Real-account and
+  lab decisions only (the simulation would echo the real account); repeated messages throttled to one per 30 min.
+- **Safe restarts**: on shutdown the app waits (up to 90s, launchd `ExitTimeOut` 120) for any account cycle or manual
+  order to finish — a restart once cut a real buy in half (on the exchange, not in the books, no stop).
+- **Rate limits**: order books cached 20s per coin and shared by all lab bots; turbo analyses every 2 min.
+- **Team network** (`learning.team_record`, `team_avoid`, `better_teammate`; `arena.post_handoff`/`take_handoff`): every
+  lab bot's closed trades feed one shared record. A situation the whole team keeps losing in (12+ trades, < 35% wins,
+  net loss) is avoided by every bot unless that bot itself does well there. When a bot gets a signal in a situation
+  where a teammate's own record is clearly better, it passes the opportunity (📨) to that teammate, who trades it with
+  its own exits within 30 minutes. Passed signals are never passed again. Modal → Aprendizado → "📡 Rede do time".
 - **My read on each reserve** (`arena.advise`, flag on the card + "🧑‍🏫 Minha análise" in the modal): ⭐ potencial para
   titular (meets the promotion rule *and* makes money: net > 0, profit factor ≥ 1.2, 20+ trades), 🌱 promissor, 👀 em
-  observação, 🔻 risco de corte (below 60% in the current 20h period, or clearly losing) — with the reasons in plain words.
+  observação, 🔻 risco de corte (below 60% in the current 12h period, or clearly losing) — with the reasons in plain words.
 - **Promote from the modal** (`POST /api/paper/arena/promote`): a reserve with ≥ 12 lab wins and win rate ≥ 35%
   (`PROMOTE_MIN_WINS`, `PROMOTE_MIN_WIN_RATE`) can be made titular by the user (a warning shows if its lab result is
   negative). Promotions are stored in `lineage.json`. The team view shows titulares "em campo" and reserves "no banco".
@@ -142,7 +153,7 @@ the others must first show ≥ 10 profitable lab trades.
   São Marcos RSI 30→35→40 and a narrower band, Endrick a shorter breakout window, Evair less whale buying needed) and
   aims at a 40% closer target for a quicker round trip. Size, stops, quick wins and the account limits don't change.
   Cards show "⏱ X/5 operações hoje".
-- **Evolution of the reserves** (`evolution.py`, `lineage.json`): every 20h of a reserve's life (`EVOLVE_PERIOD_H`) its
+- **Evolution of the reserves** (`evolution.py`, `lineage.json`): every 12h of a reserve's life (`EVOLVE_PERIOD_H`) its
   trades of that period are judged; below 60% wins (`EVOLVE_MIN_WIN_RATE`) or no trade, it is retired and a successor
   named after a Palmeiras Libertadores champion takes the slot — same strategy family, exits tuned from how the parent
   lost (wider stop, closer target, no forced 2h exit / longer hold), the parent's lessons inherited, and a fresh record

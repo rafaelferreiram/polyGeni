@@ -38,3 +38,12 @@ def flat_candles(n=60, price=1.0, vol=100.0):
     now = int(time.time()) // 3600 * 3600
     return [dict(t=now - (n - 1 - i) * 3600, open=price, high=price * 1.001, low=price * 0.999, close=price, volume=vol)
             for i in range(n)]
+
+
+@pytest.fixture(autouse=True)
+def _isolated_team_chat(tmp_path, monkeypatch):
+    """Lab ledgers in tests post to the bots' group chat: keep it out of the real team_chat.db."""
+    from src.solana import config as cfg, teamchat
+    monkeypatch.setattr(cfg, "TEAM_CHAT_DB_PATH", str(tmp_path / "team_chat.db"))
+    monkeypatch.setattr(teamchat, "_conn", None)
+    monkeypatch.setattr(teamchat, "_recent", {})

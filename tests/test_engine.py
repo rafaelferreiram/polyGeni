@@ -424,3 +424,20 @@ def test_a_manual_order_makes_a_running_cycle_stop_early(ledger):
     assert eng.run_cycle()["entries"] == 0 and ledger.positions() == []
     eng._yield = False
     assert eng.run_cycle()["entries"] == 1
+
+
+def test_learning_backfills_situations_of_old_trades(monkeypatch):
+    from types import SimpleNamespace
+    from src.solana import hyperliquid as hl, learning
+    from tests.conftest import flat_candles
+    candles = flat_candles(300)
+    state = {}
+    led = SimpleNamespace(path="x", get_state=lambda k, d=None: state.get(k, d), set_state=lambda k, v: state.__setitem__(k, v),
+                          decisions=lambda n, kind=None: [],
+                          closed_trades=lambda: [{"order_id": "exit-o1", "symbol": "BTC", "strategy": "s", "pnl_usd": -0.1,
+                                                  "entry_ts": __import__("datetime").datetime.fromtimestamp(candles[250]["t"] + 3600, __import__("datetime").timezone.utc).isoformat(),
+                                                  "exit_ts": "2099-01-01T00:00:00+00:00"}])
+    monkeypatch.setattr(hl, "candles", lambda coin, interval="1h": candles)
+    monkeypatch.setattr(learning, "CACHE_S", 0)
+    assert learning.backfill(led) == 1 and "moeda BTC" in state["tags_backfill"]["o1"]
+    assert learning.record(led)["moeda BTC"]["n"] == 1          # the old trade now counts

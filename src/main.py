@@ -36,6 +36,20 @@ if os.path.isdir(frontend_path):
         return FileResponse(os.path.join(frontend_path, "admin.html"))
 
 
+@app.on_event("shutdown")
+def shutdown():
+    """A restart must never cut a real order in half (it did once: bought on the exchange, not in the books, no stop):
+    wait for any running account cycle or manual order to finish, then keep the accounts locked until exit."""
+    from src.solana import hl_live
+    for get in (hl_live.get_live_engine, hl_live.get_shadow_engine):
+        try:
+            eng = get()
+            eng._yield = True                     # a running cycle stops at the next coin
+            eng._busy.acquire(timeout=90)
+        except Exception as e:
+            logging.getLogger("main").warning(f"shutdown wait: {e}")
+
+
 @app.on_event("startup")
 def startup():
     init_db()
