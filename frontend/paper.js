@@ -690,7 +690,7 @@ function renderTeam() {
         <div><div class="nm">${esc(L.label)}${r.model_now && r.model_now !== m.model ? ` <small class="green">🚀 ${esc(look(r.model_now).label)}</small>` : reviewOn(r) ? ` <small class="green">🚀 ${esc(look(reviewOn(r).model).label)}</small>` : ""}</div><div class="rl">${esc(L.role)}</div></div></div>
       <span class="chip">${esc(chip)}</span>
       <div class="now">Última decisão: ${now}</div>
-      ${rewardLine(r.reward, rankOf[m.model])}${greenLine(r.green_light)}${quotaLine(r.quota)}${learnedLine(r.learned)}${trainButton(m.model, r)}${coffeeButton(m.model, r)}
+      ${rewardLine(r.reward, rankOf[m.model])}${adviceLine(r.advice)}${greenLine(r.green_light)}${quotaLine(r.quota)}${learnedLine(r.learned)}${trainButton(m.model, r)}${coffeeButton(m.model, r)}
       <div class="stats"><span><b>${pnl(m.pnl_usd ?? 0)}</b>resultado</span><span><b>${m.trades ?? 0}</b>trades</span>
         <span><b>${isRules ? "grátis" : usd(r.ai_cost_usd ?? 0)}</b>custo IA</span></div>
       <div class="tip" role="tooltip">${tip}<div class="note" style="margin-top:6px">${esc(bubble)}</div></div>
@@ -820,6 +820,7 @@ function paintBotModal() {
       </div>
       ${g.ok ? "" : `<h4>Rumo à conta real</h4><div class="bm-card"><div class="t"><span>${g.trades || 0} de ${g.needed_trades || 20} trades · ${g.wins || 0} de ${g.needed || 12} vitórias</span><span>${pct0(prog)}</span></div>
         <div class="bm-prog"><i style="width:${prog * 100}%"></i></div><span class="muted">Falta: ${esc((g.missing || []).join(", ") || "—")}</span></div>`}
+      ${adviceCard(r)}
       ${promoteCard(d, r)}
       ${evolutionCard(d, r)}
       <h4>Resultado por dia</h4>${daysChart(d.days)}
@@ -854,6 +855,20 @@ function paintBotModal() {
     <div class="bm-body">${body}</div>`;
   document.querySelector(".bm-body").scrollTop = scrollTop;
 }
+// my read on each reserve: ⭐ promote, 🌱 promising, 👀 watching, 🔻 likely cut (replaced by a better-tuned successor)
+function adviceLine(a) {
+  if (!a) return "";
+  return `<div class="advice ${a.flag}" title="${esc(a.reasons.join(" · "))}">${esc(a.label)}</div>`;
+}
+function adviceCard(r) {
+  const a = r.advice;
+  if (!a) return "";
+  const p = a.period;
+  return `<h4>🧑‍🏫 Minha análise</h4><div class="bm-card advice-card ${a.flag}"><div class="t"><span>${esc(a.label)}</span>
+    ${p ? `<span class="muted">período atual: ${p.wins}/${p.trades} · corte ${dt(p.ends)}</span>` : ""}</div>
+    <div class="bm-rows">${a.reasons.map((x) => `<div><span>• ${esc(x)}</span></div>`).join("")}</div></div>`;
+}
+
 // manual promotion (the user's rule: 12+ lab wins and win rate ≥ 35%)
 function promoteCard(d, r) {
   const c = r.can_promote;

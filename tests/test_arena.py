@@ -319,3 +319,22 @@ def test_user_can_promote_a_reserve_with_12_wins_and_35pct(tmp_path, monkeypatch
     monkeypatch.setattr(evolution, "load", lambda: {"active": [], "bots": {}, "promoted": []})
     with pytest.raises(ValueError, match="12 vitórias"):
         arena.promote("claude-haiku-5-5")
+
+
+def test_advisor_flags_promotion_potential_and_cut_risk(tmp_path, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    bots, _ = make_bots(tmp_path, {"claude-haiku-5-5": "{}"})
+    monkeypatch.setattr(arena, "_bots", bots)
+    monkeypatch.setattr(arena, "is_titular", lambda m: False)
+    led = bots["claude-haiku-5-5"].ledger
+    now = datetime.now(timezone.utc)
+    led.set_state("born_at", (now - timedelta(hours=5)).isoformat())
+    ts = (now - timedelta(hours=1)).isoformat()
+    trades = [{"pnl_usd": 0.3, "exit_ts": ts}] * 16 + [{"pnl_usd": -0.1, "exit_ts": ts}] * 8
+    monkeypatch.setattr(type(led), "closed_trades", lambda self: trades)
+    monkeypatch.setattr(arena, "net_of_cost", lambda m: (4.0, 0.0, 4.0))
+    assert arena.advise("claude-haiku-5-5", now)["flag"] == "promote"
+    trades[:] = [{"pnl_usd": 0.05, "exit_ts": ts}] * 13 + [{"pnl_usd": -0.2, "exit_ts": ts}] * 20     # 39%: user's rule, but loses
+    monkeypatch.setattr(arena, "net_of_cost", lambda m: (-3.35, 0.0, -3.35))
+    a = arena.advise("claude-haiku-5-5", now)
+    assert a["flag"] == "cut" and any("não recomendo" in r for r in a["reasons"])

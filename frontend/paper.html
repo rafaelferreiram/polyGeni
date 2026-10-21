@@ -439,6 +439,13 @@
       padding: 2px 8px; border-radius: 99px; white-space: nowrap; pointer-events: none; }
     .tb.tit .shirt { background: #006437; color: #fff; } .tb.res .shirt { background: var(--surface-2); color: var(--muted); border: 1px solid var(--border); }
     .tb { padding-top: 30px !important; }
+    .advice { margin-top: 6px; font-size: 12px; font-weight: 700; padding: 4px 9px; border-radius: 8px; border: 1px solid var(--border); }
+    .advice.promote { background: rgba(52,211,153,.14); color: var(--green); border-color: rgba(52,211,153,.45); }
+    .advice.promising { background: rgba(125,211,252,.10); color: #7dd3fc; }
+    .advice.watch { color: var(--muted); }
+    .advice.cut { background: rgba(248,113,113,.12); color: var(--red); border-color: rgba(248,113,113,.4); }
+    .advice-card.promote { border-color: rgba(52,211,153,.5); } .advice-card.cut { border-color: rgba(248,113,113,.45); }
+    .advice-card .t span:first-child { font-weight: 750; }
     button.promote { background: #006437 !important; color: #fff !important; border-color: #1f9d55 !important; font-weight: 700; }
     .bm-back { position: fixed; inset: 0; z-index: 60; background: rgba(4,7,6,.72); backdrop-filter: blur(4px); display: grid; place-items: center; padding: 24px; }
     .bm-back[hidden] { display: none; }
@@ -748,6 +755,6 @@
 
   <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <script src="https://unpkg.com/qrcode-generator@1.4.4/qrcode.js"></script>
-  <script src="/static/paper.js?v=96"></script>
+  <script src="/static/paper.js?v=97"></script>
 </body>
 </html>

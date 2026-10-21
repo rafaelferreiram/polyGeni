@@ -131,6 +131,9 @@ the others must first show ≥ 10 profitable lab trades.
   its latest trades with dates, amounts and exit reasons. Turbo/coffee buttons are there too.
 - **Real account**: at most 5 positions at a time and no daily trade cap (`LIVE_MAX_POSITIONS=5`,
   `LIVE_MAX_ENTRIES_PER_DAY` high in `.env`); the 10% daily loss stop and the kill switch stay.
+- **My read on each reserve** (`arena.advise`, flag on the card + "🧑‍🏫 Minha análise" in the modal): ⭐ potencial para
+  titular (meets the promotion rule *and* makes money: net > 0, profit factor ≥ 1.2, 20+ trades), 🌱 promissor, 👀 em
+  observação, 🔻 risco de corte (below 60% in the current 20h period, or clearly losing) — with the reasons in plain words.
 - **Promote from the modal** (`POST /api/paper/arena/promote`): a reserve with ≥ 12 lab wins and win rate ≥ 35%
   (`PROMOTE_MIN_WINS`, `PROMOTE_MIN_WIN_RATE`) can be made titular by the user (a warning shows if its lab result is
   negative). Promotions are stored in `lineage.json`. The team view shows titulares "em campo" and reserves "no banco".
