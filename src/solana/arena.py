@@ -117,8 +117,8 @@ def track_record(model: str, n: int = 8) -> dict:
 
 
 def green_light(model: str) -> dict:
-    """Is this bot ready for real money? Trusted (backtest-validated) bots are; the others need LIVE_MIN_LAB_TRADES
-    closed lab trades with net profit after their AI cost, win rate ≥ GREEN_LIGHT_WIN_RATE and profit factor ≥
+    """Is this bot ready for real money? Trusted (backtest-validated) bots are; the others need GREEN_LIGHT_TRADES
+    closed lab trades, GREEN_LIGHT_WINS of them winners, with net profit after their AI cost, win rate ≥ GREEN_LIGHT_WIN_RATE and profit factor ≥
     GREEN_LIGHT_PROFIT_FACTOR."""
     if model in cfg.REAL_TRUSTED_BOTS and model not in LAB_ONLY_BOTS:
         return {"ok": True, "trusted": True}
@@ -129,15 +129,20 @@ def green_light(model: str) -> dict:
     n, net = len(trades), net_of_cost(model)[2] if eng else 0.0
     wr = len(wins) / n if n else 0.0
     pf = (sum(wins) / sum(losses)) if losses and sum(losses) > 0 else (99.0 if wins else 0.0)
-    need = {"vitórias": len(wins) >= cfg.GREEN_LIGHT_WINS, "lucro": net > 0, "acerto": wr >= cfg.GREEN_LIGHT_WIN_RATE,
+    need = {"trades": n >= cfg.GREEN_LIGHT_TRADES, "vitórias": len(wins) >= cfg.GREEN_LIGHT_WINS, "lucro": net > 0, "acerto": wr >= cfg.GREEN_LIGHT_WIN_RATE,
             "fator": pf >= cfg.GREEN_LIGHT_PROFIT_FACTOR}
     if model in SHORT_BOTS:      # the real account cannot short: this bot stays in the lab whatever its record
         need["conta real não faz short"] = False
     if model in FAST_BOTS:       # 15-minute twins exist for experience and comparison, not for real money
         need["versão de 15 min: só laboratório"] = False
-    return {"ok": all(need.values()), "trusted": False, "trades": n, "wins": len(wins), "needed": cfg.GREEN_LIGHT_WINS,
+    return {"ok": all(need.values()), "trusted": False, "trades": n, "wins": len(wins), "needed": cfg.GREEN_LIGHT_WINS, "needed_trades": cfg.GREEN_LIGHT_TRADES,
             "win_rate": round(wr, 3), "profit_factor": round(pf, 2), "net_usd": round(net, 4),
             "missing": [k for k, v in need.items() if not v]}
+
+
+def paper_scheduler():
+    from src.solana import engine as paper_engine
+    return paper_engine.scheduler()
 
 
 def boost_training(model: str, hours: float = 24) -> dict:
@@ -146,13 +151,19 @@ def boost_training(model: str, hours: float = 24) -> dict:
     eng = bots().get(model)
     if not eng:
         raise ValueError(f"bot {model} não existe")
-    until = (datetime.now(timezone.utc) + timedelta(hours=min(max(hours, 1), 72))).isoformat(timespec="seconds")
+    now = datetime.now(timezone.utc)
+    cur = eng.ledger.get_state("train_boost_until")
+    start = max(now, datetime.fromisoformat(cur)) if cur else now          # clicking again extends the boost
+    until = min(start + timedelta(hours=min(max(hours, 1), 72)), now + timedelta(hours=72)).isoformat(timespec="seconds")
     eng.ledger.set_state("train_boost_until", until)
     if eng.ledger.contributed() < cfg.TRAIN_BOOST_CAPITAL_USD:      # paper top-up, a contribution — never profit
         eng.ledger.move_cash("deposit", cfg.TRAIN_BOOST_CAPITAL_USD - eng.ledger.contributed(), "treino intensivo")
     local = datetime.fromisoformat(until).astimezone(cfg.TZ).strftime("%d/%m %H:%M")
     eng.ledger.log_decision("boost", reason=f"🚀 treino intensivo até {local} (Lisboa): {cfg.TRAIN_BOOST_MAX_POSITIONS} vagas, sem limite diário")
     _apply_training_boost(eng)
+    job = paper_scheduler().get_job("arena_round")
+    if job:                                  # analyse right away instead of waiting for the next lab round
+        job.modify(next_run_time=datetime.now())
     return {"until": until}
 
 

@@ -80,7 +80,7 @@ def test_real_wallet_only_trusts_bots_with_lab_evidence(tmp_path, monkeypatch):
     from src.solana.llm_trader import TeamMember
     bots, _ = make_bots(tmp_path, {"claude-opus-5": "{}", "claude-haiku-5-5": "{}"})
     monkeypatch.setattr(arena, "_bots", bots)
-    monkeypatch.setattr(cfg, "GREEN_LIGHT_WINS", 2)
+    monkeypatch.setattr(cfg, "GREEN_LIGHT_WINS", 2); monkeypatch.setattr(cfg, "GREEN_LIGHT_TRADES", 2)
     led = bots["claude-opus-5"].ledger
     for i, px in enumerate((1.1, 1.2)):                      # two winning lab trades for opus, none for haiku
         led.append_fill(dict(order_id=f"b{i}", ts=f"2026-10-0{i + 1}T00:00:00+00:00", venue="hyperliquid", side="buy", mint="hl:BTC",
@@ -152,7 +152,7 @@ def test_green_light_needs_trades_profit_win_rate_and_profit_factor(tmp_path, mo
     from datetime import datetime, timedelta, timezone
     bots, _ = make_bots(tmp_path, {"claude-haiku-5-5": "{}"})
     monkeypatch.setattr(arena, "_bots", bots)
-    monkeypatch.setattr(cfg, "GREEN_LIGHT_WINS", 3)
+    monkeypatch.setattr(cfg, "GREEN_LIGHT_WINS", 3); monkeypatch.setattr(cfg, "GREEN_LIGHT_TRADES", 3)
     led = bots["claude-haiku-5-5"].ledger
     def trade(i, px):
         ts = (datetime.now(timezone.utc) - timedelta(hours=20 - i)).isoformat(timespec="seconds")
@@ -183,8 +183,11 @@ def test_training_boost_doubles_lab_slots_then_expires(tmp_path, monkeypatch):
     bots, _ = make_bots(tmp_path, {"claude-haiku-5-5": "{}"})
     monkeypatch.setattr(arena, "_bots", bots)
     eng = bots["claude-haiku-5-5"]
-    arena.boost_training("claude-haiku-5-5", 24)
+    first = arena.boost_training("claude-haiku-5-5", 24)["until"]
     assert eng.risk.max_positions == cfg.TRAIN_BOOST_MAX_POSITIONS and eng.risk.max_entries_per_day > 1000
+    from datetime import datetime
+    second = arena.boost_training("claude-haiku-5-5", 24)["until"]          # clicking again extends it by 24h
+    assert abs((datetime.fromisoformat(second) - datetime.fromisoformat(first)).total_seconds() - 24 * 3600) < 5
     eng.ledger.set_state("train_boost_until", "2000-01-01T00:00:00+00:00")
     arena._apply_training_boost(eng)
     assert eng.risk.max_positions == cfg.LAB_MAX_POSITIONS

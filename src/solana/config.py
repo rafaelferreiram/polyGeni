@@ -152,13 +152,15 @@ LAB_MAX_ENTRIES_PER_DAY = _i("LAB_MAX_ENTRIES_PER_DAY", 48)
 # "treino intensivo": one slot per coin and more paper capital for 24h, so slots never limit how many lab trades happen
 TRAIN_BOOST_MAX_POSITIONS = _i("TRAIN_BOOST_MAX_POSITIONS", 29)
 TRAIN_BOOST_CAPITAL_USD = _f("TRAIN_BOOST_CAPITAL_USD", 200.0)
-# green light to real money (bots not in REAL_TRUSTED_BOTS): at least GREEN_LIGHT_WINS winning lab trades, net profit
-# after their AI cost, win rate and profit factor at least these (the user's rule: 10 wins with good accuracy)
-GREEN_LIGHT_WINS = _i("GREEN_LIGHT_WINS", 10)
-GREEN_LIGHT_WIN_RATE = _f("GREEN_LIGHT_WIN_RATE", 0.5)
+# green light to real money (bots not in REAL_TRUSTED_BOTS): at least GREEN_LIGHT_TRADES closed lab trades with
+# GREEN_LIGHT_WINS winners, net profit after AI cost, win rate and profit factor at least these (user's rule: 20 trades, 12 wins)
+GREEN_LIGHT_TRADES = _i("GREEN_LIGHT_TRADES", 20)
+GREEN_LIGHT_WINS = _i("GREEN_LIGHT_WINS", 12)
+GREEN_LIGHT_WIN_RATE = _f("GREEN_LIGHT_WIN_RATE", 0.6)
 GREEN_LIGHT_PROFIT_FACTOR = _f("GREEN_LIGHT_PROFIT_FACTOR", 1.2)
 # self-pause: a bot with nothing to do sleeps (up to BOT_MAX_SLEEP_MIN) and wakes early if price moves.
 # Off by default: the bots watch the market every cycle 24/7 (the AI pre-filter already keeps idle cycles free).
+PROTECT_PROFIT = os.getenv("PROTECT_PROFIT", "1") == "1"   # breakeven + trailing stop once a trade is halfway to target
 BOT_SELF_PAUSE = os.getenv("BOT_SELF_PAUSE", "0") == "1"
 BOT_MAX_SLEEP_MIN = _i("BOT_MAX_SLEEP_MIN", 120)
 # an AI bot may act on the REAL wallet only after this many lab trades with positive expectancy

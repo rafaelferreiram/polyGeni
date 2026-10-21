@@ -15,6 +15,9 @@ logging.basicConfig(
 
 app = FastAPI(title="Kairos", version="1.0.0")
 
+from src.api import auth  # noqa: E402
+app.middleware("http")(auth.middleware)   # remote access: login + read-only; this Mac is unaffected
+
 app.include_router(router, prefix="/api")
 app.include_router(paper_router, prefix="/api/paper")
 

@@ -113,7 +113,7 @@ the others must first show ≥ 10 profitable lab trades.
   was bought) and to sell it now at market (`POST /api/paper/account/close`; the exchange stop/target are cancelled).
 - **Lab → real money (green light)**: the lab runs every bot with $100 of paper capital, up to 8 positions and 48
   entries a day, but the real account's trade size, leverage and stops, so evidence piles up faster without changing what
-  a trade is. A bot outside `REAL_TRUSTED_BOTS` reaches real money when it has ≥ 10 winning lab trades, win rate ≥ 50%, profit
+  a trade is. A bot outside `REAL_TRUSTED_BOTS` reaches real money when it has ≥ 20 closed lab trades with ≥ 12 winners, win rate ≥ 60%, profit
   factor ≥ 1.2 and net profit after its AI cost (`GREEN_LIGHT_*`). "Treino intensivo" (`POST /api/paper/arena/train-boost`)
   gives a bot one lab slot per coin (29), $200 of paper capital and no daily cap for 24h — same entry rules. The AI bot is now also consulted on breakouts,
   strong whale buying and top-trader entries (still free HOLD when nothing is set up).
@@ -505,3 +505,20 @@ polyGeni/
 - The $10 → $20 goal requires finding 1-2 high-confidence trades — quality over quantity
 - Bitcoin markets tend to have the strongest signal from the log-normal model
 - Sports opportunities require an active H2H game scheduled (not season-long futures)
+
+## Remote access (phone, anywhere)
+
+- `scripts/kairos_tunnel.sh install` runs a Cloudflare quick tunnel to `127.0.0.1:8000` 24/7 (launchd `com.kairos.tunnel`);
+  `scripts/kairos_tunnel.sh url` prints its address. The Vercel project `kairos-bots` (https://kairos-bots.vercel.app) is a
+  single `vercel.json` rewrite to that address. The quick-tunnel address changes when cloudflared restarts (e.g. reboot):
+  add `VERCEL_TOKEN` to `.env` and run `scripts/kairos_tunnel.sh sync` to point Vercel at the new one.
+- From outside this Mac every page needs a login (`KAIROS_LOGIN_USER`, default `root`; `KAIROS_LOGIN_HASH` = pbkdf2 of the
+  password, see `src/api/auth.py`), sessions last 7 days, 5 wrong passwords lock login for 15 minutes, and the session is
+  read-only: buying, selling, Start/Stop and the kill switch only work on the Mac.
+- Dashboard has **Lite** (balance, profit, positions, team, vital signs, closed trades) and **Pro** (everything); phones start in Lite.
+
+## Exits
+
+Stop 2 ATR, target 3 ATR and a max holding time per bot. Once a trade is halfway to its target the stop moves to breakeven
+(+0.3% for fees) and then trails 1 ATR below the price (`PROTECT_PROFIT=1`), so winners are held but never turn into losers.
+On the real account the exchange stop stays at the original level as a backstop; the raised stop is enforced by the bot.

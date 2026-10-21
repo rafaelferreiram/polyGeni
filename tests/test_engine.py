@@ -352,3 +352,12 @@ def test_manual_exit_closes_a_position_and_records_it(ledger):
     assert ledger.decisions(5, kind="exit")[0]["reason"] == "fechada manualmente pelo painel"
     with pytest.raises(ValueError):
         eng.manual_exit(mint)
+
+
+def test_protected_stop_breakeven_then_trails():
+    from src.solana.engine import protected_stop
+    pos = {"stop_price": 98.0, "tp_price": 103.0, "qty": 1.0, "cost_usd": 100.0}
+    assert protected_stop(pos, 101.0) is None                     # not halfway yet: keep the original stop
+    assert abs(protected_stop(pos, 101.6) - 100.6) < 1e-9         # halfway: stop above entry, 1 ATR below the price
+    assert abs(protected_stop(pos, 102.9) - 101.9) < 1e-9         # and it keeps trailing up
+    assert protected_stop({**pos, "stop_price": 102.0}, 102.9) is None   # never lowers the stop

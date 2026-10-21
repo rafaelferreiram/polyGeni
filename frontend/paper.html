@@ -417,6 +417,24 @@
       .team, .line { grid-template-columns: 1fr; }
       .fi { flex-wrap: wrap; gap: 2px 10px; }
     }
+
+    /* Lite = only what answers "is it working, am I making money, what are the bots doing" */
+    .tb.boostable { cursor: pointer; } body.ro .tb.boostable { cursor: default; }
+    #view-seg button { min-width: 52px; } .logout { color: var(--muted); font-size: 13px; padding: 4px 10px; }
+    body.lite :is(#termometro, #metas, #lucro, #confianca, #logs, #treino, #room, #g-oport, #radar, #baleias,
+      #toptraders, #g-hist, #analise, #transacoes, #relatorio, #g-sist, #fundos, #conexoes, #avancado,
+      #mode-seg, .boost, .legend, .panel h2 .note, .kpi .s, .sb-nav, .logo small) { display: none !important; }
+    body.lite .kpi .v { font-size: 30px; }
+    /* remote (through the internet) is read-only: hide every control that changes something */
+    body.ro :is(#btn-go, #mode-seg, #btn-coffee, #btn-scan, .boost, .posd-actions, #avancado, #alert button,
+      .tboost) { display: none !important; }
+    @media (max-width: 600px) {
+      .strip { font-size: 11px; padding: 5px 12px; }
+      .logo small { display: none; }
+      header .ctrls { gap: 8px; }
+      .panel h2 .note { text-transform: none; letter-spacing: 0; flex-basis: 100%; }
+      button, select, .seg button { min-height: 40px; }
+    }
   </style>
 </head>
 <body>
@@ -432,11 +450,15 @@
         <button data-m="rules" onclick="setMode('rules', this)">Só regras</button>
         <button data-m="llm" onclick="setMode('llm', this)">🧠 Equipe IA</button>
       </div>
+      <div class="seg" id="view-seg" role="group" aria-label="Quantidade de informação">
+        <button data-v="lite" onclick="setView('lite')" title="Só o essencial">Lite</button>
+        <button data-v="pro" onclick="setView('pro')" title="Tudo">Pro</button>
+      </div>
       <button class="go start" id="btn-go" onclick="go(this)">▶ Start</button>
     </div>
   </header>
   <div class="statusbar"><div class="sb-items" id="statusbar-items"></div>
-    <nav class="sb-nav" aria-label="Seções"><a href="#g-visao">Visão geral</a><a href="#posicoes">Posições</a><a href="#g-bots">Bots</a><a href="#ecg">Sinais vitais</a><a href="#g-oport">Mercado</a><a href="#g-hist">Histórico</a><a href="#g-sist">Sistema</a></nav></div>
+    <nav class="sb-nav" aria-label="Seções"><a href="#g-visao">Visão geral</a><a href="#posicoes">Posições</a><a href="#g-bots">Bots</a><a href="#ecg">Sinais vitais</a><a href="#g-oport">Mercado</a><a href="#g-hist">Histórico</a><a href="#g-sist">Sistema</a></nav><a class="logout" id="logout" href="/logout" hidden>Sair</a></div>
   <div class="alert" id="alert" hidden><span>🛑 <span id="alert-text"></span></span><button onclick="killReset(this)">Rearmar</button></div>
   <div class="scanbar" id="scanbar" hidden><span class="spin"></span><span id="scan-text">Analisando o mercado…</span></div>
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
@@ -519,7 +541,7 @@
         <button onclick="startBoost(this)">Ativar</button>
         <span class="note" id="boost-status"></span>
       </div>
-      <div class="legend"><span>⚽ Titular = já opera dinheiro real</span><span>🪑 Reserva = em treino: entra no jogo com 10 vitórias, acerto ≥ 50% e lucro</span><span>👆 passe o mouse no robô para detalhes</span></div>
+      <div class="legend"><span>⚽ Titular = já opera dinheiro real</span><span>🪑 Reserva = em treino: entra no jogo com 20 trades, 12 vitórias e lucro</span><span>👆 toque num reserva para dar boost no treino</span></div>
     </section>
     <section class="panel" id="ecg">
       <h2><span>💓 Sinais vitais <span class="tag ecg-state" id="ecg-state">–</span></span><span class="note">cada batimento é uma ação real dos bots</span></h2>
@@ -561,12 +583,6 @@
       <div class="tbl radar-tbl"><table id="radar-table"></table></div>
       <div class="legend"><span>Clique numa moeda para ver o gráfico</span></div>
     </section>
-    <section class="panel" id="grafico">
-      <h2><span>📈 Gráfico <span class="tag">velas de 1h · Hyperliquid</span></span>
-        <span class="ctrls"><select id="chart-coin" aria-label="Moeda" onchange="loadChart()"></select></span></h2>
-      <div id="chart" class="chartbox"></div>
-      <div class="legend" id="chart-legend"></div>
-    </section>
     <section class="panel" id="baleias">
       <h2><span>🐋 Baleias <span class="tag" id="whale-tag">–</span></span><span class="note" id="whale-head"></span></h2>
       <div class="whale-grid">
@@ -584,14 +600,6 @@
       <div class="note" style="margin:14px 0 8px">Últimos movimentos deles (comparados a cada 2 min)</div>
       <div class="tbl" style="max-height:260px"><table id="top-moves"></table></div>
       <div class="legend"><span>Os 10 mais lucrativos e consistentes do ranking público · o Veiga copia quando ≥ 2 deles compram</span></div>
-    </section>
-    <section class="panel" id="noticias">
-      <h2><span>📰 Notícias <span class="tag" id="news-tag">–</span></span>
-        <span class="ctrls"><select id="news-coin" aria-label="Moeda" onchange="newsAll = true; loadNews()"><option value="">Todas as moedas</option></select>
-          <button id="news-all" onclick="newsAll = !newsAll; loadNews()">Ver todas</button></span></h2>
-      <div class="hot" id="news-hot"></div>
-      <div class="news" id="news"></div>
-      <div class="legend"><span>CoinDesk · Cointelegraph · Decrypt · The Block</span></div>
     </section>
     <h3 class="band" id="g-hist">Histórico</h3>
     <section class="panel" id="analise">
@@ -643,6 +651,6 @@
 
   <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <script src="https://unpkg.com/qrcode-generator@1.4.4/qrcode.js"></script>
-  <script src="/static/paper.js?v=66"></script>
+  <script src="/static/paper.js?v=69"></script>
 </body>
 </html>

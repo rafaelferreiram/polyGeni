@@ -85,13 +85,29 @@ async function run(btn, busyLabel, fn, okMsg) {
 }
 
 // ─── account: simulation and real are the same view ───
-let KIND = "sim";
-try { KIND = localStorage.getItem("acct") || "sim"; } catch (e) { /* storage blocked */ }
+let KIND = "real";
+try { KIND = localStorage.getItem("acct") || "real"; } catch (e) { /* storage blocked */ }
+
+// Lite / Pro: phones start in Lite; the choice is remembered per device
+function setView(v) {
+  document.body.classList.toggle("lite", v === "lite");
+  document.querySelectorAll("#view-seg button").forEach((b) => b.classList.toggle("on", b.dataset.v === v));
+  try { localStorage.setItem("view", v); } catch (e) { /* ignore */ }
+}
+let VIEW = matchMedia("(max-width: 700px)").matches ? "lite" : "pro";
+try { VIEW = localStorage.getItem("view") || VIEW; } catch (e) { /* storage blocked */ }
+// opened from the internet (tunnel/Vercel): the server allows reading only, so hide the controls
+const REMOTE = !["127.0.0.1", "localhost", "[::1]"].includes(location.hostname);
+document.addEventListener("DOMContentLoaded", () => {
+  setView(VIEW);
+  document.body.classList.toggle("ro", REMOTE);
+  if (REMOTE) document.getElementById("logout").hidden = false;
+});
 let acc = null;
 
 function setKind(k) {
   KIND = k;
-  setTimeout(() => { safe(loadChart); safe(loadEquityChart); safe(loadHistory); }, 800);
+  setTimeout(() => { safe(loadEquityChart); safe(loadHistory); }, 800);
   setTimeout(() => safe(loadDaily), 0);
   try { localStorage.setItem("acct", k); } catch (e) { /* ignore */ }
   replay = null;
@@ -368,15 +384,14 @@ function radarVerdict(r) {
   const a = acc, held = a.positions.some((p) => p.symbol === r.symbol);
   const slots = (a.limits.max_positions || 3) - a.positions.length;
   const whale = lastWhales?.coins?.[r.symbol]?.pressure;
-  const news = newsMentions[r.symbol] ? ` · 📰 ${newsMentions[r.symbol]}` : "";
-  if (held) return `📦 já em carteira${news}`;
+  if (held) return `📦 já em carteira`;
   if (a.kill_switch?.active) return "🛑 não: kill switch";
   if (a.goals?.hit && a.goals?.rest) return "😴 não hoje: meta batida";
-  if (r.status === "pronto") return slots > 0 ? `✅ <b>sim</b>, no próximo ciclo (${esc(r.ready_by === "quedas" ? "São Marcos" : "Endrick")})${whale === "vendendo" ? " · ⚠️ baleias vendendo" : ""}${news}`
-                                              : `⏸ pronto, mas sem vaga (${a.positions.length} posições)${news}`;
-  if (r.status === "perto") return `👀 se ${r.up && r.dip_pct > -1.5 ? `cair até ${fmtPx(r.dip_at)}` : `romper ${fmtPx(r.break_at)}`}${whale === "comprando" ? " · 🐋 baleias comprando" : ""}${news}`;
-  if (r.status === "aguardando") return `⏳ ainda não (longe da linha)${news}`;
-  return `🚫 não: em baixa${news}`;
+  if (r.status === "pronto") return slots > 0 ? `✅ <b>sim</b>, no próximo ciclo (${esc(r.ready_by === "quedas" ? "São Marcos" : "Endrick")})${whale === "vendendo" ? " · ⚠️ baleias vendendo" : ""}`
+                                              : `⏸ pronto, mas sem vaga (${a.positions.length} posições)`;
+  if (r.status === "perto") return `👀 se ${r.up && r.dip_pct > -1.5 ? `cair até ${fmtPx(r.dip_at)}` : `romper ${fmtPx(r.break_at)}`}${whale === "comprando" ? " · 🐋 baleias comprando" : ""}`;
+  if (r.status === "aguardando") return `⏳ ainda não (longe da linha)`;
+  return `🚫 não: em baixa`;
 }
 
 // ─── daily goals: what the bots aim for today vs what they did ───
@@ -431,8 +446,7 @@ async function openPos(mint) {
       ${row("Quantidade", `${Number(p.qty).toPrecision(6)} ${esc(p.symbol)}`)}${row("Funding pago", usd(p.funding_usd, 4))}
     </div>
     ${p.entry_reason ? `<div class="note" style="margin-top:8px">Por que comprou: ${esc(p.entry_reason)}</div>` : ""}
-    <div class="posd-actions"><button class="sell" onclick="sellPos('${esc(mint)}', this)">🔴 Vender agora (preço de mercado)</button>
-      <button onclick="showChart('${esc(p.symbol)}')">📈 Ver gráfico</button></div>`;
+    <div class="posd-actions"><button class="sell" onclick="sellPos('${esc(mint)}', this)">🔴 Vender agora (preço de mercado)</button></div>`;
   box.hidden = false;
   if (acc) renderPositions(acc);
 }
@@ -454,7 +468,7 @@ function renderRadar(a) {
   document.getElementById("radar-all").textContent = radarAll ? "Ver só as melhores" : `Ver todas (${w.length})`;
   const near = w.filter((r) => r.status === "pronto" || r.status === "perto").length;
   document.getElementById("radar-head").textContent = a.market_temp?.ts ? `${near} perto de compra · atualizado há ${ago(a.market_temp.ts)}` : "aguardando a primeira análise";
-  const rows = (radarAll ? w : w.slice(0, 8)).map((r) => `<tr onclick="showChart('${esc(r.symbol)}')" title="ver gráfico">
+  const rows = (radarAll ? w : w.slice(0, 8)).map((r) => `<tr>
     <td>${coin(r.symbol)}<br><span class="muted">${r.ch24 >= 0 ? "+" : ""}${r.ch24}% 24h</span></td>
     <td>${fmtPx(r.price)}</td>
     <td>${r.strong ? "⬆⬆ forte" : r.up ? "⬆ alta" : "⬇ baixa"}<br><span class="muted">RSI ${r.rsi}</span></td>
@@ -632,7 +646,9 @@ function renderTeam() {
     const chip = cls === "off" ? "⏸ Desligado" : cls === "nokey" ? "🔑 Falta chave" : cls === "working" ? "⚡ Analisando"
       : cls === "holding" ? `📦 Em posição: ${open.join(", ")}` : cls === "sleeping" ? `😴 Dorme até ${hhmm(r.sleep_until)}` : "👀 Vigiando";
     const now = last ? `${last.market ? `<b>${esc(last.market)}</b> · ` : ""}${esc(ACTION_PT[last.action] || last.action || "")}` : "ainda sem decisões";
-    return `<div class="tb ${cls}" tabindex="0" style="--c:${L.color}" aria-label="${esc(L.label)}: ${esc(state)}">
+    const boostable = r.green_light && !r.green_light.ok;      // reserve bots: tap the card to boost their training
+    return `<div class="tb ${cls}${boostable ? " boostable" : ""}" tabindex="0" style="--c:${L.color}" aria-label="${esc(L.label)}: ${esc(state)}"
+      ${boostable ? `onclick="trainBoost('${esc(m.model)}', this.querySelector('.tboost'))" title="toque para dar boost no treino"` : ""}>
       ${coffee && cls !== "off" ? '<span class="cup" title="com cafeína: sem pausas">☕</span>' : ""}
       <div class="head">${botFace(L.color, L.ico)}
         <div><div class="nm">${esc(L.label)}${r.model_now && r.model_now !== m.model ? ` <small class="green">🚀 ${esc(look(r.model_now).label)}</small>` : ""}</div><div class="rl">${esc(L.role)}</div></div></div>
@@ -673,20 +689,22 @@ function greenLine(g) {
   if (!g) return "";
   if (g.trusted) return `<div class="gl ok" title="validado no backtest — opera na conta real">✅ conta real</div>`;
   if (g.ok) return `<div class="gl ok" title="passou no laboratório: ${g.trades} trades, acerto ${pct(g.win_rate)}, fator ${g.profit_factor}">🟢 luz verde · conta real</div>`;
-  const w = clamp01(g.wins / g.needed) * 100;
-  return `<div class="gl" title="Para a conta real: ${g.needed} trades vencedores, acerto ≥ 50%, fator de lucro ≥ 1,2, lucro líquido > 0. Falta: ${(g.missing || []).join(", ")}">
-    <span>🚦 ${g.wins}/${g.needed} vitórias${g.trades ? ` · ${pct(g.win_rate)} · PF ${g.profit_factor}` : ""}</span><i style="width:${w.toFixed(0)}%"></i></div>`;
+  const w = Math.min(clamp01(g.wins / g.needed), clamp01(g.trades / (g.needed_trades || 1))) * 100;
+  return `<div class="gl" title="Para a conta real: ${g.needed_trades} trades no laboratório, ${g.needed} vencedores, acerto ≥ 60%, fator de lucro ≥ 1,2, lucro líquido > 0. Falta: ${(g.missing || []).join(", ")}">
+    <span>🚦 ${g.trades}/${g.needed_trades} trades · ✅ ${g.wins}/${g.needed} · ❌ ${g.trades - g.wins}${g.trades ? ` · acerto ${pct(g.win_rate)} · ${pnl(g.net_usd)}` : ""}</span><i style="width:${w.toFixed(0)}%"></i></div>`;
 }
 function trainButton(model, r) {
   if (!r?.green_light || r.green_light.ok) return "";
   const until = r.train_boost_until && new Date(r.train_boost_until) > new Date() ? r.train_boost_until : null;
   const scan = r.ai_full_scan_until && new Date(r.ai_full_scan_until) > new Date() ? `<div class="gl ok">🧠 analisa as 29 moedas a cada hora até ${hhmm(r.ai_full_scan_until)}</div>` : "";
-  return scan + (until ? `<button class="tboost on" disabled>🚀 treino intensivo até ${hhmm(until)}</button>`
-               : `<button class="tboost" onclick="trainBoost('${esc(model)}', this)">🚀 Treino intensivo 24h</button>`);
+  return scan + `<button class="tboost${until ? " on" : ""}" onclick="event.stopPropagation(); trainBoost('${esc(model)}', this)">` +
+    (until ? `🚀 treino até ${hhmm(until)} · +24h` : "🚀 Treino intensivo 24h") + "</button>";
 }
 function trainBoost(model, btn) {
+  if (REMOTE || !btn) return;
+  if (!confirm(`Dar boost no ${look(model).label}? +24h de treino intensivo no laboratório (dinheiro falso): mais vagas, sem limite diário e análise agora. As regras de compra, stops e alvos não mudam.`)) return;
   run(btn, "Ativando…", () => api("/arena/train-boost", "POST", { bot: model, hours: 24 }),
-      `🚀 ${look(model).label} em treino intensivo por 24h: 29 vagas e $200 simulados, mesmas regras`);
+      `🚀 ${look(model).label} em treino intensivo: 29 vagas, $200 simulados, analisando agora`);
 }
 
 safe(refresh); safe(loadArena);
@@ -874,47 +892,10 @@ safe(loadWhales);
 setInterval(() => safe(loadWhales), 10000);
 
 // ─── charts (TradingView lightweight-charts): candles + EMAs + entry/stop/target + the bots' buy levels ───
-let chart = null, candleS = null, ema50S = null, ema200S = null, priceLines = [], eqChart = null, eqS = null, btcS = null;
+let eqChart = null, eqS = null, btcS = null;
 const CHART_OPTS = { layout: { background: { color: "transparent" }, textColor: "#8a9690" },
   grid: { vertLines: { color: "rgba(255,255,255,.04)" }, horzLines: { color: "rgba(255,255,255,.04)" } },
   rightPriceScale: { borderColor: "#222a26" }, timeScale: { borderColor: "#222a26", timeVisible: true }, autoSize: true };
-const emaSeries = (vals, n) => { const k = 2 / (n + 1); let e = vals[0].value; return vals.map((v) => ({ time: v.time, value: (e = v.value * k + e * (1 - k)) })); };
-function showChart(coin) {
-  document.getElementById("chart-coin").value = coin;
-  safe(loadChart);
-  document.getElementById("grafico").scrollIntoView({ behavior: "smooth", block: "start" });
-}
-async function loadChart() {
-  if (!window.LightweightCharts || !acc) return;
-  const sel = document.getElementById("chart-coin");
-  if (!sel.options.length) {
-    sel.innerHTML = acc.limits.markets.map((m) => `<option>${esc(m)}</option>`).join("");
-    sel.value = acc.positions[0]?.symbol || acc.market_temp?.watch?.[0]?.symbol || "BTC";
-  }
-  const coin = sel.value;
-  const { candles } = await api(`/candles?coin=${encodeURIComponent(coin)}`);
-  if (!chart) {
-    chart = LightweightCharts.createChart(document.getElementById("chart"), CHART_OPTS);
-    candleS = chart.addCandlestickSeries({ upColor: "#34d399", downColor: "#f87171", borderVisible: false, wickUpColor: "#34d399", wickDownColor: "#f87171" });
-    ema50S = chart.addLineSeries({ color: "#7dd3fc", lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
-    ema200S = chart.addLineSeries({ color: "#fbbf24", lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
-  }
-  const data = candles.map((c) => ({ time: c.t, open: c.open, high: c.high, low: c.low, close: c.close }));
-  candleS.setData(data);
-  const closes = data.map((d) => ({ time: d.time, value: d.close }));
-  ema50S.setData(emaSeries(closes, 50).slice(50));
-  ema200S.setData(emaSeries(closes, 200).slice(150));
-  priceLines.forEach((l) => candleS.removePriceLine(l));
-  priceLines = [];
-  const line = (price, color, title, style = 0) => price && priceLines.push(candleS.createPriceLine({ price, color, lineWidth: 1, lineStyle: style, axisLabelVisible: true, title }));
-  const pos = acc.positions.find((p) => p.symbol === coin);
-  if (pos) { line(pos.entry_price, "#e8eeeb", "entrada"); line(pos.stop_price, "#f87171", "stop"); line(pos.tp_price, "#34d399", "alvo"); }
-  const r = (acc.market_temp?.watch || []).find((x) => x.symbol === coin);
-  if (r && !pos) { if (r.up) line(r.dip_at, "#a3b1ab", "São Marcos compra abaixo", 2); if (r.strong) line(r.break_at, "#67e8f9", "Endrick compra acima", 2); }
-  document.getElementById("chart-legend").innerHTML = `<span><span style="color:#7dd3fc">━</span> EMA50</span><span><span style="color:#fbbf24">━</span> EMA200 (preço acima = tendência de alta)</span>` +
-    (pos ? `<span>posição aberta: entrada ${fmtPx(pos.entry_price)} · stop ${fmtPx(pos.stop_price)} · alvo ${fmtPx(pos.tp_price)}</span>`
-         : r ? `<span>linhas tracejadas = onde os bots comprariam · ${esc(STATUS_PT[r.status] || r.status)}</span>` : "");
-}
 async function loadEquityChart() {
   if (!window.LightweightCharts) return;
   const { rows } = await api(`/account/equity?kind=${KIND}`);
@@ -929,31 +910,9 @@ async function loadEquityChart() {
   eqS.setData(pts.map((r) => ({ time: r.time, value: r.equity })));
   btcS.setData(b0 ? pts.filter((r) => r.btc).map((r) => ({ time: r.time, value: e0 * r.btc / b0 })) : []);
 }
-setTimeout(() => { safe(loadChart); safe(loadEquityChart); }, 2500);
-setInterval(() => safe(loadChart), 60000);
+setTimeout(() => safe(loadEquityChart), 2500);
 setInterval(() => safe(loadEquityChart), 60000);
 
-// ─── news: what the crypto press talks about now (top 5), or every story on demand ───
-let newsAll = false, newsMentions = {};
-function newsCoin(c) { document.getElementById("news-coin").value = c; newsAll = true; safe(loadNews); }
-async function loadNews() {
-  const sel = document.getElementById("news-coin");
-  if (sel.options.length === 1 && acc) sel.innerHTML += acc.limits.markets.map((m) => `<option>${esc(m)}</option>`).join("");
-  const t = await api("/news/trending?hours=12");
-  newsMentions = t.mentions || {};
-  document.getElementById("news-all").textContent = newsAll ? "Só as 5 em alta" : "Ver todas";
-  setHTML("news-hot", t.coins.length ? `<span class="note">🔥 Em alta nas notícias (12h):</span>` +
-    t.coins.map((c) => `<span class="h" onclick="newsCoin('${esc(c.coin)}')"><b>${esc(c.coin)}</b> ${c.mentions} notícia${c.mentions > 1 ? "s" : ""}</span>`).join("") : "");
-  const r = newsAll ? await api(`/news${sel.value ? `?coin=${encodeURIComponent(sel.value)}` : ""}`) : { status: { ok: true }, items: t.headlines };
-  const tag = document.getElementById("news-tag");
-  tag.textContent = newsAll ? `${r.items.length} nas últimas 24h` : `top ${r.items.length} de ${t.total} notícias (12h)`;
-  if (!newsAll) sel.value = "";
-  setHTML("news", r.items.length ? r.items.map((i) => `<div class="ni"><span class="w">há ${ago(new Date(i.ts * 1000).toISOString())}</span>
-    <span><a href="${esc(i.url)}" target="_blank" rel="noopener">${esc(i.title)}</a>${i.coins.map((c) => `<span class="coin-tag">${coinIcon(c)}${esc(c)}</span>`).join("")}
-    <br><span class="src">${esc(i.source)}</span></span></div>`).join("") : '<div class="empty">Sem notícias para este filtro nas últimas 24h.</div>');
-}
-setTimeout(() => safe(loadNews), 1500);
-setInterval(() => safe(loadNews), 120000);
 
 // ─── collapsible sections (remembered in this browser) ───
 // secondary panels start minimized on a first visit; after that the user's own choice is remembered

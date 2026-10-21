@@ -298,6 +298,9 @@ class Ledger:
     def set_mark(self, mint: str, price: float, value: float):
         self._x("UPDATE positions SET mark_price=?, mark_value=? WHERE mint=?", (price, value, mint))
 
+    def set_stop(self, mint: str, stop: float):
+        self._x("UPDATE positions SET stop_price=? WHERE mint=?", (stop, mint))
+
     def delete_position(self, mint: str):
         self._x("DELETE FROM positions WHERE mint=?", (mint,))
 

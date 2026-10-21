@@ -12,7 +12,9 @@ from tests.test_engine import Price, build
 @pytest.fixture
 def client(ledger, monkeypatch):
     monkeypatch.setattr(eng_mod, "_engine", build(ledger, Price(1.0)))
+    from src.api import auth
     from src.main import app
+    monkeypatch.setattr(auth, "is_local", lambda request: True)   # remote login is tested in test_auth.py
     return TestClient(app)
 
 
