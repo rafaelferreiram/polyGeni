@@ -61,6 +61,7 @@ async function run(btn, busyLabel, fn, okMsg) {
   } finally {
     btn.disabled = false;
     btn.classList.remove("busy");
+    if (btn.textContent === busyLabel) btn.textContent = label;   // buttons whose label isn't driven by refresh()
     safe(refresh);
   }
 }
@@ -89,6 +90,11 @@ function go(btn) {
       () => api(`/account/${on ? "stop" : "start"}`, "POST", { kind: KIND }),
       on ? "■ Equipa parada — não abre novas posições (stops continuam ativos)"
          : (r) => `▶ Equipa a trabalhar na carteira ${KIND === "sim" ? "simulada" : "REAL"}${r.llm_bots_need_key ? " — só o bot de Regras trabalha até pôr ANTHROPIC_API_KEY" : ""}`);
+}
+
+function scanNow(btn) {
+  run(btn, "A acordar a equipa…", () => api("/account/scan", "POST", { kind: KIND }),
+      (r) => (r.started ? "🔍 Equipa acordada — a analisar os mercados agora" : "Já está uma análise a correr"));
 }
 
 function setMode(mode, btn) {

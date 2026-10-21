@@ -613,6 +613,12 @@ def account_scan(req: Kind):
     running = hl_live.is_armed() if req.kind == "real" else hl_live.get_shadow_engine().ledger.get_state("running", False)
     if not running:
         raise HTTPException(400, "carregue em Start primeiro")
+    # a manual scan wakes the wallet and the whole team (self-pause is only for unattended running)
+    from src.solana import arena
+    for eng in [_account_engine(req.kind), *arena.bots().values()]:
+        eng.ledger.set_state("sleep", {})
+        eng.ledger.set_state("idle_streak", 0)          # back-off restarts short after a manual look
+    threading.Thread(target=arena.run_round, daemon=True).start()
     return {"started": _scan_in_background(req.kind)}
 
 

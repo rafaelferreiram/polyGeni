@@ -193,3 +193,14 @@ def test_executor_refuses_order_not_approved_by_risk(ledger):
     assert ledger.fills() == []
     ex.open("o2", candidate(), sig, 10.0, approved)
     assert len(ledger.fills()) == 1
+
+
+def test_sleeping_wallet_skips_entries_until_woken(ledger):
+    from datetime import datetime, timedelta, timezone
+    eng = build(ledger, Price(1.0))
+    until = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(timespec="seconds")
+    ledger.set_state("sleep", {"until": until, "reason": "test", "prices": {}})
+    s = eng.run_cycle()
+    assert s["entries"] == 0 and s["sleeping_until"] == until
+    ledger.set_state("sleep", {})                           # what "Analisar agora" does
+    assert eng.run_cycle()["entries"] == 1
