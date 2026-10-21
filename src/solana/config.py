@@ -75,7 +75,10 @@ DEBATE_MCP_SERVERS = os.getenv("DEBATE_MCP_SERVERS", "")
 # ─── Hyperliquid PAPER venue (public Info API only) ───
 HYPERLIQUID_INFO_URL = os.getenv("HYPERLIQUID_INFO_URL", "https://api.hyperliquid.xyz/info")
 HL_ENABLED = os.getenv("HL_ENABLED", "1") == "1"
-HL_MARKETS = [m for m in os.getenv("HL_MARKETS", "BTC,ETH,SOL,xyz:GOLD,xyz:SILVER").split(",") if m]
+# crypto first (more volatility); gold/silver are opt-in with HL_INCLUDE_METALS=1
+HL_INCLUDE_METALS = os.getenv("HL_INCLUDE_METALS", "0") == "1"
+_METALS = ["xyz:GOLD", "xyz:SILVER"] if HL_INCLUDE_METALS else []
+HL_MARKETS = [m for m in os.getenv("HL_MARKETS", "BTC,ETH,SOL,HYPE,XRP").split(",") if m] + _METALS
 HL_ALLOW_SHORT = False  # long-only in phase 1
 
 # Per-venue risk profile: Solana tokens get a small slice, majors/metals a bigger one with wider stops.
@@ -99,16 +102,21 @@ HL_ACCOUNT_ADDRESS = os.getenv("HL_ACCOUNT_ADDRESS", "")       # your MetaMask 0
 LIVE_TRADING_ALLOWED = os.getenv("LIVE_TRADING", "0") == "1"
 LIVE_DB_PATH = os.getenv("LIVE_DB_PATH", "./live.db")
 LIVE_CYCLE_SEC = _i("LIVE_CYCLE_SEC", 300)
-LIVE_MAX_CAPITAL_USD = _f("LIVE_MAX_CAPITAL_USD", 20.0)        # the bot never sizes off more than this
+LIVE_MAX_CAPITAL_USD = _f("LIVE_MAX_CAPITAL_USD", 20.0)        # the bots never size off more than this (raise it as the wallet grows)
 LIVE_MAX_POSITION_USD = _f("LIVE_MAX_POSITION_USD", 12.0)      # Hyperliquid minimum order is $10
-LIVE_MAX_POSITIONS = _i("LIVE_MAX_POSITIONS", 1)
+LIVE_MAX_POSITIONS = _i("LIVE_MAX_POSITIONS", 0)               # 0 = auto: capital // position size (max 6)
 LIVE_MAX_DAILY_LOSS_PCT = _f("LIVE_MAX_DAILY_LOSS_PCT", 0.10)
 LIVE_MAX_ENTRIES_PER_DAY = _i("LIVE_MAX_ENTRIES_PER_DAY", 3)
-HL_LIVE_MARKETS = [m for m in os.getenv("HL_LIVE_MARKETS", "BTC,ETH,SOL,xyz:GOLD,xyz:SILVER").split(",") if m]
+HL_LIVE_MARKETS = [m for m in os.getenv("HL_LIVE_MARKETS", "BTC,ETH,SOL,HYPE,XRP").split(",") if m] + _METALS
 
 # ─── Model arena: one paper bot per LLM, same markets and risk limits, separate portfolios ───
-ARENA_MODELS = [m for m in os.getenv("ARENA_MODELS", "claude-opus-5-5,claude-sonnet-5-5,claude-haiku-5-5").split(",") if m]
-ARENA_START_USDC = _f("ARENA_START_USDC", 100.0)
+# "rules" = deterministic baseline bot (no LLM, no API cost) that every model must beat
+ARENA_MODELS = [m for m in os.getenv("ARENA_MODELS", "rules,claude-fable-5-1,claude-opus-5-5,claude-opus-5,"
+                                                     "claude-sonnet-5-5,claude-haiku-5-5").split(",") if m]
+ARENA_START_USDC = _f("ARENA_START_USDC", 20.0)     # each bot gets what the real account would have
+# self-pause: a bot with nothing to do sleeps (up to BOT_MAX_SLEEP_MIN) and wakes early if price moves
+BOT_MAX_SLEEP_MIN = _i("BOT_MAX_SLEEP_MIN", 120)
+BOT_WAKE_MOVE_PCT = _f("BOT_WAKE_MOVE_PCT", 0.015)
 ARENA_CYCLE_SEC = _i("ARENA_CYCLE_SEC", 900)
 
 # ─── Simulation of the real account: same limits/markets as live, real mainnet books, fake money ───

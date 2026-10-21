@@ -173,8 +173,15 @@ def anthropic_llm(prompt: str, system: str = DEBATE_SYSTEM, max_searches: int = 
     """Claude via the official SDK with server-side web search (+ optional remote MCP servers)."""
     import anthropic
 
-    tools = [{"type": "web_search_20260209", "name": "web_search", "max_uses": max_searches}]
-    kwargs, betas = {}, ["server-side-fallback-2026-07-01"]
+    model = model or cfg.DEBATE_MODEL
+    # dynamic-filtering web search only on Opus/Sonnet; server-side refusal fallback not on Haiku
+    dynamic_search = model.startswith(("claude-opus", "claude-sonnet"))
+    tools = [{"type": "web_search_20260209" if dynamic_search else "web_search_20250305", "name": "web_search",
+              "max_uses": max_searches}]
+    kwargs, betas = {}, []
+    if model in ("claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5"):
+        kwargs["fallbacks"] = "default"
+        betas.append("server-side-fallback-2026-07-01")
     mcp = json.loads(cfg.DEBATE_MCP_SERVERS or "[]")  # [{"url":..., "name":..., "authorization_token":...}]
     if mcp:
         kwargs["mcp_servers"] = [{"type": "url", **s} for s in mcp]
@@ -182,8 +189,7 @@ def anthropic_llm(prompt: str, system: str = DEBATE_SYSTEM, max_searches: int = 
         betas.append("mcp-client-2025-11-20")
     client = anthropic.Anthropic(api_key=cfg.ANTHROPIC_API_KEY, timeout=120)
     resp = client.beta.messages.create(
-        model=model or cfg.DEBATE_MODEL, max_tokens=4000, system=system, betas=betas,
-        fallbacks="default", output_config={"effort": "low"}, tools=tools,
+        model=model, max_tokens=4000, system=system, betas=betas, output_config={"effort": "low"}, tools=tools,
         messages=[{"role": "user", "content": prompt}], **kwargs,
     )
     if resp.stop_reason == "refusal":
@@ -261,8 +267,13 @@ class RiskAgent:
             return Vote("risk", False, "already holding this token", d)
         if p.entries_today >= self.max_entries_per_day:
             return Vote("risk", False, f"daily entry cap ({self.max_entries_per_day}) reached", d)
-        if len(p.open_mints) >= self.max_positions:
-            return Vote("risk", False, f"max positions ({self.max_positions}) reached", d)
+        max_pos = self.max_positions
+        if not max_pos and self.max_position_usd:      # 0 = auto: one slot per max_position_usd of capital
+            cap = min(p.equity, self.max_capital_usd) if self.max_capital_usd else p.equity
+            max_pos = max(1, min(6, int(cap // self.max_position_usd)))
+        d["max_positions"] = max_pos
+        if len(p.open_mints) >= max_pos:
+            return Vote("risk", False, f"max positions ({max_pos}) reached", d)
         eq = min(p.equity, self.max_capital_usd) if self.max_capital_usd else p.equity
         strategy_room = eq * capital_pct - p.strategy_exposure.get(sig.strategy, 0)
         exposure_room = eq * self.max_exposure_pct - p.exposure

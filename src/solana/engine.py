@@ -34,7 +34,7 @@ class PaperEngine:
     def __init__(self, ledger: Ledger, scout, safety: SafetyAgent, strategies: list,
                  debate: DebateAgent, risk: RiskAgent, executor: ExecutorAgent,
                  candles_fn=md.pool_candles, max_hold_h: float = cfg.RISK_MAX_HOLD_H, research=None,
-                 bench_fn=None, profiles: dict | None = None, llm=None):
+                 bench_fn=None, profiles: dict | None = None, llm=None, coordinator=None):
         self.ledger, self.safety, self.strategies = ledger, safety, strategies
         self.scouts = scout if isinstance(scout, list) else [scout]
         self.debate, self.risk, self.executor = debate, risk, executor
@@ -44,9 +44,18 @@ class PaperEngine:
         self.bench_fn = bench_fn
         self.profiles = profiles if profiles is not None else cfg.MARKET_PROFILES
         self._busy = threading.Lock()   # scheduler and "scan now" must never run two cycles at once
-        self.llm = llm                  # LLMDecider used when decision_mode == "llm"
+        self.llm = llm                  # one LLMDecider, or a TEAM of bots sharing one wallet (see property)
+        self.coordinator = coordinator  # (market, team) -> team ordered best-first for that market
         self.research = research
         self._safety_logged: dict[str, float] = {}
+
+    @property
+    def llm(self):
+        return self.team[0] if self.team else None
+
+    @llm.setter
+    def llm(self, value):
+        self.team = value if isinstance(value, list) else ([value] if value else [])
 
     # ─── decision mode: deterministic rules or LLM (Risk keeps the hard limits in both) ───
     def decision_mode(self) -> str:
@@ -55,13 +64,19 @@ class PaperEngine:
     def set_decision_mode(self, mode: str):
         if mode not in ("rules", "llm"):
             raise ValueError("mode must be 'rules' or 'llm'")
-        if mode == "llm" and not (self.llm and self.llm.enabled):
+        if mode == "llm" and not any(d.enabled for d in self.team if getattr(d, "_rules", None) is None):
             raise ValueError("o modo LLM precisa de ANTHROPIC_API_KEY no .env")
         self.ledger.set_state("decision_mode", mode)
         self.ledger.log_decision("mode", cycle=self.cycle, reason=f"decision mode set to {mode}")
 
     def _deciders(self) -> list:
-        return [self.llm] if self.decision_mode() == "llm" and self.llm else self.strategies
+        return list(self.team) if self.decision_mode() == "llm" and self.team else self.strategies
+
+    def _ordered(self, c) -> list:
+        deciders = self._deciders()
+        if self.coordinator and len(deciders) > 1:
+            deciders = self.coordinator(c.symbol, deciders)
+        return deciders
 
     # ─── state helpers ───
     @property
@@ -164,10 +179,12 @@ class PaperEngine:
                 reason = f"take-profit hit ({price:.6g} >= {pos['tp_price']:.6g})"
             elif held_h >= self.max_hold_h:
                 reason = f"max holding time {self.max_hold_h:.0f}h reached"
-            elif self.decision_mode() == "llm" and self.llm and self.llm.enabled and pos.get("pool_address"):
+            elif self.decision_mode() == "llm" and self.team and pos.get("pool_address"):
+                # the bot that opened the position manages its exit
+                owner = next((d for d in self.team if d.name == pos["strategy"]), self.llm)
                 try:
                     fn = self.candles_fns.get(pos["venue"]) if self.candles_fns else self.candles_fn
-                    reason = self.llm.review_exit(pos, fn(pos["pool_address"])[:-1], price)
+                    reason = owner.review_exit(pos, fn(pos["pool_address"])[:-1], price) if owner.enabled else None
                 except Exception as e:
                     logger.warning(f"LLM exit review failed: {e}")
             if reason:
@@ -223,10 +240,13 @@ class PaperEngine:
             if not p.kill_switch and self.risk.daily_loss_breached(p):
                 self.trip_kill_switch(f"daily loss ≥ {self.risk.max_daily_loss_pct:.0%} "
                                       f"(${p.day_start_equity:.2f} → ${p.equity:.2f})")
-            if not self.kill_switch().get("active"):
-                self._entries(stats)
-            else:
+            if self.kill_switch().get("active"):
                 stats["skipped"] = "kill switch active"
+            elif self._sleeping(stats):
+                pass
+            else:
+                self._entries(stats)
+                self._maybe_sleep(stats)
         except Exception as e:
             logger.exception("cycle failed")
             self.ledger.log_decision("error", cycle=cycle, reason=f"cycle error: {e}")
@@ -249,6 +269,52 @@ class PaperEngine:
             logger.info(f"[paper] cycle {cycle}: {stats}")
         return stats
 
+    # ─── self-pause: nothing to do → sleep; price moves or open positions → wake ───
+    def _sleeping(self, stats: dict) -> bool:
+        sleep = self.ledger.get_state("sleep") or {}
+        if not sleep.get("until") or self.ledger.positions():
+            return False
+        if datetime.now(timezone.utc) >= _ts(sleep["until"]):
+            self.ledger.set_state("sleep", {})
+            return False
+        try:
+            prices = {c.mint: c.price_usd for s in self.scouts for c in s.candidates()}
+        except Exception:
+            prices = {}
+        for mint, px in prices.items():
+            ref = (sleep.get("prices") or {}).get(mint)
+            if ref and px and abs(px / ref - 1) >= cfg.BOT_WAKE_MOVE_PCT:
+                self.ledger.set_state("sleep", {})
+                self.ledger.log_decision("wake", cycle=self.cycle, mint=mint, reason=f"acordei: preço mexeu {px / ref - 1:+.1%}")
+                return False
+        stats["sleeping_until"] = sleep["until"]
+        self._agent("scout", last_reason=f"a dormir até {_ts(sleep['until']).astimezone().strftime('%H:%M')} — {sleep.get('reason', '')}"[:200])
+        return True
+
+    def _maybe_sleep(self, stats: dict):
+        if stats.get("entries") or self.ledger.positions() or stats.get("error"):
+            self.ledger.set_state("idle_streak", 0)
+            return
+        minutes, reason = None, ""
+        if self.decision_mode() == "llm" and self.team:
+            sugg = [d for t in self.team for d in t.last.values() if d.get("action") == "HOLD" and d.get("next_check_min")]
+            if sugg:
+                pick = min(sugg, key=lambda d: d["next_check_min"])
+                minutes = max(15, min(float(pick["next_check_min"]), cfg.BOT_MAX_SLEEP_MIN))
+                reason = f"LLM: nada a fazer — {pick.get('reason', '')}"[:160]
+        if minutes is None and not stats.get("signals"):
+            streak = self.ledger.get_state("idle_streak", 0) + 1
+            self.ledger.set_state("idle_streak", streak)
+            if streak >= 2:
+                minutes = min(15 * 2 ** (streak - 2), cfg.BOT_MAX_SLEEP_MIN)
+                reason = f"mercado sem sinais há {streak} ciclos"
+        if minutes:
+            until = datetime.now(timezone.utc) + timedelta(minutes=minutes)
+            self.ledger.set_state("sleep", {"until": until.isoformat(timespec="seconds"), "reason": reason,
+                                            "prices": getattr(self, "_last_prices", {})})
+            self.ledger.log_decision("sleep", cycle=self.cycle, reason=f"a dormir {minutes:.0f} min: {reason}")
+            stats["sleeping_until"] = until.isoformat(timespec="seconds")
+
     def _entries(self, stats: dict):
         candidates = []
         for scout in self.scouts:
@@ -257,6 +323,7 @@ class PaperEngine:
             except Exception as e:
                 self.ledger.log_decision("error", cycle=self.cycle, reason=f"scout {type(scout).__name__} failed: {e}")
         stats["candidates"] = len(candidates)
+        self._last_prices = {c.mint: c.price_usd for c in candidates}
         self.ledger.set_state("markets", [{"id": c.mint, "symbol": c.symbol, "venue": c.venue,
                                            "price": c.price_usd} for c in candidates])
         self._agent("scout", last_reason=f"{len(candidates)} candidates", approved=len(candidates))
@@ -289,15 +356,16 @@ class PaperEngine:
                 self.ledger.log_decision("error", cycle=self.cycle, mint=c.mint, symbol=c.symbol,
                                          reason=f"candles unavailable: {e}")
                 continue
-            for strat in self._deciders():
+            for strat in self._ordered(c):
                 if hasattr(strat, "decide"):
                     if not strat.enabled:
-                        self._agent("llm", last_reason="modo LLM sem ANTHROPIC_API_KEY — sem decisões", vetoed=1)
+                        self._agent(strat.name, last_reason="sem ANTHROPIC_API_KEY — este bot não decide", vetoed=1)
                         continue
                     sig = strat.decide(candles, {**c.summary(), "symbol": c.symbol, "venue": c.venue})
                     d = strat.last.get(c.symbol, {})
-                    self._agent("llm", last_reason=f"{c.symbol}: {d.get('action', 'HOLD')} — {d.get('reason', '')}"[:200],
-                                approved=int(sig is not None))
+                    msg = f"{c.symbol}: {d.get('action', 'HOLD')} — {d.get('reason', '')}"[:200]
+                    self._agent(strat.name, last_reason=msg, approved=int(sig is not None))
+                    self._agent("llm", last_reason=f"{strat.name} → {msg}"[:200], approved=int(sig is not None))
                 else:
                     sig = strat.signal(candles)
                 if sig is not None and profile.get("stop_mult", 1) != 1:

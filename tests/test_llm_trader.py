@@ -72,3 +72,34 @@ def test_llm_mode_needs_api_key(ledger, monkeypatch):
     eng.llm = LLMDecider()
     with pytest.raises(ValueError, match="ANTHROPIC_API_KEY"):
         eng.set_decision_mode("llm")
+
+
+def test_shared_wallet_team_coordinator_picks_one_bot(ledger, monkeypatch):
+    from src.solana.llm_trader import LLMDecider, TeamMember
+    calls = []
+    def fn(model, answer):
+        def f(prompt, system):
+            calls.append(model)
+            return answer
+        return f
+    a = TeamMember("claude-opus-5", llm_fn=fn("opus", '{"action":"BUY","stop_pct":0.05,"tp_pct":0.1,"reason":"opus likes it"}'))
+    b = TeamMember("claude-sonnet-5-5", llm_fn=fn("sonnet", '{"action":"BUY","stop_pct":0.05,"tp_pct":0.1,"reason":"sonnet likes it"}'))
+    eng = build(ledger, Price(1.0))
+    eng.llm = [a, b]
+    eng.coordinator = lambda market, team: [b, a]          # coordinator prefers sonnet for this market
+    eng.set_decision_mode("llm")
+    eng.run_cycle()
+    fills = ledger.fills()
+    assert len(fills) == 1 and fills[0]["strategy"] == "llm:claude-sonnet-5-5"   # one wallet, one position, attributed
+    assert calls == ["sonnet"]                                                    # opus not even asked once sonnet bought
+
+
+def test_team_member_reuses_lab_decision_for_same_candle():
+    from src.solana.llm_trader import LLMDecider, TeamMember
+    lab = LLMDecider(model="claude-opus-5", llm_fn=lambda p, s: '{"action":"BUY","stop_pct":0.04,"tp_pct":0.08,"reason":"lab"}')
+    c = flat_candles(60)
+    lab.decide(c, {"symbol": "BTC"})
+    member = TeamMember("claude-opus-5", lab_lookup=lambda m: lab,
+                        llm_fn=lambda p, s: (_ for _ in ()).throw(AssertionError("must not call the LLM again")))
+    sig = member.decide(c, {"symbol": "BTC"})
+    assert sig and sig.strategy == "llm:claude-opus-5" and sig.stop_pct == 0.04

@@ -123,6 +123,25 @@
     @keyframes pulse { to { opacity: .25; } }
     @keyframes zz { 0% { opacity: 0; transform: translate(0, 4px); } 50% { opacity: 1; } 100% { opacity: 0; transform: translate(6px, -8px); } }
     @media (prefers-reduced-motion: reduce) { .room *, .wire { animation: none !important; transition: none !important; } }
+    .team { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
+    .tb { background: var(--surface-2); border: 1px solid var(--border); border-radius: 14px; padding: 14px; position: relative;
+          transition: border-color .3s, box-shadow .3s, transform .3s; min-width: 0; }
+    .tb .head { align-items: flex-start; }
+    .tb .bot { --c: #9fe8c7; }
+    .tb .bot::before, .tb .bot::after { background: var(--c); box-shadow: 0 0 6px var(--c); }
+    .tb .meta { font-size: 12px; color: var(--muted); margin-top: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px; }
+    .tb .meta b { color: var(--text); font-variant-numeric: tabular-nums; }
+    .tb .bubble { min-height: 44px; }
+    .tb.working { border-color: var(--green); box-shadow: 0 0 0 1px var(--green), 0 0 24px var(--glow); transform: translateY(-3px); }
+    .tb.working .bot { animation: hop .9s ease-in-out infinite; border-color: var(--green); }
+    .tb.working .bot::before, .tb.working .bot::after { animation: scan 1s ease-in-out infinite; }
+    .tb.working .ant::after { background: var(--green); box-shadow: 0 0 10px var(--green); animation: pulse .5s infinite alternate; }
+    .tb.holding { border-color: rgba(52,211,153,.5); }
+    .tb.sleeping .bot::before, .tb.sleeping .bot::after { height: 2px; top: 19px; box-shadow: none; background: #7d8a84; animation: none; }
+    .tb.off { opacity: .5; filter: grayscale(.7); }
+    .tb.nokey .bubble { box-shadow: inset 3px 0 0 var(--yellow); }
+    .pill { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); white-space: nowrap; }
+    .pill.on { color: var(--green); border-color: rgba(52,211,153,.5); }
     .room-foot { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 14px; font-size: 12.5px; color: var(--muted); }
     .room-foot b { color: var(--text); }
 
@@ -168,8 +187,8 @@
         <button data-k="real" onclick="setKind('real')">💰 Real</button>
       </div>
       <div class="seg" id="mode-seg" role="group" aria-label="Quem decide">
-        <button data-m="rules" onclick="setMode('rules', this)">Regras</button>
-        <button data-m="llm" onclick="setMode('llm', this)">🧠 LLM</button>
+        <button data-m="rules" onclick="setMode('rules', this)">Só regras</button>
+        <button data-m="llm" onclick="setMode('llm', this)">🧠 Equipa IA</button>
       </div>
       <button class="go start" id="btn-go" onclick="go(this)">▶ Start</button>
     </div>
@@ -187,8 +206,14 @@
       <div class="kpi"><div class="l">Trades · acerto</div><div class="v" id="k-tr">–</div><div class="s" id="k-tr-s">–</div></div>
     </section>
 
+    <section class="panel" id="team">
+      <h2><span>Equipa de bots <span class="tag">uma carteira, vários bots</span></span><span class="note" id="team-head"></span></h2>
+      <div class="team" id="team-grid"></div>
+      <p class="note" style="margin-top:12px">Cada bot pensa uma vez por hora em cada mercado. O Coordenador executa na carteira a proposta do bot com melhor histórico nesse mercado (medido no laboratório, onde cada bot tem $20 simulados).</p>
+    </section>
+
     <section class="panel">
-      <h2><span>Bots a trabalhar <span class="tag" id="room-tag">–</span></span><span class="note" id="room-head"></span></h2>
+      <h2><span>Como uma decisão é feita <span class="tag" id="room-tag">–</span></span><span class="note" id="room-head"></span></h2>
       <div class="room">
         <div class="line" id="line"></div>
         <div class="room-foot"><span id="room-left"></span><span id="room-right"></span></div>
@@ -211,10 +236,8 @@
         <div id="wallets"></div>
       </section>
       <section class="panel" id="arena">
-        <h2><span>Arena de modelos <span class="tag">simulação</span></span>
-          <span class="ctrls"><select id="live-model" onchange="setLiveModel(this)" title="Modelo que decide no modo LLM"></select>
-          <button id="btn-arena" onclick="toggleArena(this)">Iniciar arena</button></span></h2>
-        <p class="note">Um bot por modelo de IA, cada um com $100 falsos, mesmos mercados e limites. Custa tokens de API.</p>
+        <h2><span>Laboratório <span class="tag">cada bot com $20 simulados</span></span></h2>
+        <p class="note">Resultados de cada bot na sua própria carteira simulada — é daqui que o Coordenador aprende quem é melhor em cada mercado.</p>
         <div class="tbl"><table id="arena-table"></table></div>
       </section>
     </div>
@@ -232,6 +255,6 @@
     </details>
   </main>
 
-  <script src="/static/paper.js?v=11"></script>
+  <script src="/static/paper.js?v=13"></script>
 </body>
 </html>

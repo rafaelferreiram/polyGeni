@@ -40,3 +40,5 @@ def startup():
         paper_engine.start()
     from src.solana import hl_live
     hl_live.schedule()   # the live job only trades while armed (state persists in live.db)
+    from src.solana import arena
+    arena.resume_if_running()

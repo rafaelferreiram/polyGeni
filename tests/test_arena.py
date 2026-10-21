@@ -45,7 +45,31 @@ def test_each_model_trades_its_own_book(tmp_path, monkeypatch):
     assert next(r for r in board if r["model"] == "claude-opus-5-5")["open"]
 
 
-def test_arena_needs_api_key(monkeypatch):
+def test_without_api_key_only_rules_bot_works(tmp_path, monkeypatch):
     monkeypatch.setattr(cfg, "ANTHROPIC_API_KEY", "")
-    with pytest.raises(ValueError):
-        arena.set_running(True)
+    bots, calls = make_bots(tmp_path, {"claude-opus-5-5": '{"action":"BUY","stop_pct":0.05,"tp_pct":0.1}'})
+    rules = arena.build_bot("rules", db_dir=str(tmp_path), scout=__import__("tests.test_engine", fromlist=["FakeScout"]).FakeScout(),
+                            broker_factory=lambda l: PaperBroker(l, quote_fn=make_quote(1.0), sol_usd_fn=lambda: 100.0),
+                            candles_fn=lambda pool: flat_candles(60))
+    rules.ledger.set_state("running", True)
+    bots["rules"] = rules
+    monkeypatch.setattr(arena, "_bots", bots)
+    out = arena.run_round()
+    assert "rules" in out and "claude-opus-5-5" not in out and calls == []
+    row = next(r for r in arena.leaderboard() if r["model"] == "claude-opus-5-5")
+    assert row["needs_key"] and row["state"] == "sem chave API"
+
+
+def test_coordinator_ranks_by_lab_results(tmp_path, monkeypatch):
+    from src.solana.llm_trader import TeamMember
+    bots, _ = make_bots(tmp_path, {"claude-opus-5": "{}", "claude-sonnet-5-5": "{}"})
+    monkeypatch.setattr(arena, "_bots", bots)
+    # sonnet made money on SOL in the lab, opus lost
+    for model, exit_px in (("claude-sonnet-5-5", 1.2), ("claude-opus-5", 0.8)):
+        led = bots[model].ledger
+        led.append_fill(dict(order_id=f"{model}-b", ts="2026-10-01T00:00:00+00:00", venue="hyperliquid", side="buy", mint="hl:SOL",
+                             symbol="SOL", strategy=model, qty=10, decimals=0, usd_gross=10, fee_usd=0, price=1, quote_price=1))
+        led.append_fill(dict(order_id=f"{model}-s", ts="2026-10-02T00:00:00+00:00", venue="hyperliquid", side="sell", mint="hl:SOL",
+                             symbol="SOL", strategy=model, qty=10, decimals=0, usd_gross=10 * exit_px, fee_usd=0, price=exit_px, quote_price=exit_px))
+    team = [TeamMember("claude-opus-5"), TeamMember("claude-sonnet-5-5")]
+    assert [m.model for m in arena.rank("SOL", team)] == ["claude-sonnet-5-5", "claude-opus-5"]

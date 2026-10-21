@@ -206,7 +206,10 @@ class HyperliquidScout:
     def candidates(self) -> list[Candidate]:
         out = []
         for coin in self.markets:
-            ctx = self.ctx_fn(coin)
+            try:
+                ctx = self.ctx_fn(coin)
+            except RuntimeError:          # market not listed on this network (e.g. XRP on testnet)
+                continue
             mark = float(ctx["markPx"])
             out.append(Candidate(
                 mint=instrument_id(coin), symbol=coin, pair_address=coin, dex="hyperliquid", price_usd=mark,

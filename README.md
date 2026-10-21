@@ -55,6 +55,17 @@ Same engine and agents; only the broker is real (`HyperliquidLiveBroker`, offici
 - **Exchange is the truth:** native stop/TP exits are recorded from fills; untracked positions or equity drift trip
   the kill switch. Separate ledger `live.db`. "Fechar tudo" flattens and disarms; testnet has a "test order" button.
 
+### One wallet, a team of bots
+- **Team:** `ARENA_MODELS` (default `rules`, Fable 5.1, Opus 5.5, Opus 5, Sonnet 5.5, Haiku 5.5). Each bot runs in the
+  **lab** with its own $20 paper wallet and the real account's exact limits — that is how each model is measured.
+- **Shared wallet:** in "Equipa IA" mode every bot proposes for the same wallet (simulation or real); the
+  **Coordinator** executes the proposal of the bot with the best lab expectancy on that market. One wallet, no
+  double-spending, every trade attributed to the bot that made it. LLM bots reuse their lab decision for the same
+  candle (one call feeds both). Positions scale with capital (`LIVE_MAX_POSITIONS=0` = capital ÷ position size).
+- **Self-pause:** a bot with nothing to do sleeps (LLM suggests `next_check_min`, or idle-streak back-off up to
+  `BOT_MAX_SLEEP_MIN`) and wakes early when price moves `BOT_WAKE_MOVE_PCT` or a position needs watching.
+- Markets: crypto first (BTC, ETH, SOL, HYPE, XRP); gold/silver with `HL_INCLUDE_METALS=1`.
+
 ### Decision mode and model arena
 - **Regras | LLM** switch: in LLM mode an LLM (`llm_trader.py`) decides BUY/HOLD per market and SELL/HOLD for open
   positions, once per closed 1h candle. Risk still sets size and limits; LLM stops are clamped to 1–10%.

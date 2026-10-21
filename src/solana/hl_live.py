@@ -335,9 +335,21 @@ def get_live_engine() -> PaperEngine:
             default_strategies(), DebateAgent(), _risk(), ExecutorAgent(HyperliquidLiveBroker(ledger)),
             candles_fn={hl.VENUE: lambda coin: hl.candles(coin, url=url)},
             profiles={hl.VENUE: {"max_pos_pct": 1.0, "stop_mult": cfg.MARKET_PROFILES.get(hl.VENUE, {}).get("stop_mult", 1.5)}},
-            llm=LLMDecider(model=ledger.get_state("live_model") or cfg.DEBATE_MODEL),
+            llm=team(), coordinator=_coordinate,
         )
     return _live
+
+
+def team() -> list:
+    """All bots propose for the one shared wallet; LLM bots reuse their lab decision for the same candle."""
+    from src.solana import arena
+    from src.solana.llm_trader import TeamMember
+    return [TeamMember(m, lab_lookup=arena.lab_decider) for m in cfg.ARENA_MODELS]
+
+
+def _coordinate(market, members):
+    from src.solana import arena
+    return arena.rank(market, members)
 
 
 _shadow: PaperEngine | None = None
@@ -354,7 +366,7 @@ def get_shadow_engine() -> PaperEngine:
             ledger, [hl.HyperliquidScout(cfg.HL_LIVE_MARKETS)], _NoSafety(), default_strategies(), DebateAgent(),
             _risk(), ExecutorAgent(hl.HyperliquidPaperBroker(ledger)), candles_fn={hl.VENUE: hl.candles},
             profiles={hl.VENUE: {"max_pos_pct": 1.0, "stop_mult": cfg.MARKET_PROFILES.get(hl.VENUE, {}).get("stop_mult", 1.5)}},
-            llm=LLMDecider(), bench_fn=bench_prices,
+            llm=team(), coordinator=_coordinate, bench_fn=bench_prices,
         )
         if ledger.get_state("running") is None:
             ledger.set_state("running", True)
@@ -365,13 +377,8 @@ def shadow_cycle() -> dict | None:
     eng = get_shadow_engine()
     if not eng.ledger.get_state("running", False):
         return None
-    live = get_live_engine()
-    # mirror the real account's decision mode and model
-    mode = live.decision_mode()
-    if mode == "llm" and not (eng.llm and eng.llm.enabled):
-        mode = "rules"
-    eng.ledger.set_state("decision_mode", mode)
-    eng.llm.model = live.llm.model
+    # mirror the real account's decision mode (the team and coordinator are identical by construction)
+    eng.ledger.set_state("decision_mode", get_live_engine().decision_mode())
     return eng.run_cycle()
 
 
@@ -382,7 +389,7 @@ def shadow_status() -> dict:
     p = eng.portfolio()
     trades = led.closed_trades()
     return {"mode": "PAPER", "running": led.get_state("running", False), "scanning": eng.scanning(),
-            "decision_mode": eng.decision_mode(), "model": eng.llm.model if eng.llm else None,
+            "decision_mode": eng.decision_mode(), "model": "equipa",
             "start_usdc": cfg.SHADOW_START_USDC, "equity": round(p.equity, 4), "cash": round(p.cash, 4),
             "exposure": round(p.exposure, 4), "pnl_usd": round(p.equity - led.contributed(), 4),
             "performance": performance(led.equity_history(100_000)), "positions": led.positions(),

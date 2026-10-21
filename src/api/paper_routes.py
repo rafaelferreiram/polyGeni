@@ -436,7 +436,7 @@ def set_mode(req: Mode):
 def arena_board():
     from src.solana import arena, hl_live
     return {"mode": "PAPER", "models": cfg.ARENA_MODELS, "running": any(r["running"] for r in arena.leaderboard()),
-            "leaderboard": arena.leaderboard(), "live_model": hl_live.get_live_engine().llm.model}
+            "leaderboard": arena.leaderboard(), "live_model": "coordinator"}
 
 
 class Toggle(BaseModel):
@@ -514,8 +514,14 @@ def account(kind: str = "sim"):
     out = {
         "kind": kind, "money": "fake" if kind == "sim" else "real", "network": "mainnet" if kind == "sim" else hl_live.network(),
         "running": led.get_state("running", False) if kind == "sim" else hl_live.is_armed(),
-        "scanning": eng.scanning(), "decision_mode": eng.decision_mode(), "model": eng.llm.model if eng.llm else None,
-        "llm_available": bool(eng.llm and eng.llm.enabled),
+        "scanning": eng.scanning(), "decision_mode": eng.decision_mode(), "model": "equipa" if len(eng.team) > 1 else (eng.llm.model if eng.llm else None),
+        "llm_available": bool(cfg.ANTHROPIC_API_KEY),
+        "team": [{"name": m.name, "model": m.model, "enabled": m.enabled,
+                  "last": next((dict(v, market=k) for k, v in sorted(m.last.items(), key=lambda kv: -(kv[1].get("t") or 0))), None),
+                  "trades": len([t for t in trades if t["strategy"] == m.name]),
+                  "pnl_usd": round(sum(t["pnl_usd"] for t in trades if t["strategy"] == m.name), 4),
+                  "open": [x["symbol"] for x in led.positions() if x["strategy"] == m.name]} for m in eng.team],
+        "sleep": led.get_state("sleep") or {},
         "equity": round(p.equity, 4), "cash": round(p.cash, 4), "exposure": round(p.exposure, 4),
         "pnl_usd": round(p.equity - led.contributed(), 4), "contributed": led.contributed(),
         "performance": performance(led.equity_history(100_000)),
@@ -556,20 +562,27 @@ def _scan_in_background(kind: str) -> bool:
 def account_start(req: Kind):
     """One click: turn the account on and start analysing immediately."""
     from src.solana import hl_live
+    from src.solana import arena
     if req.kind == "real":
         _live_call("arm")
     else:
         hl_live.get_shadow_engine().ledger.set_state("running", True)
-    return {"kind": req.kind, "running": True, "scan_started": _scan_in_background(req.kind)}
+    team = arena.set_running(True)     # the lab bots are the team's brains for both wallets
+    threading.Thread(target=arena.run_round, daemon=True).start()
+    return {"kind": req.kind, "running": True, "scan_started": _scan_in_background(req.kind),
+            "llm_bots_need_key": team["llm_bots_need_key"]}
 
 
 @router.post("/account/stop", dependencies=LOCAL)
 def account_stop(req: Kind):
     from src.solana import hl_live
+    from src.solana import arena
     if req.kind == "real":
         hl_live.disarm("dashboard stop")
     else:
         hl_live.get_shadow_engine().ledger.set_state("running", False)
+        if not hl_live.is_armed():
+            arena.set_running(False)
     return {"kind": req.kind, "running": False}
 
 

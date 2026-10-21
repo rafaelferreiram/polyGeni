@@ -87,13 +87,13 @@ function go(btn) {
   }
   run(btn, on ? "A parar…" : "A ligar os bots…",
       () => api(`/account/${on ? "stop" : "start"}`, "POST", { kind: KIND }),
-      on ? "■ Bots parados — não abrem novas posições (stops continuam ativos)"
-         : `▶ Bots a trabalhar na conta ${KIND === "sim" ? "simulada" : "REAL"} — primeira análise já a correr`);
+      on ? "■ Equipa parada — não abre novas posições (stops continuam ativos)"
+         : (r) => `▶ Equipa a trabalhar na carteira ${KIND === "sim" ? "simulada" : "REAL"}${r.llm_bots_need_key ? " — só o bot de Regras trabalha até pôr ANTHROPIC_API_KEY" : ""}`);
 }
 
 function setMode(mode, btn) {
   run(btn, "…", () => api("/account/mode", "POST", { mode }),
-      mode === "llm" ? "🧠 O LLM decide comprar e vender (Risk mantém os limites)" : "✓ Decisões por regras");
+      mode === "llm" ? "🧠 A equipa de bots decide; o Coordenador escolhe o melhor por mercado" : "✓ Só o bot de regras decide");
 }
 
 // ─── animated bot room ───
@@ -109,9 +109,9 @@ let replay = null, lastCycleSeen = null;
 function stationData(st, a) {
   const deciderKey = a.decision_mode === "llm" ? "llm" : "mean_reversion";
   if (st.key === "decider") {
-    return { ...(a.agents[deciderKey] || {}), name: a.decision_mode === "llm" ? "LLM trader" : "Estratégia",
-             ico: a.decision_mode === "llm" ? "🧠" : "🎯",
-             role: a.decision_mode === "llm" ? a.model : "compra quedas exageradas" };
+    return { ...(a.agents[deciderKey] || {}), name: a.decision_mode === "llm" ? "Coordenador" : "Estratégia",
+             ico: a.decision_mode === "llm" ? "🧭" : "🎯",
+             role: a.decision_mode === "llm" ? "escolhe o melhor bot" : "compra quedas exageradas" };
   }
   if (st.key === "guard") {
     const p = a.positions[0];
@@ -228,6 +228,7 @@ async function refresh() {
   document.getElementById("room-tag").textContent = KIND === "sim" ? "simulação" : `real · ${a.network}`;
   document.getElementById("room-head").innerHTML = scanning ? '<span class="live-chip">a analisar o mercado</span>' : "";
   if (!replay) renderRoom(a);
+  renderTeam();
   maybeReplay(a);
   renderFoot();
   // feed + trades
@@ -312,29 +313,57 @@ async function loadWallets() {
   document.getElementById("wallets").innerHTML = wallets.length ? wallets.map(walletCard).join("") : '<p class="note">Nenhuma carteira ligada.</p>';
 }
 
-// ─── model arena ───
+// ─── team of bots (one shared wallet) + lab results ───
+const MODEL_LOOK = {
+  "rules": { label: "Regras", color: "#a3b1ab", ico: "📐" },
+  "claude-fable-5-1": { label: "Fable 5.1", color: "#f5c451", ico: "✨" },
+  "claude-opus-5-5": { label: "Opus 5.5", color: "#fb923c", ico: "🎼" },
+  "claude-opus-5": { label: "Opus 5", color: "#f97362", ico: "🎻" },
+  "claude-sonnet-5-5": { label: "Sonnet 5.5", color: "#60a5fa", ico: "📜" },
+  "claude-haiku-5-5": { label: "Haiku 5.5", color: "#34d399", ico: "🍃" },
+};
+const ACTION_PT = { BUY: "🟢 comprar", HOLD: "⏸ esperar", SELL: "🔵 vender", sleep: "😴 a dormir", wake: "⏰ acordou",
+                    entry: "🟢 comprou", exit: "🔵 vendeu", veto: "🟡 bloqueado" };
+const look = (m) => MODEL_LOOK[m] || { label: m, color: "#9fe8c7", ico: "🤖" };
 let lastArena = null;
+
 async function loadArena() {
   const a = await api("/arena");
   lastArena = a;
-  const btn = document.getElementById("btn-arena");
-  if (!btn.classList.contains("busy")) btn.textContent = a.running ? "Parar arena" : "Iniciar arena";
-  const sel = document.getElementById("live-model");
-  if (document.activeElement !== sel) sel.innerHTML = a.models.map((m) => `<option ${m === a.live_model ? "selected" : ""}>${esc(m)}</option>`).join("");
-  table("arena-table", ["#", "Modelo", "Saldo", "Retorno", "Trades", "Última decisão"],
-    a.leaderboard.map((r, i) => `<tr><td>${i + 1}</td><td><b>${esc(r.model)}</b>${r.running ? "" : ' <span class="muted">(parado)</span>'}</td>
+  table("arena-table", ["#", "Bot", "Saldo", "Retorno", "Trades", "Acerto", "Estado"],
+    a.leaderboard.map((r, i) => `<tr><td>${i + 1}</td><td><b>${esc(look(r.model).label)}</b><br><span class="muted">${esc(r.model)}</span></td>
       <td>${usd(r.equity)}</td><td><span class="${r.twr >= 0 ? "green" : "red"}">${pct(r.twr)}</span></td><td>${r.trades}</td>
-      <td class="muted">${r.last_decision ? `${esc(r.last_decision.market)}: <b>${esc(r.last_decision.action)}</b> — ${esc(r.last_decision.reason || "")}` : "–"}</td></tr>`));
+      <td>${r.win_rate === null ? "–" : pct(r.win_rate)}</td><td class="muted">${esc(r.state)}</td></tr>`));
+  renderTeam();
 }
-function toggleArena(btn) {
-  const on = !lastArena?.running;
-  run(btn, on ? "A iniciar…" : "A parar…", async () => { await api("/arena", "POST", { on }); await loadArena(); },
-      on ? "🏁 Arena iniciada" : "⏸ Arena parada");
-}
-function setLiveModel(sel) {
-  api("/live/model", "POST", { model: sel.value })
-    .then(() => toast(`✓ No modo LLM, as decisões passam a ser de ${sel.value}`))
-    .catch((e) => toast(`✖ ${e.message}`, true));
+
+function renderTeam() {
+  if (!acc || !lastArena) return;
+  const lab = Object.fromEntries(lastArena.leaderboard.map((r) => [r.model, r]));
+  const members = acc.team && acc.team.length ? acc.team : lastArena.leaderboard.map((r) => ({ model: r.model, name: r.model }));
+  const liveName = acc.live?.running && Date.now() - new Date(acc.live.ts) < 30000 ? acc.live.agent : null;
+  const awake = members.filter((m) => lab[m.model]?.running && !lab[m.model]?.needs_key).length;
+  document.getElementById("team-head").innerHTML = acc.running
+    ? `<b>${awake}</b> de ${members.length} bots ativos${acc.sleep?.until ? ` · carteira em pausa até <b>${new Date(acc.sleep.until).toLocaleTimeString().slice(0, 5)}</b>` : ""}`
+    : "equipa desligada — carregue em ▶ Start";
+  document.getElementById("team-grid").innerHTML = members.map((m) => {
+    const L = look(m.model), r = lab[m.model] || {};
+    const working = acc.running && (liveName === m.name || r.state === "a trabalhar");
+    const cls = !acc.running || !r.running ? "off" : r.needs_key ? "nokey" : working ? "working" : (m.open || []).length || r.open?.length ? "holding" : r.sleep_until ? "sleeping" : "";
+    const state = !acc.running || !r.running ? "desligado" : r.needs_key ? "falta chave da API" : working ? "a analisar…"
+      : r.sleep_until ? `a dormir até ${new Date(r.sleep_until).toLocaleTimeString().slice(0, 5)}` : r.state || "à espera";
+    const last = m.last || (r.last_decision ? { action: r.last_decision.action, reason: r.last_decision.reason, market: r.last_decision.market } : null);
+    const bubble = r.needs_key ? "Ponha ANTHROPIC_API_KEY no .env para eu começar a decidir."
+      : last ? `${last.market ? last.market + ": " : ""}${ACTION_PT[last.action] || last.action || ""} — ${(last.reason || "").replace(/^a dormir [^:]*: /, "")}` : r.sleep_reason || "Ainda sem decisões.";
+    return `<div class="tb ${cls}">
+      ${cls === "sleeping" ? '<span class="zz">z z</span>' : ""}
+      <div class="head"><div class="bot" style="--c:${L.color}"><span class="ant"></span><span class="mouth"></span><span class="badge-ico">${L.ico}</span></div>
+        <div><div class="nm">${esc(L.label)}</div><span class="pill ${cls === "working" || cls === "holding" ? "on" : ""}">${esc(state)}</span></div></div>
+      <div class="bubble">${esc(bubble)}</div>
+      <div class="meta"><span>Na carteira<br><b>${m.trades ?? 0} trades ${pnl(m.pnl_usd ?? 0)}</b></span>
+        <span>Laboratório<br><b>${usd(r.equity)} · ${pct(r.twr)}</b></span></div>
+    </div>`;
+  }).join("");
 }
 
 // ─── advanced (old Solana paper + readiness) ───
@@ -347,8 +376,8 @@ async function loadAdvanced() {
 }
 
 safe(refresh); safe(loadWallets); safe(loadArena); safe(loadAdvanced);
+setInterval(() => safe(loadArena), 5000);
 setInterval(() => safe(refresh), 2000);
 setInterval(renderFoot, 1000);
-setInterval(() => safe(loadArena), 15000);
 setInterval(() => safe(loadAdvanced), 30000);
 setInterval(() => safe(loadWallets), 60000);

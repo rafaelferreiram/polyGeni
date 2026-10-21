@@ -225,11 +225,10 @@ def test_real_account_simulation_mirrors_live_limits(tmp_path, monkeypatch):
     assert eng.ledger.get_state("running") is True
 
     class LiveStub:
-        llm = type("L", (), {"model": "claude-sonnet-5-5"})()
         def decision_mode(self):
             return "llm"
     monkeypatch.setattr(hl_live, "get_live_engine", lambda: LiveStub())
-    monkeypatch.setattr(cfg, "ANTHROPIC_API_KEY", "")
     monkeypatch.setattr(eng, "run_cycle", lambda: {"ok": True})
     hl_live.shadow_cycle()
-    assert eng.decision_mode() == "rules" and eng.llm.model == "claude-sonnet-5-5"   # no key → falls back to rules
+    assert eng.decision_mode() == "llm"                                    # mirrors the real account
+    assert [m.model for m in eng.team] == cfg.ARENA_MODELS                 # same team as the real wallet
