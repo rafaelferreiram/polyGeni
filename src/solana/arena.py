@@ -145,6 +145,11 @@ def paper_scheduler():
     return paper_engine.scheduler()
 
 
+def _top_up(eng):
+    if eng.ledger.contributed() < cfg.TRAIN_BOOST_CAPITAL_USD:      # paper top-up, a contribution — never profit
+        eng.ledger.move_cash("deposit", cfg.TRAIN_BOOST_CAPITAL_USD - eng.ledger.contributed(), "treino intensivo")
+
+
 def boost_training(model: str, hours: float = 24) -> dict:
     """'Treino intensivo': double the lab slots and lift the daily entry cap for a while, so the bot closes more lab
     trades (more evidence, faster) — entry rules, size, stops and targets stay exactly the same."""
@@ -153,8 +158,7 @@ def boost_training(model: str, hours: float = 24) -> dict:
         raise ValueError(f"bot {model} não existe")
     until = (datetime.now(timezone.utc) + timedelta(hours=min(max(hours, 1), 72))).isoformat(timespec="seconds")
     eng.ledger.set_state("train_boost_until", until)
-    if eng.ledger.contributed() < cfg.TRAIN_BOOST_CAPITAL_USD:      # paper top-up, a contribution — never profit
-        eng.ledger.move_cash("deposit", cfg.TRAIN_BOOST_CAPITAL_USD - eng.ledger.contributed(), "treino intensivo")
+    _top_up(eng)
     local = datetime.fromisoformat(until).astimezone(cfg.TZ).strftime("%d/%m %H:%M")
     eng.ledger.log_decision("boost", reason=f"🚀 treino intensivo até {local} (Lisboa): {cfg.TRAIN_BOOST_MAX_POSITIONS} vagas, sem limite diário")
     _apply_training_boost(eng)
@@ -183,6 +187,7 @@ def turbo(model: str) -> dict:
     eng.ledger.set_state("fast_exits", True)        # the user's choice: turbo bots trade with short holds from now on
     if eng.ledger.get_state("train_boost_until", "") < until:
         boost_training(model, hours)
+    _top_up(eng)
     if eng.llm and eng.ledger.get_state("ai_full_scan_until", "") < until:
         ai_full_scan(model, hours)
     eng.ledger.log_decision("boost", reason=f"⚡ turbo até 00:00 (Lisboa): analisa a cada {cfg.TURBO_CYCLE_SEC}s")

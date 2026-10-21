@@ -592,7 +592,7 @@ def goals(eng) -> dict:
             "analyses": {"target_so_far": cycles_target, "done": today.get("cycles", 0) or 0},
             "loss_limit_usd": round(-start * cfg.LIVE_MAX_DAILY_LOSS_PCT, 2),
             "hit": eng._goal_hit(eng.portfolio()), "rest": cfg.DAILY_GOAL_REST,
-            "day_gain_usd": round(eng.portfolio().equity - start, 4)}
+            "day_gain_usd": round((p := eng.portfolio()).equity - p.day_start_equity, 4)}   # deposits are not gains
 
 
 def _market_temp() -> dict:

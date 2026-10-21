@@ -151,7 +151,7 @@ LAB_MAX_POSITIONS = _i("LAB_MAX_POSITIONS", 8)
 LAB_MAX_ENTRIES_PER_DAY = _i("LAB_MAX_ENTRIES_PER_DAY", 48)
 # "treino intensivo": one slot per coin and more paper capital for 24h, so slots never limit how many lab trades happen
 TRAIN_BOOST_MAX_POSITIONS = _i("TRAIN_BOOST_MAX_POSITIONS", 29)
-TRAIN_BOOST_CAPITAL_USD = _f("TRAIN_BOOST_CAPITAL_USD", 200.0)
+TRAIN_BOOST_CAPITAL_USD = _f("TRAIN_BOOST_CAPITAL_USD", 400.0)   # fake money: 29 slots x ~$12 fit
 # green light to real money (bots not in REAL_TRUSTED_BOTS): at least GREEN_LIGHT_TRADES closed lab trades with
 # GREEN_LIGHT_WINS winners, net profit after AI cost, win rate and profit factor at least these (user's rule: 20 trades, 12 wins)
 GREEN_LIGHT_TRADES = _i("GREEN_LIGHT_TRADES", 20)
