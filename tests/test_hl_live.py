@@ -233,3 +233,29 @@ def test_real_account_simulation_mirrors_live_limits(tmp_path, monkeypatch):
     hl_live.shadow_cycle()
     assert eng.decision_mode() == "llm"                                    # mirrors the real account
     assert [m.model for m in eng.team] == cfg.ARENA_MODELS                 # same team as the real wallet
+
+
+def test_unified_account_equity_comes_from_spot(live):
+    ledger, info, ex, br = live
+    info.query_user_abstraction_state = lambda user: "unifiedAccount"
+    info.spot_user_state = lambda user: {"balances": [{"coin": "USDC", "total": "18.4"}, {"coin": "HYPE", "total": "3"}]}
+    assert br.account_value() == pytest.approx(18.4)          # perp clearinghouse shows 0 in unified mode
+    info.query_user_abstraction_state = lambda user: "disabled"
+    assert br.account_value() == pytest.approx(20.0)          # standard mode: perp account value
+
+
+def test_daily_report_counts_wins_losses_and_net(live, tmp_path, monkeypatch):
+    from src.solana import costs
+    ledger, info, ex, br = live
+    monkeypatch.setattr(costs, "_book", costs.CostBook(str(tmp_path / "c.db")))
+    eng = type("E", (), {"ledger": ledger})()
+    for i, exit_px in enumerate((90000.0, 76000.0)):                    # one win, one loss
+        buy(br, order_id=f"o{i}")
+        info.mids["BTC"] = exit_px
+        br.sell(f"exit-o{i}", "hl:BTC", "BTC", ledger.positions_from_fills()["hl:BTC"]["qty"], strategy="rules", meta={"reason": "t"})
+        info.mids["BTC"] = 80000.0
+    costs.book().record("claude-haiku-5-5", "x", {"input_tokens": 100_000})          # $0.01
+    [today] = hl_live.daily_report(eng, days=1)
+    assert today["trades"] == 2 and today["wins"] == 1 and today["losses"] == 1 and today["win_rate"] == 0.5
+    assert today["ai_cost_usd"] == pytest.approx(0.01) and today["net_usd"] == pytest.approx(today["pnl_usd"] - 0.01)
+    assert today["best"]["pnl_usd"] > 0 > today["worst"]["pnl_usd"]

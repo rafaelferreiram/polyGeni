@@ -73,6 +73,7 @@ let acc = null;
 
 function setKind(k) {
   KIND = k;
+  setTimeout(() => safe(loadDaily), 0);
   try { localStorage.setItem("acct", k); } catch (e) { /* ignore */ }
   replay = null;
   lastCycleSeen = null;
@@ -424,3 +425,19 @@ setInterval(() => safe(refresh), 2000);
 setInterval(renderFoot, 1000);
 setInterval(() => safe(loadAdvanced), 30000);
 setInterval(() => safe(loadWallets), 60000);
+
+// ─── daily report ───
+async function loadDaily() {
+  const r = await api(`/report/daily?kind=${KIND}&days=14`);
+  document.getElementById("rep-tag").textContent = KIND === "sim" ? "conta simulada" : "conta real";
+  table("daily", ["Dia", "Trades", "Ganhos / perdas", "Acerto", "Lucro trades", "Custo IA", "Líquido", "Saldo", "Melhor / pior"],
+    r.days.map((d) => `<tr><td><b>${esc(d.date)}</b><br><span class="muted">${d.cycles} ciclos · ${d.sleeps} pausas${d.errors ? ` · <span class="red">${d.errors} erros</span>` : ""}</span></td>
+      <td>${d.trades}</td><td><span class="green">${d.wins}</span> / <span class="red">${d.losses}</span></td>
+      <td>${d.win_rate === null ? "–" : pct(d.win_rate)}</td><td>${pnl(d.pnl_usd)}<br><span class="muted">taxas ${usd(d.fees_usd, 3)}</span></td>
+      <td>${d.ai_cost_usd ? `<span class="red">−${usd(d.ai_cost_usd, 3)}</span>` : "$0"}<br><span class="muted">${d.ai_calls} análises</span></td>
+      <td>${pnl(d.net_usd)}</td><td>${d.equity_start === null ? "–" : `${usd(d.equity_start)} → ${usd(d.equity_end)}`}</td>
+      <td class="muted">${d.best ? `${esc(d.best.symbol)} ${pnl(d.best.pnl_usd)} / ${esc(d.worst.symbol)} ${pnl(d.worst.pnl_usd)}` : "–"}</td></tr>`));
+}
+safe(loadDaily);
+setInterval(() => safe(loadDaily), 30000);
+

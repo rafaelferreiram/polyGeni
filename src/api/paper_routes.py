@@ -636,3 +636,9 @@ def account_mode(req: AccountMode):
     except ValueError as e:
         raise HTTPException(400, str(e))
     return {"mode": req.mode}
+
+
+@router.get("/report/daily")
+def report_daily(kind: str = "real", days: int = 14):
+    from src.solana import hl_live
+    return {"kind": kind, "days": hl_live.daily_report(_account_engine(kind), min(days, 90))}

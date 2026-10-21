@@ -141,8 +141,24 @@ class HyperliquidLiveBroker(Broker):
             logger.warning(f"fee lookup failed: {e}")
         return notional * TAKER_FALLBACK_BPS / 1e4
 
+    def abstraction(self) -> str:
+        """'disabled' (standard: separate perp/spot) | 'unifiedAccount' | 'portfolioMargin'."""
+        _, info = self._connect()
+        try:
+            return info.query_user_abstraction_state(self.address) or "disabled"
+        except Exception:
+            return "disabled"
+
     def account_value(self) -> float:
         _, info = self._connect()
+        if self.abstraction() in ("unifiedAccount", "portfolioMargin"):
+            # docs: unified/portfolio-margin balances and holds live in the SPOT clearinghouse state; per-DEX perp
+            # account values are "not meaningful". Equity = stablecoin collateral + open positions' unrealized P&L.
+            spot = info.spot_user_state(self.address)
+            cash = sum(float(b["total"]) for b in spot.get("balances", []) if b["coin"] in ("USDC", "USDT0", "USDH", "USDE"))
+            upnl = sum(float(p["position"].get("unrealizedPnl") or 0)
+                       for dex in ("", "xyz") for p in info.user_state(self.address, dex)["assetPositions"])
+            return cash + upnl
         return sum(float(info.user_state(self.address, dex)["marginSummary"]["accountValue"]) for dex in ("", "xyz"))
 
     def exchange_positions(self) -> dict[str, float]:
@@ -419,6 +435,8 @@ def schedule():
     sch = paper_engine.scheduler()
     if sch.get_job("live_cycle") is None:
         sch.add_job(live_cycle, "interval", seconds=cfg.LIVE_CYCLE_SEC, id="live_cycle", max_instances=1, coalesce=True)
+    if sch.get_job("daily_report") is None:
+        sch.add_job(write_daily_reports, "cron", hour=23, minute=55, id="daily_report", coalesce=True)
     if sch.get_job("shadow_cycle") is None:
         from datetime import datetime
         sch.add_job(shadow_cycle, "interval", seconds=cfg.LIVE_CYCLE_SEC, id="shadow_cycle", max_instances=1,
@@ -530,3 +548,68 @@ def status() -> dict:
         except Exception as e:
             out["exchange_error"] = str(e)[:200]
     return out
+
+
+# ─── daily report (wins, losses, trades, P&L, costs) ─────────────────────────
+
+def daily_report(eng, days: int = 14) -> list[dict]:
+    """One row per local calendar day, newest first. Trade P&L already includes fees and funding."""
+    from datetime import date, timedelta as td
+    from src.solana import costs
+    led = eng.ledger
+    trades = led.closed_trades()
+    hist = led.equity_history(100_000)
+    decs = led.decisions(5000)
+    tz = datetime.now().astimezone().tzinfo
+    local = lambda iso: datetime.fromisoformat(iso).astimezone(tz).date()
+    today = datetime.now(tz).date()
+    rows = []
+    for i in range(days):
+        d = today - td(days=i)
+        start = datetime(d.year, d.month, d.day, tzinfo=tz)
+        end = start + td(days=1)
+        t = [x for x in trades if local(x["exit_ts"]) == d]
+        eq = [h for h in hist if local(h["ts"]) == d]
+        dd = [x for x in decs if local(x["ts"]) == d]
+        ai_usd, ai_calls = costs.book().between(start.astimezone(timezone.utc).isoformat(timespec="seconds"),
+                                                end.astimezone(timezone.utc).isoformat(timespec="seconds"))
+        pnl = sum(x["pnl_usd"] for x in t)
+        wins = [x for x in t if x["pnl_usd"] > 0]
+        if not (t or eq or dd or ai_calls):
+            continue
+        rows.append({
+            "date": d.isoformat(), "trades": len(t), "wins": len(wins), "losses": len(t) - len(wins),
+            "win_rate": round(len(wins) / len(t), 3) if t else None, "pnl_usd": round(pnl, 4),
+            "fees_usd": round(sum(x["fees_usd"] + (x["funding_usd"] or 0) for x in t), 4),
+            "ai_cost_usd": round(ai_usd, 4), "ai_calls": ai_calls, "net_usd": round(pnl - ai_usd, 4),
+            "equity_start": round(eq[0]["equity"], 4) if eq else None, "equity_end": round(eq[-1]["equity"], 4) if eq else None,
+            "best": max(t, key=lambda x: x["pnl_usd"], default=None) and {k: max(t, key=lambda x: x["pnl_usd"])[k] for k in ("symbol", "pnl_usd", "strategy")},
+            "worst": min(t, key=lambda x: x["pnl_usd"], default=None) and {k: min(t, key=lambda x: x["pnl_usd"])[k] for k in ("symbol", "pnl_usd", "strategy")},
+            "entries": sum(1 for x in dd if x["kind"] == "entry"), "vetoes": sum(1 for x in dd if x["kind"] == "veto"),
+            "sleeps": sum(1 for x in dd if x["kind"] == "sleep"), "errors": sum(1 for x in dd if x["kind"] in ("error", "reconcile")),
+            "cycles": len({x["cycle"] for x in eq}),
+        })
+    return rows
+
+
+def write_daily_reports(out_dir: str = "reports/daily"):
+    """Nightly markdown snapshot of today's report for the real account and the simulation."""
+    import os as _os
+    _os.makedirs(out_dir, exist_ok=True)
+    for kind, eng in (("real", get_live_engine()), ("sim", get_shadow_engine())):
+        rows = daily_report(eng, days=1)
+        if not rows:
+            continue
+        r = rows[0]
+        lines = [f"# Relatório diário {r['date']} — conta {'real (' + network() + ')' if kind == 'real' else 'simulada'}", "",
+                 f"- Trades fechados: **{r['trades']}** (ganhos {r['wins']}, perdas {r['losses']}"
+                 + (f", acerto {r['win_rate'] * 100:.0f}%)" if r["win_rate"] is not None else ")"),
+                 f"- Lucro dos trades (com taxas e funding): **${r['pnl_usd']:+.4f}** · taxas+funding ${r['fees_usd']:.4f}",
+                 f"- Custo da IA: ${r['ai_cost_usd']:.4f} ({r['ai_calls']} análises pagas) · **lucro líquido ${r['net_usd']:+.4f}**",
+                 f"- Saldo: {r['equity_start']} → {r['equity_end']} · ciclos {r['cycles']} · compras {r['entries']} · "
+                 f"bloqueios {r['vetoes']} · pausas {r['sleeps']} · erros {r['errors']}"]
+        if r["best"]:
+            lines.append(f"- Melhor trade: {r['best']['symbol']} ${r['best']['pnl_usd']:+.4f} ({r['best']['strategy']}) · "
+                         f"pior: {r['worst']['symbol']} ${r['worst']['pnl_usd']:+.4f} ({r['worst']['strategy']})")
+        with open(f"{out_dir}/{r['date']}-{kind}.md", "w") as f:
+            f.write("\n".join(lines) + "\n")

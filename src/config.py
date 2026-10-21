@@ -16,8 +16,9 @@ BOT_KELLY_FRACTION = float(os.getenv("BOT_KELLY_FRACTION", "0.25"))
 BOT_MIN_EDGE = float(os.getenv("BOT_MIN_EDGE", "0.05"))
 BOT_SCAN_INTERVAL_SEC = int(os.getenv("BOT_SCAN_INTERVAL_SEC", "300"))
 
-# Real orders only when explicitly enabled; everything else is paper/dry-run.
-LIVE_TRADING = os.getenv("LIVE_TRADING", "0") == "1"
+# Real Polymarket orders only when explicitly enabled; everything else is dry-run. Deliberately a different
+# variable from the Hyperliquid bot's LIVE_TRADING so enabling one never enables the other.
+LIVE_TRADING = os.getenv("POLY_LIVE_TRADING", "0") == "1"
 
 CLOB_HOST = "https://clob.polymarket.com"
 GAMMA_HOST = "https://gamma-api.polymarket.com"

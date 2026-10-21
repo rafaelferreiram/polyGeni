@@ -64,6 +64,12 @@ class CostBook:
         with self._lock:
             return self.conn.execute(sql, args).fetchone()[0]
 
+    def between(self, start_iso: str, end_iso: str) -> tuple[float, int]:
+        with self._lock:
+            r = self.conn.execute("SELECT COALESCE(SUM(usd),0), COUNT(*) FROM costs WHERE ts >= ? AND ts < ?",
+                                  (start_iso, end_iso)).fetchone()
+        return r[0], r[1]
+
     def month_spent(self) -> float:
         start = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         with self._lock:

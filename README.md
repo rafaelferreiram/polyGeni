@@ -1,6 +1,6 @@
 # polyGeni
 
-> ⚠️ **No real trading by default.** The Polymarket bot only places real orders with `LIVE_TRADING=1`
+> ⚠️ **No real trading by default.** The Polymarket bot only places real orders with `POLY_LIVE_TRADING=1`
 > explicitly set; otherwise every order is a dry run. The Solana bot (below) is **paper trading only**:
 > it never builds, signs or sends a transaction and never creates, reads or uses a private key.
 
@@ -312,7 +312,7 @@ Click **Start (monitor)** in the dashboard — the bot scans every 5 minutes and
 
 ### Auto-trade mode
 Click **Start (auto-trade)** — the bot picks the top opportunity each scan cycle if edge ≥ 5%.
-Orders stay dry-run unless the server runs with `LIVE_TRADING=1` (see the audit before enabling it).
+Orders stay dry-run unless the server runs with `POLY_LIVE_TRADING=1` (see the audit before enabling it).
 
 ### Manual scan
 Click **Scan Now** to run a scan immediately at any time.
