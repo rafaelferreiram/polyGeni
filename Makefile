@@ -5,7 +5,7 @@ UV := .venv/bin/uvicorn
 install:
 	uv venv --python 3.11 .venv && uv pip install --python $(PY) -r requirements.txt
 
-run:            ## 24/7 paper loop + dashboard on http://127.0.0.1:8000/paper
+run:            ## 24/7 loop + dashboard on http://127.0.0.1:8000
 	PAPER_AUTOSTART=1 $(UV) src.main:app --host 127.0.0.1 --port 8000
 
 demo:           ## dummy account: real quotes, forced trades on both venues, then dashboard on :8001

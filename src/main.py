@@ -24,11 +24,8 @@ if os.path.isdir(frontend_path):
     app.mount("/static", StaticFiles(directory=frontend_path), name="static")
 
     @app.get("/")
+    @app.get("/paper")          # old link, same page
     def serve_ui():
-        return FileResponse(os.path.join(frontend_path, "index.html"))
-
-    @app.get("/paper")
-    def serve_paper_ui():
         return FileResponse(os.path.join(frontend_path, "paper.html"))
 
 

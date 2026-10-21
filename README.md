@@ -12,13 +12,13 @@ only when the moment is right. (Repository and package name: `polyGeni`.)
 
 Simulated money, **real market data**: Solana spot via real Jupiter quotes, and Hyperliquid perps
 (BTC, ETH, SOL, `xyz:GOLD`, `xyz:SILVER`) via the real L2 order book, taker fees and hourly funding.
-Dashboard: [http://127.0.0.1:8000/paper](http://127.0.0.1:8000/paper) (labelled PAPER everywhere).
+Dashboard: [http://127.0.0.1:8000](http://127.0.0.1:8000) (the old `/paper` link opens the same page).
 
 ### Quick start
 ```bash
 make install     # Python 3.11 venv via uv
 make demo        # dummy account: real quotes, forced trades on both venues, ledger self-check, UI on :8001
-make run         # 24/7 paper loop + dashboard on http://127.0.0.1:8000/paper
+make run         # 24/7 loop + dashboard on http://127.0.0.1:8000
 make test        # offline pytest suite
 make backtest    # walk-forward reports in reports/
 ```
@@ -290,17 +290,8 @@ Orders are placed via the official `py-clob-client` SDK using L2 API credentials
 
 ## Dashboard
 
-Open `http://localhost:8000` after starting the server.
-
-| Section | What it shows |
-|---|---|
-| **Header** | Balance, bot status, Start/Stop/Scan buttons |
-| **Portfolio row** | Balance, Total P&L, Realized P&L, Unrealized P&L, Win Rate, Open Positions |
-| **Live Opportunities** | Current scan results ranked by edge, with reasoning |
-| **Open Positions** | All active bets with unrealized P&L |
-| **Trade History** | All past trades with status and P&L |
-
-The dashboard auto-refreshes every 30 seconds.
+There is one dashboard, Kairos, at `http://localhost:8000` (see the dashboard section at the top). The legacy
+Polymarket bot has no UI of its own any more; it is controlled through its REST API (`/api/...`, below).
 
 ---
 
@@ -419,9 +410,9 @@ polyGeni/
 │   └── api/
 │       └── routes.py           # FastAPI REST endpoints
 └── frontend/
-    ├── index.html              # Dashboard UI
-    ├── style.css               # Dark theme styles
-    └── app.js                  # Dashboard logic
+    ├── paper.html              # Kairos dashboard (served at /)
+    ├── paper.js                # Dashboard logic
+    └── style.css               # Base styles
 ```
 
 ---
