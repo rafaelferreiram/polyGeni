@@ -104,7 +104,8 @@ the others must first show ≥ 10 profitable lab trades.
   downtrend, stop 2 ATR, target 3 ATR, 12h. Paper shorts are held as longs on the mirror price `2*entry - price`
   (exact short P&L, funding sign flipped). Backtest: about break-even (every other short variant lost over 208 days), so
   it is measured live in the lab only; it is excluded from the real/simulation team, can never get a green light, and
-  the live broker refuses any short instrument.
+  the live broker refuses any short instrument. Removed from the team at the user's request (enable with `short` in
+  `ARENA_MODELS`).
 - **Open positions**: click one for its details (bought at, held for, invested/now, P&L $ and %, stop/target, why it
   was bought) and to sell it now at market (`POST /api/paper/account/close`; the exchange stop/target are cancelled).
 - **Lab → real money (green light)**: the lab runs every bot with $100 of paper capital, up to 8 positions and 48
