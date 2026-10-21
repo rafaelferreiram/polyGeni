@@ -290,6 +290,26 @@ class PaperEngine:
             logger.info(f"[paper] cycle {cycle}: {stats}")
         return stats
 
+    def manual_exit(self, mint: str) -> dict:
+        """The user closes an open position from the dashboard (market sell; on the real account the exchange's
+        stop/target orders are cancelled by the broker). Recorded like any exit."""
+        if not self._busy.acquire(timeout=120):             # never race a running cycle
+            raise ValueError("os bots estão no meio de um ciclo — tente de novo em instantes")
+        try:
+            pos = next((p for p in self.ledger.positions() if p["mint"] == mint), None)
+            if pos is None:
+                raise ValueError("essa posição já não está aberta")
+            reason = "fechada manualmente pelo painel"
+            fill = self.executor.close(f"exit-{pos['entry_order_id']}", pos, reason)
+            pnl = fill["usd_gross"] - fill["fee_usd"] - pos["cost_usd"]
+            self.ledger.log_decision("exit", cycle=self.cycle, mint=pos["mint"], symbol=pos["symbol"], strategy=pos["strategy"],
+                                     order_id=fill["order_id"], reason=reason, signals={"pnl_usd": round(pnl, 4)})
+            self.ledger.delete_position(pos["mint"])
+            self.reconcile()
+        finally:
+            self._busy.release()
+        return {"symbol": pos["symbol"], "usd": round(fill["usd_gross"], 4), "price": fill["price"], "pnl_usd": round(pnl, 4)}
+
     def manual_entry(self, symbol: str, usd: float) -> dict:
         """A buy the user clicks on the dashboard: same risk limits, exchange stop (2 ATR) / target (3 ATR) and ledger
         as the bots' trades, so the exchange and the books never disagree (a buy made outside would trip the kill switch)."""

@@ -232,7 +232,8 @@ def test_real_account_simulation_mirrors_live_limits(tmp_path, monkeypatch):
     monkeypatch.setattr(eng, "run_cycle", lambda: {"ok": True})
     hl_live.shadow_cycle()
     assert eng.decision_mode() == "llm"                                    # mirrors the real account
-    assert [m.model for m in eng.team] == cfg.ARENA_MODELS                 # same team as the real wallet
+    from src.solana.strategies import SHORT_BOTS
+    assert [m.model for m in eng.team] == [m for m in cfg.ARENA_MODELS if m not in SHORT_BOTS]   # same team as the real wallet (no shorts)
 
 
 def test_unified_account_equity_comes_from_spot(live):
@@ -282,3 +283,9 @@ def test_external_deposits_and_withdrawals_become_cash_movements(live):
     assert [(d["kind"], d["usd"]) for d in done] == [("deposit", 25.0), ("deposit", 5.0), ("withdraw", 10.0)]
     assert ledger.contributed() == 20 + 25 + 5 - 10
     assert br.record_transfers() == []                        # nothing twice
+
+
+def test_real_account_refuses_short_orders(live):
+    ledger, info, ex, br = live
+    with pytest.raises(RuntimeError, match="short"):
+        br.buy("x", "hl:BTC~short", "BTC", 12, strategy="short", stop_price=1, tp_price=2)

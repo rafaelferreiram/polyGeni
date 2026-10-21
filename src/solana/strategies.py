@@ -318,8 +318,34 @@ class CopyTop(WhaleFollow):
         return Signal(self.name, closes[-1], stop, tp, self.last[market]["reason"], {"atr": a, "top_longs": t.get("long")})
 
 
+class ShortFade:
+    """Lab-only short: in a downtrend (price below EMA200), sell a rally that overshoots (above the upper Bollinger
+    band with RSI > 70); stop 2 ATR above, target 3 ATR below, closed within 12h. Per-coin backtest on 29 coins,
+    208 days (2026-10-21): about break-even (+$6.9 then −$0.02 per $20 positions) — every other short variant lost,
+    because crypto drifted up — so it only trades paper money in the lab, where it is measured live."""
+    name = "short"
+    capital_pct = 1.0
+    max_hold_h = 12
+
+    def signal(self, candles: list[dict]) -> Signal | None:
+        closes = [c["close"] for c in candles]
+        if len(closes) < 230:
+            return None
+        window = closes[-20:]
+        upper = mean(window) + 2 * pstdev(window)
+        r = rsi(closes)
+        if not (closes[-1] < ema(closes[-600:], 200) and closes[-1] > upper and r > 70):
+            return None
+        stop, tp, a = _atr_stops(candles, 2.0, 3.0)
+        # the engine treats a short as a long on the mirror price, so stop/target stay "below/above" the entry
+        return Signal(self.name, closes[-1], stop, tp, f"short: alta exagerada numa baixa (RSI {r:.0f}, acima da banda {upper:.6g})",
+                      {"rsi": r, "atr": a, "upper_band": upper, "side": "short"})
+
+
 # deterministic bots (no LLM, no API cost): model name -> strategy
-RULE_BOTS = {"rules": MeanReversionATR, "trend": TrendStrong, "trend4h": Trend4h, "whales": WhaleFollow, "copy": CopyTop}
+RULE_BOTS = {"rules": MeanReversionATR, "trend": TrendStrong, "trend4h": Trend4h, "whales": WhaleFollow, "copy": CopyTop,
+             "short": ShortFade}
+SHORT_BOTS = {"short"}          # lab only: the real account (and its simulation) never short
 
 
 def features(candles: list[dict]) -> dict:

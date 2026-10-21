@@ -743,6 +743,38 @@ def account_manual_buy(req: ManualBuy):
         raise HTTPException(400, str(e))
 
 
+class ClosePos(BaseModel):
+    kind: str = "sim"
+    mint: str
+
+
+@router.post("/account/close", dependencies=LOCAL)
+def account_close(req: ClosePos):
+    """The user's own sell of one open position (market order), from the dashboard."""
+    from src.solana import hl_live
+    if req.kind == "real" and not hl_live.is_armed():
+        raise HTTPException(400, "a conta real está desligada — clique em Start primeiro")
+    try:
+        return _account_engine(req.kind).manual_exit(req.mint)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.get("/account/position")
+def account_position(kind: str, mint: str):
+    """Everything about one open position: when, how much, how it is doing, why it was opened."""
+    eng = _account_engine(kind)
+    pos = next((p for p in eng.ledger.positions() if p["mint"] == mint), None)
+    if pos is None:
+        raise HTTPException(404, "posição não encontrada")
+    entry = next((d for d in eng.ledger.decisions(500, kind="entry") if d.get("order_id") == pos["entry_order_id"]
+                  or (d["mint"] == mint and d["ts"] >= pos["opened_at"][:19])), None)
+    value = pos.get("mark_value") or pos["cost_usd"]
+    return {**pos, "value": value, "pnl_usd": round(value - pos["cost_usd"], 4), "pnl_pct": round(value / pos["cost_usd"] - 1, 5),
+            "held_h": round((datetime.now(timezone.utc) - datetime.fromisoformat(pos["opened_at"])).total_seconds() / 3600, 2),
+            "entry_reason": entry["reason"] if entry else None, "funding_usd": round(eng.ledger.funding_paid(pos["entry_order_id"]), 5)}
+
+
 class AccountMode(BaseModel):
     mode: str
 

@@ -13,7 +13,7 @@ from src.solana.agents import DebateAgent, ExecutorAgent, RiskAgent, Vote
 from src.solana.engine import PaperEngine, bench_prices
 from src.solana.ledger import Ledger, now_iso
 from src.solana.llm_trader import LLMDecider
-from src.solana.strategies import RULE_BOTS
+from src.solana.strategies import RULE_BOTS, SHORT_BOTS
 
 logger = logging.getLogger("solana.arena")
 
@@ -40,7 +40,7 @@ def build_bot(model: str, db_dir: str = ".", llm_fn=None, scout=None, broker_fac
         decider.name = f"llm:{model}"
         decider.record_fn = lambda: track_record(model)        # the AI sees its own reward and recent trades
     eng = PaperEngine(
-        ledger, [scout or hl.HyperliquidScout()], _PerpsSafety(), [RULE_BOTS[model]()] if model in RULE_BOTS else [],
+        ledger, [scout or (hl.ShortScout() if model in SHORT_BOTS else hl.HyperliquidScout())], _PerpsSafety(), [RULE_BOTS[model]()] if model in RULE_BOTS else [],
         DebateAgent(enabled=False), _risk(lab=True),
         ExecutorAgent(broker_factory(ledger) if broker_factory else hl.HyperliquidPaperBroker(ledger, leverage=cfg.LIVE_LEVERAGE)),
         candles_fn=candles_fn or {hl.VENUE: hl.candles}, bench_fn=bench_prices if candles_fn is None else None,
@@ -119,7 +119,7 @@ def green_light(model: str) -> dict:
     """Is this bot ready for real money? Trusted (backtest-validated) bots are; the others need LIVE_MIN_LAB_TRADES
     closed lab trades with net profit after their AI cost, win rate ≥ GREEN_LIGHT_WIN_RATE and profit factor ≥
     GREEN_LIGHT_PROFIT_FACTOR."""
-    if model in cfg.REAL_TRUSTED_BOTS:
+    if model in cfg.REAL_TRUSTED_BOTS and model not in SHORT_BOTS:
         return {"ok": True, "trusted": True}
     eng = (_bots or {}).get(model)
     trades = eng.ledger.closed_trades() if eng else []
@@ -130,6 +130,8 @@ def green_light(model: str) -> dict:
     pf = (sum(wins) / sum(losses)) if losses and sum(losses) > 0 else (99.0 if wins else 0.0)
     need = {"vitórias": len(wins) >= cfg.GREEN_LIGHT_WINS, "lucro": net > 0, "acerto": wr >= cfg.GREEN_LIGHT_WIN_RATE,
             "fator": pf >= cfg.GREEN_LIGHT_PROFIT_FACTOR}
+    if model in SHORT_BOTS:      # the real account cannot short: this bot stays in the lab whatever its record
+        need["conta real não faz short"] = False
     return {"ok": all(need.values()), "trusted": False, "trades": n, "wins": len(wins), "needed": cfg.GREEN_LIGHT_WINS,
             "win_rate": round(wr, 3), "profit_factor": round(pf, 2), "net_usd": round(net, 4),
             "missing": [k for k, v in need.items() if not v]}

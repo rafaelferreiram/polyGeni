@@ -340,3 +340,15 @@ def test_confidence_checklist_starts_not_ready(ledger):
     eng.run_cycle()
     c = confidence(eng)
     assert c["total"] == 7 and not c["ready"] and any(x["name"].startswith("Sem kill switch") and x["ok"] for x in c["checks"])
+
+
+def test_manual_exit_closes_a_position_and_records_it(ledger):
+    import pytest
+    eng = build(ledger, Price(1.0))
+    eng.run_cycle()
+    mint = ledger.positions()[0]["mint"]
+    out = eng.manual_exit(mint)
+    assert ledger.positions() == [] and "pnl_usd" in out
+    assert ledger.decisions(5, kind="exit")[0]["reason"] == "fechada manualmente pelo painel"
+    with pytest.raises(ValueError):
+        eng.manual_exit(mint)

@@ -31,10 +31,17 @@ def instrument_id(coin: str) -> str:
     return f"hl:{coin}"
 
 
+SHORT = "~short"     # paper-only: a short is held as a long on the mirror price 2*entry - price (exact short P&L)
+
+
+def is_short(instrument: str) -> bool:
+    return instrument.endswith(SHORT)
+
+
 def coin_of(instrument: str) -> str:
     if not instrument.startswith("hl:"):
         raise ValueError(f"not a Hyperliquid instrument: {instrument}")
-    return instrument[3:]
+    return instrument[3:].removesuffix(SHORT)
 
 
 def info(body: dict, url: str | None = None):
@@ -171,8 +178,9 @@ class HyperliquidPaperBroker(Broker):
             raise LeverageError(f"notional ${usd:.2f} + fee exceeds buying power ${room:.2f} at {self.leverage:g}x")
         book = self.book_fn(coin)
         mid = (book["bids"][0][0] + book["asks"][0][0]) / 2
-        qty, _ = walk(book["asks"], usd=usd)
-        vwap = usd / qty
+        # long: lift the asks. short (lab only): hit the bids; the mirror price starts at the entry, so vwap = entry
+        qty, got = walk(book["bids"] if is_short(instrument) else book["asks"], usd=usd)
+        vwap = got / qty
         fill, _ = self.ledger.append_fill(dict(
             order_id=order_id, ts=now_iso(), venue=self.venue, side="buy", mint=instrument, symbol=symbol,
             strategy=strategy, qty=qty, decimals=0, usd_gross=usd, fee_usd=fee, price=vwap, quote_price=mid,
@@ -182,10 +190,22 @@ class HyperliquidPaperBroker(Broker):
         ))
         return fill
 
+    def _entry(self, instrument) -> float:
+        """The short's fill price (vwap, before fees) — positions' entry_price includes the fee."""
+        pos = next(p for p in self.ledger.positions_from_fills().values() if p["mint"] == instrument)
+        return self.ledger.get_fill(pos["entry_order_id"])["price"]
+
+    def _close_value(self, instrument, qty, book) -> float:
+        """USD received closing qty: a long sells on the bids; a short buys back on the asks and is worth
+        qty * (2*entry - buyback price) — i.e. it gains exactly what the price fell."""
+        if not is_short(instrument):
+            return walk(book["bids"], qty=qty)[1]
+        _, cost = walk(book["asks"], qty=qty)
+        return qty * (2 * self._entry(instrument)) - cost
+
     def quote_sell_value(self, instrument, qty, decimals=0):
         book = self.book_fn(coin_of(instrument))
-        _, usd = walk(book["bids"], qty=qty)
-        return usd, book
+        return self._close_value(instrument, qty, book), book
 
     def sell(self, order_id, instrument, symbol, qty, decimals=0, *, strategy, meta=None):
         if (existing := self.ledger.get_fill(order_id)):
@@ -193,7 +213,7 @@ class HyperliquidPaperBroker(Broker):
         coin = coin_of(instrument)
         book = self.book_fn(coin)
         mid = (book["bids"][0][0] + book["asks"][0][0]) / 2
-        _, usd = walk(book["bids"], qty=qty)
+        usd = self._close_value(instrument, qty, book)
         vwap = usd / qty
         fill, _ = self.ledger.append_fill(dict(
             order_id=order_id, ts=now_iso(), venue=self.venue, side="sell", mint=instrument, symbol=symbol,
@@ -216,9 +236,23 @@ class HyperliquidPaperBroker(Broker):
                 continue
             ctx = self.ctx_fn(coin_of(p["mint"]))
             notional = p["qty"] * float(ctx["markPx"])
-            total += self.ledger.add_funding(self.venue, p["mint"], p["entry_order_id"], float(ctx["funding"]),
-                                             hours, notional)
+            rate = float(ctx["funding"]) * (-1 if is_short(p["mint"]) else 1)     # positive funding pays shorts
+            total += self.ledger.add_funding(self.venue, p["mint"], p["entry_order_id"], rate, hours, notional)
         return total
+
+
+class ShortScout:
+    """Lab-only: the same markets offered as short instruments (hl:BTC~short)."""
+
+    def __init__(self, inner=None):
+        self.inner = inner or HyperliquidScout()
+
+    def candidates(self) -> list[Candidate]:
+        out = []
+        for c in self.inner.candidates():
+            c.mint = c.mint + SHORT
+            out.append(c)
+        return out
 
 
 class HyperliquidScout:

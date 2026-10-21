@@ -200,3 +200,11 @@ def test_ai_full_scan_turns_off_the_prefilter_for_a_while(tmp_path, monkeypatch)
     eng.ledger.set_state("ai_full_scan_until", "2000-01-01T00:00:00+00:00")
     arena._apply_training_boost(eng)
     assert not eng.llm.full_scan
+
+
+def test_short_bot_is_lab_only():
+    from src.solana import hl_live
+    from src.solana.strategies import SHORT_BOTS
+    assert "short" in SHORT_BOTS and all(m.model not in SHORT_BOTS for m in hl_live.team())
+    g = arena.green_light("short")
+    assert not g["ok"] and "conta real não faz short" in g["missing"]

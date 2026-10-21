@@ -109,3 +109,18 @@ def test_live_candles_are_fetched_once_per_hour_and_shared(monkeypatch):
     assert a == b and len(calls) == 1
     hl.candles("TESTCOIN", "1h", start_ms=0, end_ms=10)     # explicit windows (backtests) are never cached
     assert len(calls) == 2
+
+
+def test_paper_short_gains_when_the_price_falls(ledger):
+    book = {"b": BOOK}
+    b = hl.HyperliquidPaperBroker(ledger, book_fn=lambda coin: book["b"], ctx_fn=lambda coin: CTX[coin],
+                                  now_fn=lambda: datetime.now(timezone.utc).timestamp())
+    fill = b.buy("s1", "hl:BTC~short", "BTC", 50.0, strategy="short", stop_price=102, tp_price=97)
+    assert fill["price"] == 100.0 and abs(fill["qty"] - 0.5) < 1e-12          # sold on the bid at 100
+    book["b"] = {"bids": [(89.0, 10.0)], "asks": [(90.0, 10.0)]}              # price fell 10%
+    value, _ = b.quote_sell_value("hl:BTC~short", 0.5)
+    assert abs(value - (0.5 * 200 - 0.5 * 90)) < 1e-9                         # 55: +$5 before fees
+    b.sell("s2", "hl:BTC~short", "BTC", 0.5, strategy="short")
+    t = ledger.closed_trades()[0]
+    assert t["pnl_usd"] > 4.9 and t["symbol"] == "BTC"
+    assert hl.coin_of("hl:BTC~short") == "BTC" and hl.is_short("hl:BTC~short") and not hl.is_short("hl:BTC")

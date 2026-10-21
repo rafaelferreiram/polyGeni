@@ -211,6 +211,8 @@ class HyperliquidLiveBroker(Broker):
         return oids
 
     def buy(self, order_id, instrument, symbol, usd, decimals=0, *, strategy, stop_price, tp_price, meta=None):
+        if hl.is_short(instrument):        # hard stop: shorts exist only in the paper lab
+            raise RuntimeError("short orders are not allowed on the real account")
         if (existing := self.ledger.get_fill(order_id)):
             return existing
         ex, info = self._connect()
@@ -430,7 +432,9 @@ def team() -> list:
     """All bots propose for the one shared wallet; LLM bots reuse their lab decision for the same candle."""
     from src.solana import arena
     from src.solana.llm_trader import TeamMember
-    return [TeamMember(m, lab_lookup=arena.lab_decider) for m in cfg.ARENA_MODELS]
+    from src.solana.strategies import SHORT_BOTS
+    # short bots are lab-only: they never propose for the real account or its simulation (both are long-only)
+    return [TeamMember(m, lab_lookup=arena.lab_decider) for m in cfg.ARENA_MODELS if m not in SHORT_BOTS]
 
 
 def _coordinate(market, members):

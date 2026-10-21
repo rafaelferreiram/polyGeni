@@ -337,7 +337,7 @@ async function refresh() {
 
 // ─── open positions: how each trade is doing between its stop and its target ───
 const fmtPx = (v) => (v == null ? "–" : `$${Number(v) >= 100 ? Number(v).toFixed(2) : Number(v).toPrecision(4)}`);
-const STRAT_MODEL = { trend: "trend", trend4h: "trend4h", whales: "whales", copy: "copy", rules: "rules", mean_reversion_atr: "rules" };
+const STRAT_MODEL = { trend: "trend", trend4h: "trend4h", whales: "whales", copy: "copy", short: "short", rules: "rules", mean_reversion_atr: "rules" };
 const botName = (s) => (s === "manual" ? "Manual" : look(s?.startsWith("llm:") ? s.slice(4) : STRAT_MODEL[s] || "rules").label);
 function renderPositions(a) {
   const ps = a.positions || [];
@@ -350,7 +350,8 @@ function renderPositions(a) {
     const pl = value - p.cost_usd, plPct = pl / p.cost_usd;
     const span = p.tp_price - p.stop_price;
     const at = (x) => `${(clamp01((x - p.stop_price) / span) * 100).toFixed(1)}%`;
-    return `<div class="pos ${pl >= 0 ? "win" : "lose"}">
+    return `<div class="pos ${pl >= 0 ? "win" : "lose"} ${openMint === p.mint ? "sel" : ""}" tabindex="0" role="button"
+      aria-label="Detalhes de ${esc(p.symbol)}" onclick="openPos('${esc(p.mint)}')" onkeydown="if(event.key==='Enter')openPos('${esc(p.mint)}')">
       <div class="top"><span class="sym">${coin(p.symbol)}</span><span class="pl">${pnl(pl)} <small class="muted">${(plPct * 100).toFixed(2)}%</small></span></div>
       <div class="sub"><span>bot ${esc(botName(p.strategy))} · aberta há ${ago(p.opened_at)}</span><span>${usd(p.cost_usd)}</span></div>
       <div class="track" title="entre o stop e o alvo"><span class="entry" style="left:${at(p.entry_price)}"></span><span class="now" style="left:${at(now)}"></span></div>
@@ -406,6 +407,41 @@ function fillManualCoins(a) {
   const sel = document.getElementById("mb-coin");
   if (!sel.options.length) { sel.innerHTML = a.limits.markets.map((m) => `<option>${esc(m)}</option>`).join(""); sel.value = "BTC"; }
 }
+
+// ─── one open position: details and the user's own sell ───
+let openMint = null;
+async function openPos(mint) {
+  openMint = mint;
+  const box = document.getElementById("pos-detail");
+  let p;
+  try { p = await api(`/account/position?kind=${KIND}&mint=${encodeURIComponent(mint)}`); }
+  catch (e) { box.hidden = true; openMint = null; return; }
+  const now = p.value / p.qty, held = p.held_h < 1 ? `${Math.round(p.held_h * 60)} min` : `${p.held_h.toFixed(1)} h`;
+  const row = (k, v) => `<div><span>${k}</span><b>${v}</b></div>`;
+  box.innerHTML = `<div class="posd-head">${coin(p.symbol)} <span class="muted">· bot ${esc(botName(p.strategy))} · ${KIND === "real" ? "💰 conta real" : "🧪 simulação"}</span>
+      <button class="x" onclick="closePos()" aria-label="Fechar detalhes">✕</button></div>
+    <div class="posd-grid">
+      ${row("Comprada em", time(p.opened_at))}${row("Ativa há", held)}
+      ${row("Valor investido", usd(p.cost_usd))}${row("Valor agora", usd(p.value))}
+      ${row("Resultado", `${pnl(p.pnl_usd)} (${p.pnl_pct >= 0 ? "+" : ""}${(p.pnl_pct * 100).toFixed(2)}%)`)}${row("Preço entrada → agora", `${fmtPx(p.entry_price)} → ${fmtPx(now)}`)}
+      ${row("🛑 Stop", fmtPx(p.stop_price))}${row("🎯 Alvo", fmtPx(p.tp_price))}
+      ${row("Quantidade", `${Number(p.qty).toPrecision(6)} ${esc(p.symbol)}`)}${row("Funding pago", usd(p.funding_usd, 4))}
+    </div>
+    ${p.entry_reason ? `<div class="note" style="margin-top:8px">Por que comprou: ${esc(p.entry_reason)}</div>` : ""}
+    <div class="posd-actions"><button class="sell" onclick="sellPos('${esc(mint)}', this)">🔴 Vender agora (preço de mercado)</button>
+      <button onclick="showChart('${esc(p.symbol)}')">📈 Ver gráfico</button></div>`;
+  box.hidden = false;
+  if (acc) renderPositions(acc);
+}
+function closePos() { openMint = null; document.getElementById("pos-detail").hidden = true; if (acc) renderPositions(acc); }
+function sellPos(mint, btn) {
+  const p = acc.positions.find((x) => x.mint === mint);
+  const res = p ? (p.mark_value ?? p.cost_usd) - p.cost_usd : 0;
+  if (!confirm(`Vender ${p?.symbol || mint} agora a preço de mercado${KIND === "real" ? " com DINHEIRO REAL" : " (simulação)"}?\n\nResultado atual ≈ ${res >= 0 ? "+" : "−"}$${Math.abs(res).toFixed(2)}. O stop e o alvo na corretora são cancelados.`)) return;
+  run(btn, "Vendendo…", () => api("/account/close", "POST", { kind: KIND, mint }),
+      (r) => { closePos(); return `✓ Vendeu ${r.symbol} a ${fmtPx(r.price)} · resultado ${r.pnl_usd >= 0 ? "+" : "−"}$${Math.abs(r.pnl_usd).toFixed(2)}`; });
+}
+setInterval(() => { if (openMint) safe(() => openPos(openMint)); }, 15000);
 
 // ─── radar: every coin the bots watch, and the exact level that would trigger a buy ───
 let radarAll = false;
@@ -584,6 +620,7 @@ const MODEL_LOOK = {
   "trend4h": { label: "Gabriel Jesus", color: "#fbbf24", ico: "🎯", role: "tendências maiores, velas de 4h" },
   "whales": { label: "Evair", color: "#60a5fa", ico: "🐋", role: "segue as baleias quando compram forte" },
   "copy": { label: "Veiga", color: "#f472b6", ico: "👑", role: "copia os 10 melhores traders da Hyperliquid" },
+  "short": { label: "Estêvão", color: "#f87171", ico: "📉", role: "short: lucra quando o preço cai (só laboratório)" },
   "claude-fable-5-1": { label: "Fable 5.1", color: "#f5c451", ico: "✨" },
   "claude-opus-5-5": { label: "Opus 5.5", color: "#fb923c", ico: "🎼" },
   "claude-opus-5": { label: "Opus 5", color: "#f97362", ico: "🎻" },
@@ -592,7 +629,7 @@ const MODEL_LOOK = {
 };
 const ACTION_PT = { BUY: "🟢 comprar", HOLD: "⏸ esperar", SELL: "🔵 vender", sleep: "😴 dormindo", wake: "⏰ acordou",
                     entry: "🟢 comprou", exit: "🔵 vendeu", veto: "🟡 bloqueado" };
-const FREE = new Set(["rules", "trend", "trend4h", "whales", "copy"]);   // deterministic bots: no AI cost
+const FREE = new Set(["rules", "trend", "trend4h", "whales", "copy", "short"]);   // deterministic bots: no AI cost
 const look = (m) => ({ role: "IA analisa e decide", ...(MODEL_LOOK[m] || { label: m, color: "#9fe8c7", ico: "🤖" }) });
 let lastArena = null;
 
@@ -610,7 +647,9 @@ async function loadArena() {
 function renderTeam() {
   if (!acc || !lastArena) return;
   const lab = Object.fromEntries(lastArena.leaderboard.map((r) => [r.model, r]));
-  const members = acc.team && acc.team.length ? acc.team : lastArena.leaderboard.map((r) => ({ model: r.model, name: r.model }));
+  const team = acc.team && acc.team.length ? acc.team : [];
+  // lab-only bots (e.g. Estêvão, short) are not in the account's team but are shown with their lab record
+  const members = [...team, ...lastArena.leaderboard.filter((r) => !team.some((m) => m.model === r.model)).map((r) => ({ model: r.model, name: r.model }))];
   const liveName = acc.live?.running && Date.now() - new Date(acc.live.ts) < 30000 ? acc.live.agent : null;
   const awake = members.filter((m) => lab[m.model]?.running && !lab[m.model]?.needs_key).length;
   document.getElementById("team-head").innerHTML = acc.running
