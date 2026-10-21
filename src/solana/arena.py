@@ -166,9 +166,10 @@ def boost_training(model: str, hours: float = 24) -> dict:
 
 def turbo(model: str) -> dict:
     """'Turbo do dia' for a bot in training: until midnight (Lisbon) it analyses the market every TURBO_CYCLE_SEC
+    and, from now on, closes positions within TURBO_MAX_HOLD_H (fast exits, also on the real account once promoted)
     instead of once per lab round, with every slot and no daily cap (training boost), and the AI bot reads every coin
     (full scan). More looks at the market = setups caught as soon as they appear and stops/targets checked more often,
-    so lab trades pile up faster. Entry rules, size, stops and targets do not change: the evidence stays honest."""
+    so lab trades pile up faster (goal: ≥ 10 a day). Entry rules, size, stops and targets do not change."""
     eng = bots().get(model)
     if not eng:
         raise ValueError(f"bot {model} não existe")
@@ -179,6 +180,7 @@ def turbo(model: str) -> dict:
     hours = max((midnight - now).total_seconds() / 3600, 1)
     until = midnight.astimezone(timezone.utc).isoformat(timespec="seconds")
     eng.ledger.set_state("turbo_until", until)
+    eng.ledger.set_state("fast_exits", True)        # the user's choice: turbo bots trade with short holds from now on
     if eng.ledger.get_state("train_boost_until", "") < until:
         boost_training(model, hours)
     if eng.llm and eng.ledger.get_state("ai_full_scan_until", "") < until:
@@ -186,6 +188,14 @@ def turbo(model: str) -> dict:
     eng.ledger.log_decision("boost", reason=f"⚡ turbo até 00:00 (Lisboa): analisa a cada {cfg.TURBO_CYCLE_SEC}s")
     _schedule_turbo(model, eng)
     return {"until": until, "every_s": cfg.TURBO_CYCLE_SEC}
+
+
+def fast_exit_hold(strategy: str) -> float | None:
+    """Max hours a position may stay open for a bot trained with turbo (None = its normal hold)."""
+    eng = (_bots or {}).get(strategy)
+    if not eng or not eng.ledger.get_state("fast_exits", False):
+        return None
+    return cfg.TURBO_FAST_MAX_HOLD_H if strategy in FAST_BOTS else cfg.TURBO_MAX_HOLD_H
 
 
 def _schedule_turbo(model: str, eng):

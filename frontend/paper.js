@@ -602,6 +602,24 @@ async function loadArena() {
   lastArena = a;
   renderTeam();
   renderBoost();
+  renderRanking();
+}
+
+// ─── ranking: the bots compete in the lab (same rules, same fake money) ───
+let RANK = "net";
+function rankBy(k) {
+  RANK = k;
+  document.querySelectorAll("#rank-sort button").forEach((b) => b.classList.toggle("on", b.dataset.r === k));
+  renderRanking();
+}
+function renderRanking() {
+  const rows = (lastArena?.leaderboard || []).map((r) => ({ ...r, wins: Math.round((r.trades || 0) * (r.win_rate || 0)), net: r.net_usd ?? r.pnl_usd ?? 0 }));
+  rows.sort((a, b) => RANK === "wins" ? (b.wins - a.wins) || (b.net - a.net) : (b.net - a.net) || (b.wins - a.wins));
+  const medal = (i) => ["🥇", "🥈", "🥉"][i] || `${i + 1}º`;
+  setHTML("rank-table", `<tr><th></th><th>Bot</th><th>Lucro</th><th>Lucrativos</th><th>Trades</th><th>Acerto</th></tr>` +
+    rows.map((r, i) => { const L = look(r.model); return `<tr class="${i === 0 ? "me1" : ""}"><td class="pos">${medal(i)}</td>
+      <td>${esc(L.ico || "")} <b>${esc(L.label)}</b>${r.green_light?.trusted || r.green_light?.ok ? " ⚽" : " 🪑"}${r.turbo_until && new Date(r.turbo_until) > new Date() ? " ⚡" : ""}</td>
+      <td>${pnl(r.net)}</td><td>${r.wins}</td><td>${r.trades || 0}</td><td>${r.trades ? pct(r.win_rate) : "–"}</td></tr>`; }).join(""));
 }
 
 function renderTeam() {
@@ -698,12 +716,12 @@ function trainButton(model, r) {
   const until = r.train_boost_until && new Date(r.train_boost_until) > new Date() ? r.train_boost_until : null;
   const scan = r.ai_full_scan_until && new Date(r.ai_full_scan_until) > new Date() ? `<div class="gl ok">🧠 analisa as 29 moedas a cada hora até ${hhmm(r.ai_full_scan_until)}</div>` : "";
   const turbo = r.turbo_until && new Date(r.turbo_until) > new Date() ? r.turbo_until : null;
-  return scan + (turbo ? `<button class="tboost on" disabled>⚡ turbo até ${hhmm(turbo)} · analisa a cada minuto</button>`
+  return scan + (turbo ? `<button class="tboost on" disabled>⚡ turbo até ${hhmm(turbo)} · a cada minuto · saída em até ${model.endsWith("_15m") ? 1 : 2}h</button>`
     : `<button class="tboost" onclick="event.stopPropagation(); trainBoost('${esc(model)}', this)">⚡ Turbo hoje</button>`);
 }
 function trainBoost(model, btn) {
   if (REMOTE || !btn || btn.disabled) return;
-  if (!confirm(`Turbinar o ${look(model).label} até a meia-noite? No laboratório (dinheiro falso) ele passa a ler o mercado a cada minuto em vez de a cada rodada, com todas as vagas e sem limite diário${look(model).label === "Valdivia" ? ", e a IA analisa as 29 moedas" : ""}. As regras de compra, stops e alvos não mudam — os trades continuam valendo como prova.`)) return;
+  if (!confirm(`Turbinar o ${look(model).label} até a meia-noite? No laboratório (dinheiro falso) ele passa a ler o mercado a cada minuto, com todas as vagas e sem limite diário, e fecha cada posição em até ${model.endsWith("_15m") ? 1 : 2}h (meta: 10+ trades por dia)${look(model).label === "Valdivia" ? ", e a IA analisa as 29 moedas" : ""}. As regras de compra, stops e alvos não mudam. Atenção: depois do turbo o bot passa a operar sempre com saídas rápidas, inclusive na conta real quando for promovido.`)) return;
   run(btn, "Turbinando…", () => api("/arena/turbo", "POST", { bot: model }),
       `⚡ ${look(model).label} turbinado até a meia-noite: analisa o mercado a cada minuto`);
 }

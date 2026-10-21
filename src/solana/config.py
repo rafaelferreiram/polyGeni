@@ -167,7 +167,10 @@ BOT_MAX_SLEEP_MIN = _i("BOT_MAX_SLEEP_MIN", 120)
 LIVE_MIN_LAB_TRADES = _i("LIVE_MIN_LAB_TRADES", 10)
 BOT_WAKE_MOVE_PCT = _f("BOT_WAKE_MOVE_PCT", 0.015)
 ARENA_CYCLE_SEC = _i("ARENA_CYCLE_SEC", 300)
-TURBO_CYCLE_SEC = _i("TURBO_CYCLE_SEC", 60)          # a bot in "turbo do dia" analyses this often          # lab bots scan with the accounts (candles are shared, cheap)
+TURBO_CYCLE_SEC = _i("TURBO_CYCLE_SEC", 60)          # a bot in "turbo do dia" analyses this often
+# a bot trained with turbo closes positions sooner (lab and, once promoted, real account): more round trips per day
+TURBO_MAX_HOLD_H = _f("TURBO_MAX_HOLD_H", 2.0)
+TURBO_FAST_MAX_HOLD_H = _f("TURBO_FAST_MAX_HOLD_H", 1.0)   # 15-minute twins          # lab bots scan with the accounts (candles are shared, cheap)
 
 # ─── Simulation of the real account: same limits/markets as live, real mainnet books, fake money ───
 SHADOW_DB_PATH = os.getenv("SHADOW_DB_PATH", "./shadow.db")

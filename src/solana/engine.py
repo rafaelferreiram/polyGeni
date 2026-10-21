@@ -563,8 +563,11 @@ def bench_prices() -> dict:
 
 def _max_hold(strategy: str, default: float) -> float:
     """Day-trade bots close their positions sooner (e.g. trend: 24h); others use the engine default."""
+    from src.solana import arena
     from src.solana.strategies import RULE_BOTS
-    return getattr(RULE_BOTS.get(strategy), "max_hold_h", None) or default
+    hold = getattr(RULE_BOTS.get(strategy), "max_hold_h", None) or default
+    fast = arena.fast_exit_hold(strategy)
+    return min(hold, fast) if fast else hold
 
 
 def _market_temp(ready: list) -> dict:

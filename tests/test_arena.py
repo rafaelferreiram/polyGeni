@@ -234,3 +234,5 @@ def test_turbo_runs_the_bot_every_minute_until_midnight(tmp_path, monkeypatch):
     eng = bots["claude-haiku-5-5"]
     assert eng.ledger.get_state("train_boost_until") >= r["until"][:13] and eng.ledger.get_state("ai_full_scan_until")
     assert r["until"].endswith(":00:00+00:00")      # Lisbon midnight
+    from src.solana.engine import _max_hold
+    assert _max_hold("claude-haiku-5-5", 48) == cfg.TURBO_MAX_HOLD_H and arena.fast_exit_hold("rules") is None
