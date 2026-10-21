@@ -694,6 +694,26 @@ def account_kill_reset(req: Kind):
     return eng.kill_switch()
 
 
+class ManualBuy(BaseModel):
+    kind: str = "sim"
+    coin: str
+    usd: float = 10.0
+
+
+@router.post("/account/manual-buy", dependencies=LOCAL)
+def account_manual_buy(req: ManualBuy):
+    """The user's own buy from the dashboard (never called by the bots): stop/target on the exchange, same limits."""
+    from src.solana import hl_live
+    if req.kind == "real" and not hl_live.is_armed():
+        raise HTTPException(400, "a conta real está desligada — clique em Start primeiro")
+    if not 10 <= req.usd <= cfg.LIVE_MAX_POSITION_USD:
+        raise HTTPException(400, f"valor entre $10 (mínimo da Hyperliquid) e ${cfg.LIVE_MAX_POSITION_USD:.0f}")
+    try:
+        return _account_engine(req.kind).manual_entry(req.coin, req.usd)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
 class AccountMode(BaseModel):
     mode: str
 

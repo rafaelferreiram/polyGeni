@@ -294,6 +294,7 @@ async function refresh() {
   renderTeam();
   renderThermo(a);
   renderPositions(a);
+  fillManualCoins(a);
   renderGoals(a);
   renderRadar(a);
   maybeReplay(a);
@@ -349,6 +350,18 @@ function renderGoals(a) {
     card(g.analyses.done >= g.analyses.target_so_far, "🔍 Análises (ciclos) hoje", `${g.analyses.done} <small>de ${g.analyses.target_so_far} até agora</small>`,
          pctOf(g.analyses.done, g.analyses.target_so_far), "1 ciclo a cada 5 min, 29 moedas por ciclo"),
   ].join(""));
+}
+
+// ─── manual buy: the user's own decision, executed with the same protections as the bots ───
+function manualBuy(btn) {
+  const coin = document.getElementById("mb-coin").value, usd = +document.getElementById("mb-usd").value;
+  if (KIND === "real" && !confirm(`Comprar ${coin} por ~$${usd.toFixed(2)} com DINHEIRO REAL (alavancagem ${acc.limits.leverage}x isolada)?\n\nO sistema coloca stop (2 ATR) e alvo (3 ATR) na Hyperliquid. Perda máxima ≈ o stop.`)) return;
+  run(btn, "Comprando…", () => api("/account/manual-buy", "POST", { kind: KIND, coin, usd }),
+      (r) => `🛒 Comprou ${r.symbol} por $${r.usd.toFixed(2)} a ${fmtPx(r.price)} · stop ${fmtPx(r.stop)} · alvo ${fmtPx(r.tp)}`);
+}
+function fillManualCoins(a) {
+  const sel = document.getElementById("mb-coin");
+  if (!sel.options.length) { sel.innerHTML = a.limits.markets.map((m) => `<option>${esc(m)}</option>`).join(""); sel.value = "BTC"; }
 }
 
 // ─── radar: every coin the bots watch, and the exact level that would trigger a buy ───

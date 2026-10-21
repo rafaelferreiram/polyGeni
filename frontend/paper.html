@@ -390,6 +390,12 @@
     <section class="panel" id="posicoes">
       <h2><span>Posições abertas <span class="tag" id="pos-tag">–</span></span><span class="note" id="pos-head"></span></h2>
       <div class="positions" id="positions"></div>
+      <div class="boost">
+        <span>🛒 <b>Compra manual</b> (você decide; o sistema põe stop e alvo na corretora e respeita os limites):</span>
+        <select id="mb-coin" aria-label="Moeda"></select>
+        <label>$ <input id="mb-usd" type="number" min="10" max="12" step="0.5" value="10" style="width:70px"></label>
+        <button onclick="manualBuy(this)">Comprar</button>
+      </div>
     </section>
     <section class="panel" id="termometro">
       <h2><span>Termômetro <span class="tag">mercado × nossos bots</span></span></h2>
@@ -537,6 +543,6 @@
   </main>
 
   <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
-  <script src="/static/paper.js?v=44"></script>
+  <script src="/static/paper.js?v=45"></script>
 </body>
 </html>

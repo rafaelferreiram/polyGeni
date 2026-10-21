@@ -74,6 +74,9 @@ Same engine and agents; only the broker is real (`HyperliquidLiveBroker`, offici
 - **Leverage** `LIVE_LEVERAGE` (default 2x isolated, max 3x): with $18 the team can hold up to 3 positions of ~$12 at
   once instead of one. Each keeps its own stop and target on the exchange; daily loss (10%) and the kill switch work on
   equity, so the worst day is still capped.
+- **Manual buy** (dashboard "🛒 Compra manual", `POST /api/paper/account/manual-buy`): the user's own buy, $10–12, put
+  through the same Risk limits with an exchange stop (2 ATR) and target (3 ATR) and recorded in the ledger — buying
+  directly on Hyperliquid instead would look like an untracked position and trip the kill switch.
 - **News** (`src/solana/news.py`, `GET /api/paper/news`): CoinDesk, Cointelegraph, Decrypt and The Block RSS every 5 min,
   tagged with the coins they mention; shown on the dashboard and given to the AI bot (headlines of the last 12h for the
   coin). X.com is not used: its API has no free read access.

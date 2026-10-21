@@ -304,3 +304,18 @@ def test_bots_rest_after_the_daily_goal(ledger, monkeypatch):
 def test_trend_positions_are_day_trades():
     from src.solana.engine import _max_hold
     assert _max_hold("trend", 72) == 24 and _max_hold("rules", 72) == 72 and _max_hold("llm:claude-haiku-5-5", 72) == 72
+
+
+def test_manual_buy_goes_through_risk_with_stop_and_target(ledger):
+    import pytest
+    eng = build(ledger, Price(1.0))
+    sym = eng.scouts[0].candidates()[0].symbol
+    out = eng.manual_entry(sym, 8.0)
+    assert out["usd"] <= 8.0 and out["stop"] < out["price"] < out["tp"]
+    pos = ledger.positions()[0]
+    assert pos["strategy"] == "manual" and pos["stop_price"] and pos["tp_price"]
+    with pytest.raises(ValueError):
+        eng.manual_entry(sym, 8.0)                       # risk: already holding it
+    eng.trip_kill_switch("test")
+    with pytest.raises(ValueError, match="kill switch"):
+        eng.manual_entry("OTHER", 8.0)

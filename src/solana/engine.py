@@ -290,6 +290,35 @@ class PaperEngine:
             logger.info(f"[paper] cycle {cycle}: {stats}")
         return stats
 
+    def manual_entry(self, symbol: str, usd: float) -> dict:
+        """A buy the user clicks on the dashboard: same risk limits, exchange stop (2 ATR) / target (3 ATR) and ledger
+        as the bots' trades, so the exchange and the books never disagree (a buy made outside would trip the kill switch)."""
+        from src.solana.strategies import Signal, _atr_stops
+        if self.kill_switch().get("active"):
+            raise ValueError("kill switch ativo — rearme primeiro")
+        c = next((x for s in self.scouts for x in s.candidates() if x.symbol == symbol), None)
+        if c is None:
+            raise ValueError(f"{symbol} não está entre os mercados dos bots")
+        candles = self._candles(c)[:-1]
+        stop, tp, a = _atr_stops(candles, 2.0, 3.0)
+        sig = Signal("manual", c.price_usd, stop, tp, f"compra manual pelo painel (até ${usd:.2f})", {"atr": a})
+        if not self._busy.acquire(timeout=120):             # never race a running cycle
+            raise ValueError("os bots estão no meio de um ciclo — tente de novo em instantes")
+        try:
+            risk = self.risk.evaluate(sig, c.mint, 1.0, self.portfolio(), self.profiles.get(c.venue, {}).get("max_pos_pct"),
+                                      max_usd=usd)
+            if not risk.approve:
+                raise ValueError(f"o Risk recusou: {risk.reason}")
+            order_id = f"manual-{int(time.time())}-{c.mint[:12]}-buy"
+            fill = self.executor.open(order_id, c, sig, risk.detail["size_usd"], risk.detail["fingerprint"])
+            self.reconcile()
+            self.ledger.log_decision("entry", cycle=self.cycle, mint=c.mint, symbol=c.symbol, strategy="manual",
+                                     order_id=order_id, reason=f"{sig.reason}; size ${fill['usd_gross']:.2f} @ {fill['price']:.6g}")
+        finally:
+            self._busy.release()
+        return {"symbol": c.symbol, "usd": round(fill["usd_gross"], 2), "price": fill["price"],
+                "stop": sig.stop_price, "tp": sig.tp_price}
+
     rests_on_goal = True        # lab bots set False: they keep trading to keep measuring
     size_policy = None          # strategy name -> max position USD (the bots' reward/penalty), set for team wallets
 
