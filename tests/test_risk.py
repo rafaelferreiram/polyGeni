@@ -51,3 +51,10 @@ def test_daily_loss_and_kill_switch_veto():
     assert not R.daily_loss_breached(pf(equity=95.1))
     assert not R.evaluate(sig(), "M", 0.5, pf(equity=94, cash=94)).approve
     assert not R.evaluate(sig(), "M", 0.5, pf(kill_switch=True)).approve
+
+
+def test_daily_entry_cap_and_fingerprint():
+    r = RiskAgent(max_entries_per_day=2)
+    assert not r.evaluate(sig(), "M", 0.5, pf(entries_today=2)).approve
+    v = r.evaluate(sig(), "M", 0.5, pf(entries_today=1))
+    assert v.approve and len(v.detail["fingerprint"]) == 64

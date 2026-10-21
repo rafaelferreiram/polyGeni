@@ -84,5 +84,33 @@ class MeanReversion:
         return None
 
 
-def default_strategies() -> list:
-    return [MomentumBreakout(), MeanReversion()]
+def default_strategies(names: list[str] | None = None) -> list:
+    """Enabled by evidence: walk-forward OOS (reports/, 2026-10-21) — mean-reversion +11.2% on Hyperliquid 1h and
+    +4.1% on Solana tokens; momentum lost on every venue/timeframe, so it is off unless PAPER_STRATEGIES enables it."""
+    from src.solana import config as cfg
+    names = names or cfg.PAPER_STRATEGIES
+    available = {"mean_reversion": MeanReversion, "momentum": MomentumBreakout}
+    share = 1.0 / len(names)
+    return [available[n](capital_pct=share) for n in names]
+
+
+@dataclass
+class RegimeFiltered:
+    """Deterministic regime gate: only take the inner strategy's longs while close > SMA(n)."""
+    inner: object
+    n: int = 200
+
+    @property
+    def name(self):
+        return self.inner.name
+
+    @property
+    def capital_pct(self):
+        return self.inner.capital_pct
+
+    def signal(self, candles: list[dict]) -> Signal | None:
+        if len(candles) < self.n:
+            return None
+        if candles[-1]["close"] <= mean(c["close"] for c in candles[-self.n:]):
+            return None
+        return self.inner.signal(candles)

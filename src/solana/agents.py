@@ -4,6 +4,7 @@ Agents. Rules decide; the LLM only analyses and may VETO.
 Scout -> Safety -> Strategy (deterministic signal) -> Debate (optional LLM veto)
       -> Risk (deterministic, final veto, sizes the trade) -> Executor (only one touching the broker)
 """
+import hashlib
 import json
 import logging
 import re
@@ -12,7 +13,6 @@ from dataclasses import dataclass, field
 
 from src.solana import config as cfg
 from src.solana import market_data as md
-from src.solana.broker import PaperBroker
 from src.solana.strategies import Signal
 
 logger = logging.getLogger("solana.agents")
@@ -31,6 +31,7 @@ class Candidate:
     price_change: dict = field(default_factory=dict)
     txns_h24: dict = field(default_factory=dict)
     decimals: int | None = None   # filled by SafetyAgent from the mint account
+    venue: str = "jupiter"        # which paper broker fills it; agents don't care
 
     def age_hours(self, now_ms: float | None = None) -> float | None:
         if not self.pair_created_at_ms:
@@ -227,6 +228,7 @@ class Portfolio:
     strategy_exposure: dict            # strategy -> marked value
     day_start_equity: float
     kill_switch: bool
+    entries_today: int = 0
 
 
 class RiskAgent:
@@ -234,15 +236,17 @@ class RiskAgent:
 
     def __init__(self, max_pos_pct=cfg.RISK_MAX_POSITION_PCT, max_exposure_pct=cfg.RISK_MAX_EXPOSURE_PCT,
                  max_positions=cfg.RISK_MAX_POSITIONS, max_daily_loss_pct=cfg.RISK_MAX_DAILY_LOSS_PCT,
-                 min_trade_usd=cfg.RISK_MIN_TRADE_USD):
+                 min_trade_usd=cfg.RISK_MIN_TRADE_USD, max_entries_per_day=cfg.RISK_MAX_ENTRIES_PER_DAY):
         self.max_pos_pct, self.max_exposure_pct = max_pos_pct, max_exposure_pct
         self.max_positions, self.max_daily_loss_pct = max_positions, max_daily_loss_pct
         self.min_trade_usd = min_trade_usd
+        self.max_entries_per_day = max_entries_per_day
 
     def daily_loss_breached(self, p: Portfolio) -> bool:
         return p.day_start_equity > 0 and (p.day_start_equity - p.equity) / p.day_start_equity >= self.max_daily_loss_pct
 
-    def evaluate(self, sig: Signal, mint: str, capital_pct: float, p: Portfolio) -> Vote:
+    def evaluate(self, sig: Signal, mint: str, capital_pct: float, p: Portfolio,
+                 max_pos_pct: float | None = None) -> Vote:
         d = {"equity": round(p.equity, 2), "cash": round(p.cash, 2), "exposure": round(p.exposure, 2)}
         if p.kill_switch:
             return Vote("risk", False, "kill switch active", d)
@@ -252,34 +256,58 @@ class RiskAgent:
             return Vote("risk", False, "stop-loss and take-profit are mandatory", d)
         if mint in p.open_mints:
             return Vote("risk", False, "already holding this token", d)
+        if p.entries_today >= self.max_entries_per_day:
+            return Vote("risk", False, f"daily entry cap ({self.max_entries_per_day}) reached", d)
         if len(p.open_mints) >= self.max_positions:
             return Vote("risk", False, f"max positions ({self.max_positions}) reached", d)
         strategy_room = p.equity * capital_pct - p.strategy_exposure.get(sig.strategy, 0)
         exposure_room = p.equity * self.max_exposure_pct - p.exposure
-        size = min(p.equity * self.max_pos_pct, strategy_room, exposure_room, p.cash * 0.98)
+        # 1x only: notional is capped by cash, i.e. never more than the capital allocated to the market
+        size = min(p.equity * (max_pos_pct or self.max_pos_pct), strategy_room, exposure_room, p.cash * 0.98)
         d.update(size_usd=round(size, 2), strategy_room=round(strategy_room, 2), exposure_room=round(exposure_room, 2))
         if size < self.min_trade_usd:
             return Vote("risk", False, f"size ${size:.2f} < min ${self.min_trade_usd:.2f} "
                                        f"(position/exposure/strategy capital/cash limits)", d)
+        d["fingerprint"] = order_fingerprint(sig.strategy, mint, round(size, 2), sig.stop_pct, sig.tp_pct)
         return Vote("risk", True, f"approved ${size:.2f}", d)
+
+
+def order_fingerprint(strategy: str, mint: str, size_usd: float, stop_pct: float, tp_pct: float) -> str:
+    """SHA-256 of exactly what Risk approved; Executor refuses anything that doesn't match."""
+    raw = json.dumps([strategy, mint, round(size_usd, 2), round(stop_pct, 6), round(tp_pct, 6)])
+    return hashlib.sha256(raw.encode()).hexdigest()
 
 
 # ─── Executor ────────────────────────────────────────────────────────────────
 
 class ExecutorAgent:
-    """The only component holding a broker reference."""
+    """The only component holding broker references; routes by venue so other agents stay venue-agnostic."""
 
-    def __init__(self, broker: PaperBroker):
-        self._broker = broker
+    def __init__(self, *brokers):
+        self._brokers = {b.venue: b for b in brokers}
 
-    def open(self, order_id: str, c: Candidate, sig: Signal, size_usd: float) -> dict:
-        return self._broker.buy(order_id, c.mint, c.symbol, size_usd, c.decimals, strategy=sig.strategy,
-                                stop_price=sig.stop_price, tp_price=sig.tp_price,
-                                meta={"pool_address": c.pair_address, "signal": sig.reason})
+    @property
+    def venues(self) -> list[str]:
+        return list(self._brokers)
+
+    def _b(self, venue: str):
+        if venue not in self._brokers:
+            raise RuntimeError(f"no paper broker for venue {venue}")
+        return self._brokers[venue]
+
+    def open(self, order_id: str, c: Candidate, sig: Signal, size_usd: float, fingerprint: str) -> dict:
+        if order_fingerprint(sig.strategy, c.mint, round(size_usd, 2), sig.stop_pct, sig.tp_pct) != fingerprint:
+            raise RuntimeError("order differs from what RiskAgent approved (fingerprint mismatch) — refused")
+        return self._b(c.venue).buy(order_id, c.mint, c.symbol, size_usd, c.decimals, strategy=sig.strategy,
+                                    stop_price=sig.stop_price, tp_price=sig.tp_price,
+                                    meta={"pool_address": c.pair_address, "signal": sig.reason})
 
     def close(self, order_id: str, pos: dict, reason: str) -> dict:
-        return self._broker.sell(order_id, pos["mint"], pos["symbol"], pos["qty"], pos["decimals"],
-                                 strategy=pos["strategy"], meta={"reason": reason})
+        return self._b(pos["venue"]).sell(order_id, pos["mint"], pos["symbol"], pos["qty"], pos["decimals"],
+                                          strategy=pos["strategy"], meta={"reason": reason})
 
     def mark(self, pos: dict) -> float:
-        return self._broker.quote_sell_value(pos["mint"], pos["qty"], pos["decimals"])[0]
+        return self._b(pos["venue"]).quote_sell_value(pos["mint"], pos["qty"], pos["decimals"])[0]
+
+    def accrue(self, positions: list[dict]) -> float:
+        return sum(b.accrue(positions) for b in self._brokers.values())

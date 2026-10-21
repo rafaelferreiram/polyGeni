@@ -26,6 +26,7 @@
     .perf .lbl { color: var(--muted); font-size: 12px; }
     .perf .val { font-size: 18px; font-weight: 700; }
     form.inline { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+    select { background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px; }
     input { background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 8px; min-width: 0; flex: 1; }
     button { cursor: pointer; }
     .btn-danger { background: var(--red) !important; color: #fff !important; }
@@ -76,7 +77,7 @@
   </header>
   <nav class="sections">
     <a href="#resumo">Resumo</a><a href="#agents">Agents</a><a href="#research-desk">Research</a>
-    <a href="#posicoes">Posições & trades</a><a href="#decisoes">Decisões</a><a href="#fundos">Fundos & carteiras</a>
+    <a href="#posicoes">Posições & trades</a><a href="#mercados">Mercados</a><a href="#pronto">Pronto p/ real?</a><a href="#decisoes">Decisões</a><a href="#fundos">Fundos & carteiras</a>
   </nav>
 
   <main>
@@ -93,8 +94,14 @@
 
     <div class="grid">
       <section class="panel">
-        <h2>Ganhos (excluem depósitos/levantamentos)</h2>
+        <h2>Ganhos <span class="help" title="USD ganho sem contar depósitos/levantamentos; TWR = retorno time-weighted; comparado com comprar e segurar SOL e BTC no mesmo período">?</span></h2>
         <div class="perf" id="perf"></div>
+        <div class="period-toggle" style="margin-top:12px">
+          <button class="period-btn" onclick="setChartPeriod('day',this)">Dia</button>
+          <button class="period-btn" onclick="setChartPeriod('week',this)">Semana</button>
+          <button class="period-btn" onclick="setChartPeriod('month',this)">Mês</button>
+          <button class="period-btn active" onclick="setChartPeriod('all',this)">Tudo</button>
+        </div>
         <canvas id="equity-chart" height="140" style="margin-top:12px"></canvas>
       </section>
       <section class="panel">
@@ -125,8 +132,25 @@
         <div class="tbl-wrap"><table id="positions"></table></div>
       </section>
       <section class="panel">
-        <h2>Trades fechados</h2>
+        <h2>Trades fechados <span class="tag" id="trades-total"></span></h2>
+        <div class="wallet-btns">
+          <select id="f-venue" data-all="Todos os venues" onchange="renderTrades()"></select>
+          <select id="f-asset" data-all="Todos os ativos" onchange="renderTrades()"></select>
+          <select id="f-strat" data-all="Todas as estratégias" onchange="renderTrades()"></select>
+        </div>
         <div class="tbl-wrap"><table id="trades"></table></div>
+      </section>
+    </div>
+
+    <div class="grid">
+      <section class="panel" id="mercados">
+        <h2>Mercados</h2>
+        <p class="note">Solana (Jupiter, spot) e Hyperliquid (perps BTC/ETH/SOL + ouro xyz:GOLD e prata xyz:SILVER, 1x, só long). Pausa um mercado ou um venue inteiro: as saídas (stop/TP) continuam a funcionar.</p>
+        <div id="markets"></div>
+      </section>
+      <section class="panel" id="pronto">
+        <h2>Pronto para dinheiro real?</h2>
+        <div id="readiness"></div>
       </section>
     </div>
 
@@ -149,9 +173,11 @@
         </form>
         <div class="tbl-wrap"><table id="funds"></table></div>
         <details style="margin-top:10px"><summary>Como funcionará com dinheiro real (fase 3)</summary>
-          <p class="note">1) O bot terá uma <b>hot wallet Solana própria</b> com pouco saldo; a chave fica só no servidor, nunca no browser nem no repositório.<br>
-          2) <b>Adicionar fundos</b> = enviar USDC/SOL da tua Phantom para o endereço público do bot.<br>
-          3) <b>Levantar</b> = o bot envia para um único endereço de levantamento pré-aprovado (allowlist), com limite diário.<br>
+          <p class="note">Ainda não implementado — só a explicação.<br>
+          1) O bot terá uma <b>hot wallet própria</b> (Solana) e uma conta Hyperliquid própria, com pouco saldo. <b>Nunca a tua carteira principal.</b> A chave fica só no servidor, nunca no browser nem no repositório.<br>
+          2) <b>Adicionar fundos</b> = enviar USDC/SOL da tua Phantom para o endereço público da hot wallet do bot.<br>
+          3) <b>Levantar</b> = o bot envia só para um endereço pré-aprovado (a tua Phantom ou BlueWallet), com limite diário.<br>
+          4) Chaves com o <b>mínimo de permissões</b> (na Hyperliquid, uma API wallet que pode negociar mas não levantar).<br>
           4) Trades reais só com <code>LIVE_TRADING=1</code>, depois de 4–8 semanas de paper 24/7 com resultado positivo vs. hold SOL.<br>
           A tua Phantom continua só tua; o BlueWallet fica como cofre BTC.</p>
         </details>

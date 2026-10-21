@@ -35,5 +35,6 @@ def candidate(**kw):
 
 
 def flat_candles(n=60, price=1.0, vol=100.0):
-    return [dict(t=i * 3600, open=price, high=price * 1.001, low=price * 0.999, close=price, volume=vol)
+    now = int(time.time()) // 3600 * 3600
+    return [dict(t=now - (n - 1 - i) * 3600, open=price, high=price * 1.001, low=price * 0.999, close=price, volume=vol)
             for i in range(n)]

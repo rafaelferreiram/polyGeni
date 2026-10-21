@@ -61,6 +61,9 @@ RISK_MAX_POSITIONS = _i("RISK_MAX_POSITIONS", 4)
 RISK_MAX_DAILY_LOSS_PCT = _f("RISK_MAX_DAILY_LOSS_PCT", 0.05)
 RISK_MIN_TRADE_USD = _f("RISK_MIN_TRADE_USD", 5.0)
 RISK_MAX_HOLD_H = _f("RISK_MAX_HOLD_H", 72)
+RISK_MAX_ENTRIES_PER_DAY = _i("RISK_MAX_ENTRIES_PER_DAY", 6)
+STALE_CANDLE_H = _f("STALE_CANDLE_H", 3)   # refuse signals computed on candles older than this
+PAPER_STRATEGIES = [s for s in os.getenv("PAPER_STRATEGIES", "mean_reversion").split(",") if s]
 
 # Optional LLM debate (veto-only). Disabled without a key.
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
@@ -68,3 +71,18 @@ DEBATE_MODEL = os.getenv("DEBATE_MODEL", "claude-opus-5-5")
 # JSON list of remote MCP servers the debate LLM may use for fresh context, e.g.
 # [{"url": "https://mcp.example.com/mcp", "name": "market", "authorization_token": "..."}]
 DEBATE_MCP_SERVERS = os.getenv("DEBATE_MCP_SERVERS", "")
+
+# ─── Hyperliquid PAPER venue (public Info API only) ───
+HYPERLIQUID_INFO_URL = os.getenv("HYPERLIQUID_INFO_URL", "https://api.hyperliquid.xyz/info")
+HL_ENABLED = os.getenv("HL_ENABLED", "1") == "1"
+HL_MARKETS = [m for m in os.getenv("HL_MARKETS", "BTC,ETH,SOL,xyz:GOLD,xyz:SILVER").split(",") if m]
+HL_ALLOW_SHORT = False  # long-only in phase 1
+
+# Per-venue risk profile: Solana tokens get a small slice, majors/metals a bigger one with wider stops.
+# Override with JSON, e.g. MARKET_PROFILES='{"hyperliquid": {"max_pos_pct": 0.2, "stop_mult": 2}}'
+import json as _json
+MARKET_PROFILES = {
+    "jupiter": {"max_pos_pct": 0.05, "stop_mult": 1.0},
+    "hyperliquid": {"max_pos_pct": 0.15, "stop_mult": 1.5},
+    **_json.loads(os.getenv("MARKET_PROFILES", "{}")),
+}

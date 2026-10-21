@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS fills (
     seq INTEGER PRIMARY KEY AUTOINCREMENT,
     order_id TEXT NOT NULL UNIQUE,
     ts TEXT NOT NULL,
+    venue TEXT NOT NULL DEFAULT 'jupiter',
     side TEXT NOT NULL CHECK (side IN ('buy','sell')),
     mint TEXT NOT NULL,
     symbol TEXT,
@@ -57,7 +58,8 @@ CREATE TRIGGER IF NOT EXISTS decisions_no_delete BEFORE DELETE ON decisions
 BEGIN SELECT RAISE(ABORT, 'decision log is append-only'); END;
 
 CREATE TABLE IF NOT EXISTS positions (
-    mint TEXT PRIMARY KEY,
+    mint TEXT PRIMARY KEY,        -- instrument id: Solana mint, or hl:<coin> for Hyperliquid
+    venue TEXT NOT NULL DEFAULT 'jupiter',
     symbol TEXT,
     strategy TEXT,
     qty REAL NOT NULL,
@@ -79,8 +81,26 @@ CREATE TABLE IF NOT EXISTS equity (
     cash REAL,
     positions_value REAL,
     equity REAL,
-    contributed REAL              -- start capital + net paper deposits (so gains exclude deposits)
+    contributed REAL,             -- start capital + net paper deposits (so gains exclude deposits)
+    sol_price REAL,               -- benchmarks for "vs buy-and-hold"
+    btc_price REAL
 );
+
+CREATE TABLE IF NOT EXISTS funding (
+    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts TEXT NOT NULL,
+    venue TEXT NOT NULL,
+    mint TEXT NOT NULL,
+    entry_order_id TEXT NOT NULL,
+    rate REAL NOT NULL,           -- hourly funding rate
+    hours REAL NOT NULL,
+    notional_usd REAL NOT NULL,
+    amount_usd REAL NOT NULL      -- > 0: paid by us (long with positive funding)
+);
+CREATE TRIGGER IF NOT EXISTS funding_no_update BEFORE UPDATE ON funding
+BEGIN SELECT RAISE(ABORT, 'funding ledger is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS funding_no_delete BEFORE DELETE ON funding
+BEGIN SELECT RAISE(ABORT, 'funding ledger is append-only'); END;
 
 CREATE TABLE IF NOT EXISTS cash_movements (
     seq INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -119,7 +139,21 @@ class Ledger:
         self._lock = threading.Lock()
         self.conn = sqlite3.connect(path, check_same_thread=False, isolation_level=None)
         self.conn.row_factory = sqlite3.Row
+        self._migrate()
         self.conn.executescript(SCHEMA)
+
+    def _migrate(self):
+        """Add columns introduced after a DB was created (ALTER is not blocked by the append-only triggers)."""
+        adds = {"fills": [("venue", "TEXT NOT NULL DEFAULT 'jupiter'")],
+                "positions": [("venue", "TEXT NOT NULL DEFAULT 'jupiter'")],
+                "equity": [("contributed", "REAL"), ("sol_price", "REAL"), ("btc_price", "REAL")]}
+        for table, cols in adds.items():
+            have = {r[1] for r in self.conn.execute(f"PRAGMA table_info({table})")}
+            if not have:
+                continue
+            for name, decl in cols:
+                if name not in have:
+                    self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
 
     def _q(self, sql: str, args=()) -> list[dict]:
         with self._lock:
@@ -150,7 +184,24 @@ class Ledger:
         r = self._q("""SELECT
             COALESCE(SUM(CASE WHEN side='buy' THEN -usd_gross ELSE usd_gross END), 0) AS flow,
             COALESCE(SUM(fee_usd), 0) AS fees FROM fills""")[0]
-        return self.start_usdc + self.net_deposits() + r["flow"] - r["fees"]
+        return self.start_usdc + self.net_deposits() + r["flow"] - r["fees"] - self.funding_paid()
+
+    def add_funding(self, venue: str, mint: str, entry_order_id: str, rate: float, hours: float,
+                    notional_usd: float) -> float:
+        amount = notional_usd * rate * hours
+        self._x("INSERT INTO funding (ts,venue,mint,entry_order_id,rate,hours,notional_usd,amount_usd) "
+                "VALUES (?,?,?,?,?,?,?,?)", (now_iso(), venue, mint, entry_order_id, rate, hours, notional_usd, amount))
+        return amount
+
+    def funding_paid(self, entry_order_id: str | None = None) -> float:
+        sql, args = "SELECT COALESCE(SUM(amount_usd),0) AS f FROM funding", ()
+        if entry_order_id:
+            sql, args = sql + " WHERE entry_order_id=?", (entry_order_id,)
+        return self._q(sql, args)[0]["f"]
+
+    def last_funding_ts(self, entry_order_id: str) -> str | None:
+        rows = self._q("SELECT ts FROM funding WHERE entry_order_id=? ORDER BY seq DESC LIMIT 1", (entry_order_id,))
+        return rows[0]["ts"] if rows else None
 
     # ─── paper deposits / withdrawals (simulated money only) ───
     def move_cash(self, kind: str, amount_usd: float, note: str = "") -> dict:
@@ -176,7 +227,7 @@ class Ledger:
             p = pos.get(f["mint"])
             if f["side"] == "buy":
                 if p is None:
-                    p = pos[f["mint"]] = dict(mint=f["mint"], symbol=f["symbol"], strategy=f["strategy"],
+                    p = pos[f["mint"]] = dict(mint=f["mint"], venue=f["venue"], symbol=f["symbol"], strategy=f["strategy"],
                                               qty=0.0, cost_usd=0.0, decimals=f["decimals"],
                                               opened_at=f["ts"], entry_order_id=f["order_id"])
                 p["qty"] += f["qty"]
@@ -201,15 +252,22 @@ class Ledger:
             o = open_.get(f["mint"])
             if f["side"] == "buy":
                 if o is None:
-                    o = open_[f["mint"]] = {"qty": 0.0, "cost": 0.0, "entry_ts": f["ts"], "strategy": f["strategy"]}
+                    o = open_[f["mint"]] = {"qty": 0.0, "cost": 0.0, "entry_ts": f["ts"], "strategy": f["strategy"],
+                                            "entry_id": f["order_id"], "fees": 0.0, "entry_price": f["price"],
+                                            "entry_slip": f["slippage_bps"]}
                 o["qty"] += f["qty"]
                 o["cost"] += f["usd_gross"] + f["fee_usd"]
+                o["fees"] += f["fee_usd"]
             elif o is not None and o["qty"] > 0:
                 frac = min(f["qty"] / o["qty"], 1.0)
                 cost = o["cost"] * frac
-                proceeds = f["usd_gross"] - f["fee_usd"]
-                out.append({"mint": f["mint"], "symbol": f["symbol"], "strategy": o["strategy"],
+                funding = self.funding_paid(o["entry_id"]) * frac
+                proceeds = f["usd_gross"] - f["fee_usd"] - funding
+                out.append({"mint": f["mint"], "venue": f["venue"], "symbol": f["symbol"], "strategy": o["strategy"],
                             "entry_ts": o["entry_ts"], "exit_ts": f["ts"], "cost_usd": cost,
+                            "entry_price": o["entry_price"], "exit_price": f["price"],
+                            "fees_usd": o["fees"] * frac + f["fee_usd"], "funding_usd": funding,
+                            "slippage_bps": [o["entry_slip"], f["slippage_bps"]],
                             "proceeds_usd": proceeds, "pnl_usd": proceeds - cost,
                             "pnl_pct": (proceeds - cost) / cost if cost else 0,
                             "reason": json.loads(f["meta"] or "{}").get("reason", ""),
@@ -230,7 +288,7 @@ class Ledger:
         return self._q("SELECT * FROM positions ORDER BY opened_at")
 
     def upsert_position(self, p: dict):
-        cols = [c for c in ("mint", "symbol", "strategy", "qty", "decimals", "cost_usd", "entry_price",
+        cols = [c for c in ("mint", "venue", "symbol", "strategy", "qty", "decimals", "cost_usd", "entry_price",
                             "stop_price", "tp_price", "opened_at", "entry_order_id", "pool_address",
                             "mark_price", "mark_value") if c in p]
         self._x(f"INSERT OR REPLACE INTO positions ({','.join(cols)}) VALUES ({','.join('?' * len(cols))})",
@@ -282,9 +340,11 @@ class Ledger:
         return rows
 
     # ─── equity / state ───
-    def record_equity(self, cycle: int, cash: float, positions_value: float):
-        self._x("INSERT INTO equity (ts,cycle,cash,positions_value,equity,contributed) VALUES (?,?,?,?,?,?)",
-                (now_iso(), cycle, cash, positions_value, cash + positions_value, self.contributed()))
+    def record_equity(self, cycle: int, cash: float, positions_value: float, bench: dict | None = None):
+        bench = bench or {}
+        self._x("INSERT INTO equity (ts,cycle,cash,positions_value,equity,contributed,sol_price,btc_price) "
+                "VALUES (?,?,?,?,?,?,?,?)", (now_iso(), cycle, cash, positions_value, cash + positions_value,
+                                             self.contributed(), bench.get("SOL"), bench.get("BTC")))
 
     def contributed(self) -> float:
         return self.start_usdc + self.net_deposits()

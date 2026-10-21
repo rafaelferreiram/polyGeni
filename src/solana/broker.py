@@ -13,7 +13,32 @@ from src.solana import market_data as md
 from src.solana.ledger import Ledger, now_iso
 
 
-class PaperBroker:
+class Broker:
+    """Venue-agnostic paper broker interface. Agents never see which venue fills them;
+    ExecutorAgent routes by candidate/position venue."""
+    venue = "?"
+
+    def buy(self, order_id: str, instrument: str, symbol: str, usd: float, decimals: int, *,
+            strategy: str, stop_price: float, tp_price: float, meta: dict | None = None) -> dict:
+        raise NotImplementedError
+
+    def sell(self, order_id: str, instrument: str, symbol: str, qty: float, decimals: int, *,
+             strategy: str, meta: dict | None = None) -> dict:
+        raise NotImplementedError
+
+    def quote_sell_value(self, instrument: str, qty: float, decimals: int) -> tuple[float, dict]:
+        """USD received if the position were closed now (mark-to-market at executable prices)."""
+        raise NotImplementedError
+
+    def accrue(self, positions: list[dict]) -> float:
+        """Periodic carrying costs (e.g. perp funding). Spot venues have none."""
+        return 0.0
+
+
+class PaperBroker(Broker):
+    """Solana spot via Jupiter quotes."""
+    venue = "jupiter"
+
     def __init__(self, ledger: Ledger, quote_fn=md.jupiter_quote, sol_usd_fn=md.sol_usd,
                  slippage_bps: int = cfg.PAPER_SLIPPAGE_BPS,
                  fee_lamports: int = cfg.PAPER_BASE_FEE_LAMPORTS + cfg.PAPER_PRIORITY_FEE_LAMPORTS):
@@ -43,7 +68,7 @@ class PaperBroker:
         quoted_qty = int(q["outAmount"]) / 10**decimals
         qty = quoted_qty * (1 - self.slippage_bps / 1e4)
         fill, _ = self.ledger.append_fill(dict(
-            order_id=order_id, ts=now_iso(), side="buy", mint=mint, symbol=symbol, strategy=strategy,
+            order_id=order_id, ts=now_iso(), venue=self.venue, side="buy", mint=mint, symbol=symbol, strategy=strategy,
             qty=qty, decimals=decimals, usd_gross=usd, fee_usd=self._fee_usd(),
             price=usd / qty, quote_price=usd / quoted_qty,
             price_impact_pct=float(q.get("priceImpactPct") or 0), slippage_bps=self.slippage_bps,
@@ -58,7 +83,7 @@ class PaperBroker:
         quoted_usd, q = self.quote_sell_value(mint, qty, decimals)
         usd = quoted_usd * (1 - self.slippage_bps / 1e4)
         fill, _ = self.ledger.append_fill(dict(
-            order_id=order_id, ts=now_iso(), side="sell", mint=mint, symbol=symbol, strategy=strategy,
+            order_id=order_id, ts=now_iso(), venue=self.venue, side="sell", mint=mint, symbol=symbol, strategy=strategy,
             qty=qty, decimals=decimals, usd_gross=usd, fee_usd=self._fee_usd(),
             price=usd / qty, quote_price=quoted_usd / qty,
             price_impact_pct=float(q.get("priceImpactPct") or 0), slippage_bps=self.slippage_bps,

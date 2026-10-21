@@ -1,7 +1,12 @@
 const P = "/api/paper";
 
+let TOKEN = null;
 async function api(path, method = "GET", body = null) {
   const opts = { method, headers: { "Content-Type": "application/json" } };
+  if (method !== "GET") {
+    if (!TOKEN) TOKEN = (await (await fetch(P + "/token")).json()).token;
+    opts.headers["X-Paper-Token"] = TOKEN;
+  }
   if (body) opts.body = JSON.stringify(body);
   const res = await fetch(P + path, opts);
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || res.statusText);
@@ -83,10 +88,14 @@ async function loadStatus() {
   kb.className = `badge ${s.kill_switch.active ? "badge-auto" : "badge-off"}`;
   if (s.kill_switch.active) kb.style.color = "var(--red)";
 
-  const labels = { day: "Hoje (24h)", week: "Semana", month: "Mês", all: "Total" };
+  const labels = { day: "Hoje (24h)", week: "7 dias", month: "30 dias", all: "Desde o início" };
   document.getElementById("perf").innerHTML = Object.entries(labels).map(([k, l]) => {
     const p = (s.performance || {})[k];
-    return `<div><div class="lbl">${l}</div><div class="val">${p ? pnl(p.gain_usd) : "–"}</div><div class="lbl">${p ? pct(p.gain_pct) : ""}</div></div>`;
+    if (!p) return `<div><div class="lbl">${l}</div><div class="val">–</div></div>`;
+    const beat = p.hold_sol === null ? "" : p.twr >= p.hold_sol ? "green" : "red";
+    return `<div><div class="lbl">${l}</div><div class="val">${pnl(p.gain_usd)}</div>
+      <div class="lbl">${pct(p.twr)} TWR</div>
+      <div class="lbl ${beat}">hold SOL ${pct(p.hold_sol)}</div><div class="lbl">hold BTC ${pct(p.hold_btc)}</div></div>`;
   }).join("");
 
   const lc = s.last_cycle || {};
@@ -121,6 +130,7 @@ async function loadAgents() {
     return `${i ? '<span class="arrow">→</span>' : ""}<div class="agent ${cls}" title="${esc(a.role)}">
       <h3><span><span class="icon">${icon}</span>${esc(label)}</span></h3>
       <div class="role">${esc(plain)}</div>
+      ${a.capital_usd !== undefined ? `<div class="last">Capital: ${usd(a.capital_usd)}</div>` : ""}
       <div class="last">✔ ${a.approved ?? 0} · ✖ ${a.vetoed ?? 0}${a.trades ? ` · ${a.trades} trades · ${pnl(a.pnl_usd)} · win ${pct(a.win_rate)}` : ""}</div>
       <div class="last muted">${a.last_run ? esc(reason) : "ainda não correu"}</div>
       <div class="last muted">${a.last_run ? time(a.last_run) : ""}</div>
@@ -157,17 +167,37 @@ async function connectWallet(kind) {
 
 async function loadPositions() {
   const { positions } = await api("/positions");
-  table("positions", ["Token", "Estratégia", "Custo", "Valor", "P&L", "Stop / TP", "Aberta"], positions.map((p) => `
-    <tr><td>${esc(p.symbol)} <span class="muted">${short(p.mint)}</span></td><td>${esc(p.strategy)}</td>
+  table("positions", ["Venue", "Ativo", "Estratégia", "Custo", "Valor", "P&L", "Stop / TP", "Aberta"], positions.map((p) => `
+    <tr><td>${esc(p.venue)}</td><td>${esc(p.symbol)} <span class="muted">${p.venue === "jupiter" ? short(p.mint) : "1x"}</span></td><td>${esc(p.strategy)}</td>
     <td>${usd(p.cost_usd)}</td><td>${usd(p.mark_value)}</td><td>${pnl(p.unrealized_pnl)}</td>
     <td>${Number(p.stop_price).toPrecision(4)} / ${Number(p.tp_price).toPrecision(4)}</td><td>${time(p.opened_at)}</td></tr>`));
 }
 
-async function loadTrades() {
-  const { trades } = await api("/trades");
-  table("trades", ["Token", "Estratégia", "Custo", "Recebido", "P&L", "Motivo", "Fecho"], trades.map((t) => `
-    <tr><td>${esc(t.symbol)}</td><td>${esc(t.strategy)}</td><td>${usd(t.cost_usd)}</td><td>${usd(t.proceeds_usd)}</td>
+let allTrades = [];
+function fillSelect(id, values) {
+  const el = document.getElementById(id), cur = el.value;
+  el.innerHTML = `<option value="">${el.dataset.all}</option>` + [...new Set(values)].sort().map((v) => `<option>${esc(v)}</option>`).join("");
+  el.value = cur;
+}
+function renderTrades() {
+  const v = document.getElementById("f-venue").value, a = document.getElementById("f-asset").value,
+        st = document.getElementById("f-strat").value;
+  const rows = allTrades.filter((t) => (!v || t.venue === v) && (!a || t.symbol === a) && (!st || t.strategy === st));
+  const total = rows.reduce((x, t) => x + t.pnl_usd, 0);
+  document.getElementById("trades-total").innerHTML = `${rows.length} trades · ${pnl(total)}`;
+  table("trades", ["Venue", "Ativo", "Estratégia", "Entrada → saída", "Fees", "Slip. (bps)", "P&L", "Motivo", "Fecho"], rows.map((t) => `
+    <tr><td>${esc(t.venue)}</td><td>${esc(t.symbol)}</td><td>${esc(t.strategy)}</td>
+    <td>${Number(t.entry_price).toPrecision(5)} → ${Number(t.exit_price).toPrecision(5)}</td>
+    <td>${usd(t.fees_usd + (t.funding_usd || 0), 3)}${t.funding_usd ? `<br><span class="muted">funding ${usd(t.funding_usd, 3)}</span>` : ""}</td>
+    <td>${(t.slippage_bps || []).join(" / ")}</td>
     <td>${pnl(t.pnl_usd)} <span class="muted">${pct(t.pnl_pct)}</span></td><td>${esc(t.reason)}</td><td>${time(t.exit_ts)}</td></tr>`));
+}
+async function loadTrades() {
+  allTrades = (await api("/trades?limit=1000")).trades;
+  fillSelect("f-venue", allTrades.map((t) => t.venue));
+  fillSelect("f-asset", allTrades.map((t) => t.symbol));
+  fillSelect("f-strat", allTrades.map((t) => t.strategy));
+  renderTrades();
 }
 
 async function loadDecisions() {
@@ -227,9 +257,16 @@ async function researchNow(ev) {
   return false;
 }
 
-let chart;
+let chart, chartPeriod = "all";
+function setChartPeriod(p, btn) {
+  chartPeriod = p;
+  document.querySelectorAll(".period-btn").forEach((b) => b.classList.toggle("active", b === btn));
+  loadChart();
+}
 async function loadChart() {
-  const { history } = await api("/equity?limit=2000");
+  let { history } = await api("/equity?limit=20000");
+  const span = { day: 864e5, week: 7 * 864e5, month: 30 * 864e5 }[chartPeriod];
+  if (span) history = history.filter((h) => Date.now() - new Date(h.ts) <= span);
   const labels = history.map((h) => new Date(h.ts).toLocaleString());
   const data = history.map((h) => h.equity);
   const contributed = history.map((h) => h.contributed);
@@ -251,8 +288,30 @@ async function loadChart() {
   }
 }
 
+async function loadMarkets() {
+  const m = await api("/markets");
+  const paused = new Set(m.paused);
+  const venues = m.venues.map((v) => `<button onclick="togglePause('${esc(v)}', ${!paused.has(v)})">${paused.has(v) ? "▶ Retomar" : "⏸ Pausar"} ${esc(v)} (venue)</button>`).join(" ");
+  document.getElementById("markets").innerHTML = `<div class="wallet-btns">${venues}</div>` + m.markets.map((x) => `
+    <div class="agent" style="display:flex;justify-content:space-between;align-items:center;margin-top:6px">
+      <span>${esc(x.symbol)} <span class="muted">${esc(x.venue)} · ${Number(x.price).toPrecision(6)}</span>${paused.has(x.id) ? ' <span class="tag">pausado</span>' : ""}</span>
+      <button onclick="togglePause('${esc(x.id)}', ${!paused.has(x.id)})">${paused.has(x.id) ? "Retomar" : "Pausar"}</button>
+    </div>`).join("");
+}
+async function togglePause(market, paused) {
+  try { await api("/markets/pause", "POST", { market, paused }); } catch (e) { alert(e.message); }
+  loadMarkets();
+}
+async function loadReadiness() {
+  const r = await api("/readiness");
+  document.getElementById("readiness").innerHTML = `
+    <div class="last" style="margin-bottom:6px">${r.ready ? '<b class="green">Todos os critérios cumpridos</b>' : '<b class="red">Ainda não está pronto para dinheiro real</b>'}</div>` +
+    r.checks.map((c) => `<div class="last">${c.ok ? "✅" : "⬜"} ${esc(c.name)} <span class="muted">(${esc(c.value)})</span></div>`).join("") +
+    `<p class="note" style="margin-top:8px">${esc(r.note)}</p>`;
+}
+
 async function refresh() {
-  await Promise.allSettled([loadStatus(), loadAgents(), loadPositions(), loadTrades(), loadDecisions(), loadFunds(), loadChart(), loadResearch()]);
+  await Promise.allSettled([loadStatus(), loadAgents(), loadPositions(), loadTrades(), loadDecisions(), loadFunds(), loadChart(), loadResearch(), loadMarkets(), loadReadiness()]);
 }
 
 refresh();

@@ -42,7 +42,7 @@ def build(ledger, price, fire=True, debate=None, risk=None):
     broker = PaperBroker(ledger, quote_fn=price.quote, sol_usd_fn=lambda: 100.0, slippage_bps=0, fee_lamports=0)
     return PaperEngine(ledger, FakeScout(), FakeSafety(), [FixedStrategy(fire)],
                        debate or DebateAgent(enabled=False), risk or RiskAgent(), ExecutorAgent(broker),
-                       candles_fn=lambda pool: flat_candles(60))
+                       candles_fn=lambda pool: flat_candles(60), profiles={})
 
 
 def test_entry_then_take_profit_exit(ledger):
@@ -142,3 +142,54 @@ def test_research_high_risk_vetoes(ledger):
     eng.run_cycle()
     assert ledger.fills() == []
     assert ledger.decisions(kind="veto")[0]["reason"].startswith("research:")
+
+
+def test_market_profile_caps_size_and_widens_stops(ledger):
+    eng = build(ledger, Price(1.0))
+    eng.profiles = {"jupiter": {"max_pos_pct": 0.05, "stop_mult": 2.0}}
+    eng.run_cycle()
+    fill = ledger.fills()[0]
+    assert fill["usd_gross"] == pytest.approx(5.0)                 # 5% slice, not the default 10%
+    assert fill["stop_price"] == pytest.approx(0.90)               # 5% stop widened x2
+    assert fill["tp_price"] == pytest.approx(1.20)
+
+
+def test_paused_market_gets_no_entries(ledger):
+    eng = build(ledger, Price(1.0))
+    eng.set_paused(TOKEN, True)
+    assert eng.run_cycle()["entries"] == 0
+    eng.set_paused(TOKEN, False)
+    assert eng.run_cycle()["entries"] == 1
+
+
+def test_stale_candles_are_vetoed(ledger):
+    eng = build(ledger, Price(1.0))
+    eng.candles_fn = lambda pool: [dict(c, t=c["t"] - 10 * 3600) for c in flat_candles(60)]
+    assert eng.run_cycle()["entries"] == 0
+    assert "stale" in ledger.decisions(kind="veto")[0]["reason"]
+
+
+def test_daily_entry_cap(ledger):
+    from src.solana.agents import RiskAgent
+    price = Price(1.0)
+    eng = build(ledger, price, risk=RiskAgent(max_entries_per_day=1))
+    eng.run_cycle()
+    price.p = 1.2                                     # TP exit next cycle, strategy still firing
+    eng.run_cycle()
+    assert len(ledger.closed_trades()) == 1
+    assert len([f for f in ledger.fills() if f["side"] == "buy"]) == 1
+    assert "daily entry cap" in ledger.decisions(kind="veto")[0]["reason"]
+
+
+def test_executor_refuses_order_not_approved_by_risk(ledger):
+    from src.solana.agents import ExecutorAgent, order_fingerprint
+    from src.solana.broker import PaperBroker
+    from tests.conftest import candidate, make_quote
+    ex = ExecutorAgent(PaperBroker(ledger, quote_fn=make_quote(1.0), sol_usd_fn=lambda: 100.0))
+    sig = Signal("momentum", 1.0, 0.05, 0.1, "x")
+    approved = order_fingerprint("momentum", TOKEN, 10.0, 0.05, 0.1)
+    with pytest.raises(RuntimeError, match="fingerprint"):
+        ex.open("o1", candidate(), sig, 50.0, approved)        # size tampered after approval
+    assert ledger.fills() == []
+    ex.open("o2", candidate(), sig, 10.0, approved)
+    assert len(ledger.fills()) == 1

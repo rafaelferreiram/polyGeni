@@ -4,10 +4,20 @@
 > explicitly set; otherwise every order is a dry run. The Solana bot (below) is **paper trading only**:
 > it never builds, signs or sends a transaction and never creates, reads or uses a private key.
 
-## Solana multi-agent bot — Phase 1: PAPER trading
+## Multi-agent crypto + gold/silver bot — Phase 1: PAPER trading
 
-Simulated money, **real quotes**. Dashboard: [http://localhost:8000/paper](http://localhost:8000/paper)
-(labelled PAPER everywhere).
+Simulated money, **real market data**: Solana spot via real Jupiter quotes, and Hyperliquid perps
+(BTC, ETH, SOL, `xyz:GOLD`, `xyz:SILVER`) via the real L2 order book, taker fees and hourly funding.
+Dashboard: [http://127.0.0.1:8000/paper](http://127.0.0.1:8000/paper) (labelled PAPER everywhere).
+
+### Quick start
+```bash
+make install     # Python 3.11 venv via uv
+make demo        # dummy account: real quotes, forced trades on both venues, ledger self-check, UI on :8001
+make run         # 24/7 paper loop + dashboard on http://127.0.0.1:8000/paper
+make test        # offline pytest suite
+make backtest    # walk-forward reports in reports/
+```
 
 ### Architecture
 
@@ -25,13 +35,20 @@ Simulated money, **real quotes**. Dashboard: [http://localhost:8000/paper](http:
 |---|---|---|
 | `ScoutAgent` | candidates only | DexScreener boosted/latest Solana tokens + a watchlist of established tokens; best USDC/SOL pair; min liquidity & 24h volume |
 | `SafetyAgent` | can only reject | **No launch sniping**: pair age ≥ `SAFETY_MIN_PAIR_AGE_H` (24h). Min liquidity, mint & freeze authority must be revoked (on-chain RPC), no risky Token-2022 extensions, top-holder concentration (Jupiter audit, RPC fallback). Anything unverifiable ⇒ reject. Context: on Pump.fun ~98% of tokens were rugs/manipulation |
-| `MomentumBreakout`, `MeanReversion` | signal | Deterministic, pure functions of closed 1h candles (GeckoTerminal live, Binance in backtest); each owns 50% of capital; stop-loss and take-profit always attached |
+| `MeanReversion` (on), `MomentumBreakout` (off) | signal | Deterministic, pure functions of closed 1h candles (GeckoTerminal / Hyperliquid live; Binance / Hyperliquid in backtest). Enabled by evidence: momentum lost in every walk-forward, so `PAPER_STRATEGIES=mean_reversion` by default |
 | `ResearchAgent` | can only veto | Per-token brief: Jupiter organic score, buy/sell flow, holder and liquidity change, verification, concentration → red flags + risk level; with `ANTHROPIC_API_KEY`, Claude with live web search (+ optional MCP servers) adds thesis, risks, catalysts, sentiment |
 | `DebateAgent` | can only veto | Optional LLM bull-vs-bear review. Off without `ANTHROPIC_API_KEY`. Cannot open, resize or redirect a trade; errors/unparsable output ⇒ veto |
-| `RiskAgent` | **final veto + sizing** | No LLM. Max % per position, max total exposure, max positions, strategy sub-capital, mandatory stop/TP, daily loss limit ⇒ persistent kill switch |
-| `ExecutorAgent` | — | The only component holding the broker |
+| `RiskAgent` | **final veto + sizing** | No LLM. Per-market profile (`MARKET_PROFILES`: Solana 5%/position, Hyperliquid 15% with 1.5× wider stops), max total exposure, max positions, strategy sub-capital, max entries/day, stale-price veto, mandatory stop/TP, daily loss limit ⇒ persistent kill switch. Hyperliquid is **1x, long-only**: notional ≤ cash |
+| `ExecutorAgent` | — | The only component holding brokers; routes by venue and refuses any order whose SHA-256 fingerprint differs from what Risk approved |
 
 Lesson applied from Alpha Arena (LLMs trading alone lost 30–60%): **rules decide, the LLM only analyses and vetoes.**
+
+### Venues (pluggable `Broker` interface: buy / sell / mark / accrue)
+- `PaperBroker` (Jupiter): real quote incl. route & price impact, + `PAPER_SLIPPAGE_BPS` + base/priority fee.
+- `HyperliquidPaperBroker`: public Info API only (`l2Book`, `metaAndAssetCtxs` with `dex:"xyz"` for HIP-3,
+  `candleSnapshot`, `fundingHistory`). Fills walk the real book; taker fee 4.5 bps (HIP-3 `xyz:GOLD` 9 bps,
+  `xyz:SILVER` 0.9 bps in growth mode); hourly funding accrued to an append-only `funding` table;
+  leverage ≠ 1 or notional > cash is rejected. No Exchange API, no signing.
 
 ### Ledger & decision log (`paper.db`, separate from `polygeni.db`)
 - `fills`, `decisions`, `cash_movements`: **append-only** (SQLite triggers block UPDATE/DELETE); fills idempotent by `order_id`.
@@ -55,8 +72,11 @@ Main settings (env, conservative defaults): `PAPER_START_USDC=100`, `PAPER_CYCLE
 `DEBATE_MODEL`, `DEBATE_MCP_SERVERS` (JSON list of remote MCP servers for fresh market context).
 
 ### Dashboard (`/paper`)
-Equity, cash, P&L (realised/unrealised), gains for day / week / month / all-time (deposits excluded),
-equity chart, each agent's activity and veto counts, research desk, open positions, closed trades,
+Equity, cash, P&L (realised/unrealised), gains for day / 7d / 30d / all-time as USD and **time-weighted return**
+(deposits/withdrawals never count as profit) next to buy-and-hold SOL and BTC, equity chart with day/week/month
+selector, trades filterable by venue/asset/strategy (entry→exit, fees, funding, slippage, P&L, reason),
+pause per market or per venue, a **"ready for real money?"** checklist (≥28 days of paper, ≥30 trades, TWR > 0
+and > hold SOL, max DD ≤ 15%, no kill-switch trips or errors in 7 days), each agent's activity and veto counts, research desk, open positions, closed trades,
 decision log with per-agent votes, kill switch, **paper** deposit/withdraw, and **watch-only** wallets.
 A plain-language summary at the top says what the bot is doing; the agents are shown as a left-to-right
 decision pipeline (green = approved last time, yellow = blocked).
@@ -64,23 +84,38 @@ Wallets: **Connect Phantom / Solflare** buttons call the extension's `connect()`
 key (no signature, no fund access), or paste a public address; SOL/SPL balances are read via RPC.
 Gold/silver are not traded yet (later phase).
 
+### Security of the local API
+State-changing endpoints (start/stop, cycle, kill switch, deposit/withdraw, wallets, research, pause) only
+accept loopback clients with a loopback `Host` header (anti DNS-rebinding) **and** an `X-Paper-Token` that the
+dashboard fetches same-origin (cross-site pages can't read it ⇒ CSRF-safe). Uvicorn binds 127.0.0.1;
+docker-compose publishes `127.0.0.1:8000` only (inside Docker set `PAPER_TRUSTED_CLIENTS` to the bridge IP).
+
 ### Funds and wallets — what is and isn't possible now
 - Paper deposits/withdrawals are simulated ledger entries.
 - Phase 3 (not built): a dedicated bot hot wallet with a small balance; funding = sending USDC/SOL from your
   wallet to its public address; withdrawals only to an allow-listed address with daily limits; real swaps via
   Jupiter only with `LIVE_TRADING=1` **after** 4–8 weeks of 24/7 paper trading that beats hold SOL after costs.
 
-### Backtest
-`reports/backtest_<date>.md`: walk-forward (params chosen in-sample on the previous fold, traded on the next),
-net of 60 bps/side + network fees, always vs **buy-and-hold SOL**. Latest run (180d, 1h, 6 Solana tokens):
-momentum −35.9%, mean-reversion −8.7%, hold SOL +58.7% — **the strategies do not beat holding SOL**; they are
-a baseline to iterate on in paper, not a reason to go live.
+### Backtest (walk-forward, out-of-sample Jun→Oct 2026, net of costs)
+Params (incl. a SMA200 regime filter on/off) are chosen in-sample on the previous fold and traded on the next.
+
+| Run | Momentum | Mean-reversion | Buy-and-hold |
+|---|---:|---:|---|
+| Solana tokens, 1h, 60 bps/side | −32.6% | **+4.1%** (11 trades) | SOL +58.9% |
+| Hyperliquid perps, 1h, fees+2 bps+funding | −3.7% | **+11.2%** (DD 5.9%, Sharpe 2.1) | BTC +30.0%, ETH +43.9%, SOL +59.3%, GOLD −5.6%, SILVER −16.0% |
+| Hyperliquid perps, 15m (52 days) | −7.1% | −6.6% | BTC +6.9%, SOL +3.9%, GOLD −5.8% |
+
+Reading: costs decide everything. Short-term trading (15m) loses; Hyperliquid's ~0.1% round trip makes 1h
+mean-reversion positive, Solana's ~1.2% round trip almost kills it. **No strategy beats simply holding SOL/BTC
+in this bull window**; mean-reversion beats holding gold/silver. Reports: `reports/backtest_*.md`.
 
 ### Known limitations
 - Public endpoints are rate limited (Jupiter keyless 429s, public RPC blocks `getTokenLargestAccounts`); the loop
   logs and continues, Safety rejects what it cannot verify. A free RPC/Jupiter key improves coverage.
 - Holder concentration comes from Jupiter's audit (third-party) and includes pool vaults.
-- Live candles come from GeckoTerminal (~30 req/min); backtest uses Binance and excludes memecoins.
+- Live candles come from GeckoTerminal (~30 req/min) / Hyperliquid; Solana backtest uses Binance and excludes memecoins.
+- Hyperliquid paper is 1x long-only; short selling and leverage are deliberately off.
+- Live phase 3 (real wallets, signing, withdrawals) is not built.
 - Paper fills assume the quoted route would fill; no MEV/landing failures beyond the extra slippage bps.
 
 ---

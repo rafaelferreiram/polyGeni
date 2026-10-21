@@ -17,6 +17,7 @@ from src.solana.agents import (DebateAgent, ExecutorAgent, Portfolio, RiskAgent,
                                ScoutAgent, Vote)
 from src.solana.broker import PaperBroker
 from src.solana.ledger import Ledger, now_iso
+from src.solana import hyperliquid as hl
 from src.solana.research import ResearchAgent
 from src.solana.strategies import default_strategies
 
@@ -28,12 +29,18 @@ def _ts(iso: str) -> datetime:
 
 
 class PaperEngine:
-    def __init__(self, ledger: Ledger, scout: ScoutAgent, safety: SafetyAgent, strategies: list,
+    def __init__(self, ledger: Ledger, scout, safety: SafetyAgent, strategies: list,
                  debate: DebateAgent, risk: RiskAgent, executor: ExecutorAgent,
-                 candles_fn=md.pool_candles, max_hold_h: float = cfg.RISK_MAX_HOLD_H, research=None):
-        self.ledger, self.scout, self.safety, self.strategies = ledger, scout, safety, strategies
+                 candles_fn=md.pool_candles, max_hold_h: float = cfg.RISK_MAX_HOLD_H, research=None,
+                 bench_fn=None, profiles: dict | None = None):
+        self.ledger, self.safety, self.strategies = ledger, safety, strategies
+        self.scouts = scout if isinstance(scout, list) else [scout]
         self.debate, self.risk, self.executor = debate, risk, executor
+        # one candle source for every venue, or {venue: fn}
+        self.candles_fns = candles_fn if isinstance(candles_fn, dict) else None
         self.candles_fn, self.max_hold_h = candles_fn, max_hold_h
+        self.bench_fn = bench_fn
+        self.profiles = profiles if profiles is not None else cfg.MARKET_PROFILES
         self.research = research
         self._safety_logged: dict[str, float] = {}
 
@@ -53,6 +60,20 @@ class PaperEngine:
     def reset_kill_switch(self, note: str = "manual reset"):
         self.ledger.set_state("kill_switch", {"active": False, "reason": note, "ts": now_iso()})
         self.ledger.log_decision("kill_switch", cycle=self.cycle, reason=f"reset: {note}")
+
+    # ─── pause per market (instrument id or whole venue) ───
+    def paused(self) -> list[str]:
+        return self.ledger.get_state("paused_markets", [])
+
+    def set_paused(self, market: str, paused: bool):
+        cur = [m for m in self.paused() if m != market]
+        self.ledger.set_state("paused_markets", cur + ([market] if paused else []))
+        self.ledger.log_decision("pause" if paused else "resume", cycle=self.cycle, mint=market,
+                                 reason=f"market {'paused' if paused else 'resumed'} manually")
+
+    def _candles(self, c):
+        fn = self.candles_fns.get(c.venue) if self.candles_fns else self.candles_fn
+        return fn(c.pair_address)
 
     def _agent(self, name: str, **kw):
         agents = self.ledger.get_state("agents", {})
@@ -75,9 +96,11 @@ class PaperEngine:
         equity = cash + exposure
         day = self.ledger.get_state("day_start") or {}
         day_equity = day.get("equity", equity) + (self.ledger.contributed() - day.get("contributed", self.ledger.contributed()))
+        today = datetime.now(timezone.utc).date().isoformat()
+        entries_today = sum(1 for f in self.ledger.fills(500) if f["side"] == "buy" and f["ts"].startswith(today))
         return Portfolio(equity=equity, cash=cash, exposure=exposure, open_mints={p["mint"] for p in positions},
                          strategy_exposure=by_strat, day_start_equity=day_equity,
-                         kill_switch=self.kill_switch().get("active", False))
+                         kill_switch=self.kill_switch().get("active", False), entries_today=entries_today)
 
     # ─── reconciliation: the ledger is the source of truth ───
     def reconcile(self) -> list[str]:
@@ -137,6 +160,10 @@ class PaperEngine:
         stats = {"cycle": cycle, "candidates": 0, "safe": 0, "signals": 0, "entries": 0, "vetoes": 0}
         try:
             self.reconcile()
+            try:
+                self.executor.accrue(self.ledger.positions())   # perp funding
+            except Exception as e:
+                self.ledger.log_decision("error", cycle=cycle, reason=f"funding accrual failed: {e}")
             self.mark_and_exit()
             self.reconcile()
 
@@ -160,7 +187,13 @@ class PaperEngine:
         finally:
             self.reconcile()
             p = self.portfolio()
-            self.ledger.record_equity(cycle, p.cash, p.exposure)
+            bench = {}
+            if self.bench_fn:
+                try:
+                    bench = self.bench_fn()
+                except Exception as e:
+                    logger.warning(f"benchmark prices: {e}")
+            self.ledger.record_equity(cycle, p.cash, p.exposure, bench)
             stats.update(equity=round(p.equity, 4), cash=round(p.cash, 4), positions=len(p.open_mints),
                          finished=now_iso())
             self.ledger.set_state("last_cycle", stats)
@@ -168,11 +201,25 @@ class PaperEngine:
         return stats
 
     def _entries(self, stats: dict):
-        candidates = self.scout.candidates()
+        candidates = []
+        for scout in self.scouts:
+            try:
+                candidates += scout.candidates()
+            except Exception as e:
+                self.ledger.log_decision("error", cycle=self.cycle, reason=f"scout {type(scout).__name__} failed: {e}")
         stats["candidates"] = len(candidates)
+        self.ledger.set_state("markets", [{"id": c.mint, "symbol": c.symbol, "venue": c.venue,
+                                           "price": c.price_usd} for c in candidates])
         self._agent("scout", last_reason=f"{len(candidates)} candidates", approved=len(candidates))
+        paused = set(self.paused())
         for c in candidates:
-            safety = self.safety.check(c)
+            if c.mint in paused or c.venue in paused:
+                continue
+            profile = self.profiles.get(c.venue, {})
+            if c.venue == "jupiter":
+                safety = self.safety.check(c)
+            else:   # rug checks are about SPL mints; perps markets are a fixed, listed universe
+                safety = Vote("safety", True, f"n/a for {c.venue} perps (fixed market list)")
             if not safety.approve:
                 self._agent("safety", last_reason=f"{c.symbol}: {safety.reason}", vetoed=1)
                 if time.time() - self._safety_logged.get(c.mint, 0) > 3600:  # avoid flooding the log
@@ -183,13 +230,21 @@ class PaperEngine:
             stats["safe"] += 1
             self._agent("safety", last_reason=f"{c.symbol}: passed", approved=1)
             try:
-                candles = self.candles_fn(c.pair_address)[:-1]  # drop the still-open candle
+                candles = self._candles(c)[:-1]  # drop the still-open candle
+                age_h = (time.time() - candles[-1]["t"]) / 3600 if candles else None
+                if age_h is None or age_h > cfg.STALE_CANDLE_H:
+                    self.ledger.log_decision("veto", cycle=self.cycle, mint=c.mint, symbol=c.symbol,
+                                             reason=f"risk: stale or missing price data ({age_h if age_h is None else round(age_h, 1)}h old)")
+                    continue
             except Exception as e:
                 self.ledger.log_decision("error", cycle=self.cycle, mint=c.mint, symbol=c.symbol,
                                          reason=f"candles unavailable: {e}")
                 continue
             for strat in self.strategies:
                 sig = strat.signal(candles)
+                if sig is not None and profile.get("stop_mult", 1) != 1:
+                    sig.stop_pct = min(sig.stop_pct * profile["stop_mult"], 0.5)
+                    sig.tp_pct *= profile["stop_mult"]
                 if sig is None:
                     self._agent(strat.name, last_reason=f"{c.symbol}: no signal")
                     continue
@@ -198,7 +253,7 @@ class PaperEngine:
                 strat_vote = Vote(strat.name, True, sig.reason, sig.indicators)
                 closes = [k["close"] for k in candles[-24:]]
                 brief, research_vote = None, None
-                if self.research is not None:
+                if self.research is not None and c.venue == "jupiter":
                     try:
                         brief = self.research.brief(c.mint, c.symbol, {"signal": sig.reason, **c.summary()})
                     except Exception as e:
@@ -211,12 +266,12 @@ class PaperEngine:
                 self._agent("debate", last_reason=f"{c.symbol}: {debate.reason}",
                             approved=int(debate.approve), vetoed=int(not debate.approve))
                 p = self.portfolio()
-                risk = self.risk.evaluate(sig, c.mint, strat.capital_pct, p)
+                risk = self.risk.evaluate(sig, c.mint, strat.capital_pct, p, profile.get("max_pos_pct"))
                 self._agent("risk", last_reason=f"{c.symbol}: {risk.reason}",
                             approved=int(risk.approve), vetoed=int(not risk.approve))
                 chain = [v for v in (safety, strat_vote, research_vote, debate, risk) if v is not None]
                 votes = _votes(*chain)
-                signals = {**c.summary(), **sig.indicators, "ref_price": sig.ref_price,
+                signals = {**c.summary(), "venue": c.venue, **sig.indicators, "ref_price": sig.ref_price,
                            "stop_price": sig.stop_price, "tp_price": sig.tp_price}
                 vetoer = next((v for v in chain if not v.approve), None)
                 if vetoer:
@@ -225,8 +280,13 @@ class PaperEngine:
                                              strategy=strat.name, signals=signals, votes=votes,
                                              reason=f"{vetoer.agent}: {vetoer.reason}")
                     continue
-                order_id = f"c{self.cycle}-{strat.name}-{c.mint[:8]}-buy"
-                fill = self.executor.open(order_id, c, sig, risk.detail["size_usd"])
+                order_id = f"c{self.cycle}-{strat.name}-{c.mint[:12]}-buy"
+                try:
+                    fill = self.executor.open(order_id, c, sig, risk.detail["size_usd"], risk.detail["fingerprint"])
+                except Exception as e:
+                    self.ledger.log_decision("error", cycle=self.cycle, mint=c.mint, symbol=c.symbol, strategy=strat.name,
+                                             signals=signals, votes=votes, reason=f"executor refused/failed: {e}")
+                    continue
                 self.reconcile()
                 stats["entries"] += 1
                 self._agent("executor", last_reason=f"bought {c.symbol} ${fill['usd_gross']:.2f}", approved=1)
@@ -234,6 +294,12 @@ class PaperEngine:
                                          strategy=strat.name, signals=signals, votes=votes, order_id=order_id,
                                          reason=f"{sig.reason}; size ${fill['usd_gross']:.2f} @ {fill['price']:.6g}")
                 break  # one strategy per token per cycle
+
+
+def bench_prices() -> dict:
+    """Benchmark prices for buy-and-hold comparisons (Hyperliquid mids: one public call)."""
+    mids = hl.info({"type": "allMids"})
+    return {"SOL": float(mids["SOL"]), "BTC": float(mids["BTC"])}
 
 
 def _votes(*votes: Vote) -> dict:
@@ -250,8 +316,15 @@ def get_engine() -> PaperEngine:
     global _engine
     if _engine is None:
         ledger = Ledger(cfg.PAPER_DB_PATH, cfg.PAPER_START_USDC)
-        _engine = PaperEngine(ledger, ScoutAgent(), SafetyAgent(), default_strategies(), DebateAgent(),
-                              RiskAgent(), ExecutorAgent(PaperBroker(ledger)), research=ResearchAgent(ledger))
+        scouts, brokers = [ScoutAgent()], [PaperBroker(ledger)]
+        candles = {"jupiter": md.pool_candles}
+        if cfg.HL_ENABLED:
+            scouts.append(hl.HyperliquidScout())
+            brokers.append(hl.HyperliquidPaperBroker(ledger))
+            candles["hyperliquid"] = hl.candles
+        _engine = PaperEngine(ledger, scouts, SafetyAgent(), default_strategies(), DebateAgent(),
+                              RiskAgent(), ExecutorAgent(*brokers), candles_fn=candles,
+                              research=ResearchAgent(ledger), bench_fn=bench_prices)
     return _engine
 
 
