@@ -340,6 +340,13 @@
     .goal .v small { font-size: 12px; color: var(--muted); font-weight: 500; }
     .goal .bar span { background: var(--accent); } .goal.done { border-color: rgba(52,211,153,.6); }
     .goal .s { font-size: 11.5px; color: var(--muted); margin-top: 6px; }
+    .ecg-wrap { position: relative; background: #050706; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+    #ecg-canvas { display: block; width: 100%; height: 150px; }
+    .ecg-bpm { position: absolute; top: 10px; right: 14px; text-align: right; font-variant-numeric: tabular-nums; }
+    .ecg-bpm b { display: block; font-size: 28px; color: var(--green); line-height: 1; } .ecg-bpm small { color: var(--muted); font-size: 11px; }
+    .ecg-state.live { color: var(--green) !important; } .ecg-state.dead { color: var(--red) !important; }
+    .ecg-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin-top: 10px; font-size: 12px; color: var(--muted); }
+    .ecg-stats b { display: block; color: var(--text); font-size: 15px; font-variant-numeric: tabular-nums; }
     .whale-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
     @media (max-width: 960px) { .whale-grid { grid-template-columns: 1fr; } }
     .flows { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
@@ -427,7 +434,7 @@
     </div>
   </header>
   <div class="statusbar"><div class="sb-items" id="statusbar-items"></div>
-    <nav class="sb-nav" aria-label="Seções"><a href="#g-visao">Visão geral</a><a href="#posicoes">Posições</a><a href="#radar">Radar</a><a href="#grafico">Gráfico</a><a href="#baleias">Baleias</a><a href="#toptraders">Top traders</a><a href="#noticias">Notícias</a><a href="#team">Bots</a><a href="#treino">Treino</a><a href="#logs">Logs</a><a href="#g-hist">Histórico</a><a href="#g-sist">Sistema</a></nav></div>
+    <nav class="sb-nav" aria-label="Seções"><a href="#g-visao">Visão geral</a><a href="#posicoes">Posições</a><a href="#radar">Radar</a><a href="#grafico">Gráfico</a><a href="#baleias">Baleias</a><a href="#toptraders">Top traders</a><a href="#noticias">Notícias</a><a href="#team">Bots</a><a href="#treino">Treino</a><a href="#logs">Logs</a><a href="#ecg">Sinais vitais</a><a href="#g-hist">Histórico</a><a href="#g-sist">Sistema</a></nav></div>
   <div class="alert" id="alert" hidden><span>🛑 <span id="alert-text"></span></span><button onclick="killReset(this)">Rearmar</button></div>
   <div class="scanbar" id="scanbar" hidden><span class="spin"></span><span id="scan-text">Analisando o mercado…</span></div>
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
@@ -580,6 +587,15 @@
         </span></h2>
       <div class="term" id="term" role="log" aria-live="off"></div>
     </section>
+
+    <section class="panel" id="ecg">
+      <h2><span>💓 Sinais vitais <span class="tag ecg-state" id="ecg-state">–</span></span><span class="note">cada batimento é uma ação real dos bots</span></h2>
+      <div class="ecg-wrap"><canvas id="ecg-canvas" aria-label="Eletrocardiograma da atividade dos bots" role="img"></canvas>
+        <div class="ecg-bpm"><b id="ecg-bpm">–</b><small>ações/min</small></div></div>
+      <div class="ecg-stats" id="ecg-stats"></div>
+      <div class="legend"><span><span style="color:#34d399">▲</span> compra/venda</span><span><span style="color:#fbbf24">▲</span> veto/aviso</span><span><span style="color:#f87171">▼</span> erro</span><span><span style="color:#7dd3fc">▲</span> análise</span><span>linha reta = nenhuma ação há mais de 5 min</span></div>
+    </section>
+
     <section class="panel">
       <h2><span>Como uma decisão é feita <span class="tag" id="room-tag">–</span></span><span class="note" id="room-head"></span></h2>
       <p class="note" style="margin:-6px 0 12px">Dados reais do último ciclo da conta selecionada: cada etapa mostra o que fez, quando, e os números. Durante um ciclo a etapa ativa acende; depois o ciclo é repassado passo a passo.</p>
@@ -662,6 +678,6 @@
 
   <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <script src="https://unpkg.com/qrcode-generator@1.4.4/qrcode.js"></script>
-  <script src="/static/paper.js?v=63"></script>
+  <script src="/static/paper.js?v=65"></script>
 </body>
 </html>

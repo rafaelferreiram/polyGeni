@@ -826,8 +826,79 @@ async function loadLogs() {
   if (!r.lines.length) return;
   logLast = r.last;
   logLines = logLines.concat(r.lines).slice(-2000);
+  ecgFeed(r.lines);
   renderLogs(false);
 }
+
+// ─── vital signs: an ECG of the bots' real activity (one beat per log event, shaped by its level) ───
+const ecg = { queue: [], events: [], y: [], x: 0, lastBeat: 0, live: false };
+const ECG_KIND = { TRADE: { amp: 1.0, color: "#34d399" }, WARN: { amp: 0.55, color: "#fbbf24" }, ERROR: { amp: -0.7, color: "#f87171" },
+                   INFO: { amp: 0.32, color: "#7dd3fc" }, DEBUG: { amp: 0.14, color: "#3f5f55" } };
+function ecgFeed(lines) {
+  const now = Date.now();
+  for (const l of lines) {
+    if (l.level === "DEBUG") continue;                            // per-coin checks are noise, not actions
+    const t = new Date(l.ts).getTime() || now;
+    ecg.events.push({ t, level: l.level });
+    if (now - t < 60e3 && ecg.queue.length < 40) ecg.queue.push(l.level);   // only fresh actions beat (no backlog)
+  }
+  ecg.events = ecg.events.filter((e) => now - e.t < 10 * 60e3);
+}
+function ecgStats() {
+  const now = Date.now(), last = ecg.events.length ? Math.max(...ecg.events.map((e) => e.t)) : 0;
+  const perMin = ecg.events.filter((e) => now - e.t < 60e3).length;
+  const age = last ? Math.round((now - last) / 1000) : null;
+  ecg.live = age !== null && age < 300;
+  document.getElementById("ecg-bpm").textContent = perMin;
+  const st = document.getElementById("ecg-state");
+  st.textContent = ecg.live ? "● VIVO — bots trabalhando" : "■ SEM SINAL há mais de 5 min";
+  st.className = `tag ecg-state ${ecg.live ? "live" : "dead"}`;
+  const n = (lvl) => ecg.events.filter((e) => e.level === lvl && now - e.t < 10 * 60e3).length;
+  const lc = acc?.last_cycle;
+  setHTML("ecg-stats", [
+    ["Última ação", age === null ? "–" : age < 60 ? `há ${age}s` : `há ${Math.round(age / 60)} min`],
+    ["Ações (10 min)", ecg.events.length], ["Compras/vendas (10 min)", n("TRADE")], ["Vetos/avisos (10 min)", n("WARN")],
+    ["Erros (10 min)", n("ERROR")], ["Último ciclo da conta", lc ? `#${lc.cycle} · ${hhmm(lc.finished)}` : "–"],
+  ].map(([k, v]) => `<span>${k}<b>${v}</b></span>`).join(""));
+}
+function ecgDraw() {
+  const c = document.getElementById("ecg-canvas");
+  if (!c || document.getElementById("ecg").classList.contains("collapsed")) return requestAnimationFrame(ecgDraw);
+  const w = c.clientWidth, h = c.clientHeight, dpr = window.devicePixelRatio || 1;
+  if (c.width !== w * dpr) { c.width = w * dpr; c.height = h * dpr; ecg.y = new Array(w).fill(null); ecg.x = 0; }
+  const g = c.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const mid = h * 0.6, now = performance.now();
+  // advance 2px per frame; start a beat when one is queued and the previous finished
+  for (let s = 0; s < 2; s++) {
+    let v = 0;
+    if (ecg.beat) {
+      const k = ecg.beat.k++, amp = ECG_KIND[ecg.beat.level]?.amp ?? 0.2;
+      // P-QRS-T shape over ~34px
+      v = k < 6 ? Math.sin(k / 6 * Math.PI) * 0.08 : k < 9 ? -0.12 * (k - 5) / 3 : k < 12 ? amp * (k - 8) / 3 : k < 15 ? amp * (15 - k) / 3 - 0.1 : k < 22 ? 0 : k < 32 ? Math.sin((k - 22) / 10 * Math.PI) * 0.12 : 0;
+      ecg.color = ECG_KIND[ecg.beat.level]?.color || "#7dd3fc";
+      if (k > 34) ecg.beat = null;
+    } else if (ecg.queue.length && now - ecg.lastBeat > 120) {
+      ecg.beat = { level: ecg.queue.shift(), k: 0 }; ecg.lastBeat = now;
+    }
+    const noise = ecg.live ? (Math.random() - 0.5) * 0.02 : 0;
+    ecg.y[ecg.x] = { v: v + noise, color: ecg.beat ? ecg.color : (ecg.live ? "#2f6b55" : "#5b2b2b") };
+    ecg.x = (ecg.x + 1) % w;
+  }
+  g.fillStyle = "#050706"; g.fillRect(0, 0, w, h);
+  g.strokeStyle = "rgba(52,211,153,.06)"; g.lineWidth = 1;
+  for (let gx = 0; gx < w; gx += 20) { g.beginPath(); g.moveTo(gx, 0); g.lineTo(gx, h); g.stroke(); }
+  for (let gy = 0; gy < h; gy += 20) { g.beginPath(); g.moveTo(0, gy); g.lineTo(w, gy); g.stroke(); }
+  g.lineWidth = 2; g.lineJoin = "round";
+  for (let i = 1; i < w; i++) {
+    const a = ecg.y[i - 1], b = ecg.y[i];
+    if (!a || !b || i === ecg.x) continue;
+    g.strokeStyle = b.color; g.beginPath(); g.moveTo(i - 1, mid - a.v * h * 0.55); g.lineTo(i, mid - b.v * h * 0.55); g.stroke();
+  }
+  g.fillStyle = "#e8eeeb"; g.beginPath(); g.arc(ecg.x, mid - ((ecg.y[(ecg.x - 1 + w) % w]?.v) || 0) * h * 0.55, 3, 0, 7); g.fill();   // the "pen"
+  requestAnimationFrame(ecgDraw);
+}
+if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) setInterval(() => safe(ecgStats), 3000);
+else { requestAnimationFrame(ecgDraw); setInterval(() => safe(ecgStats), 2000); }
 safe(loadLogs);
 setInterval(() => safe(loadLogs), 1500);
 
