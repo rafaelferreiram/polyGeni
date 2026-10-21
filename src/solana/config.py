@@ -140,6 +140,15 @@ SYNC_FAIL_LIMIT = int(os.getenv("SYNC_FAIL_LIMIT", "6"))   # consecutive unreach
 REAL_TRUSTED_BOTS = [m for m in os.getenv("REAL_TRUSTED_BOTS", "rules,trend").split(",") if m]
 LAB_SCORE_DAYS = float(os.getenv("LAB_SCORE_DAYS", "30"))   # Coordinator ranks bots on their last N days in the lab
 ARENA_START_USDC = _f("ARENA_START_USDC", 20.0)     # each bot gets what the real account would have
+# the lab proves bots faster with more paper capital and slots: same position size, stop and target as the real
+# account (so each trade is valid evidence), but up to LAB_MAX_POSITIONS at once and no low daily entry cap
+LAB_CAPITAL_USD = _f("LAB_CAPITAL_USD", 100.0)
+LAB_MAX_POSITIONS = _i("LAB_MAX_POSITIONS", 8)
+LAB_MAX_ENTRIES_PER_DAY = _i("LAB_MAX_ENTRIES_PER_DAY", 48)
+# green light to real money (bots not in REAL_TRUSTED_BOTS): LIVE_MIN_LAB_TRADES closed lab trades, net profit after
+# their AI cost, win rate and profit factor at least these
+GREEN_LIGHT_WIN_RATE = _f("GREEN_LIGHT_WIN_RATE", 0.45)
+GREEN_LIGHT_PROFIT_FACTOR = _f("GREEN_LIGHT_PROFIT_FACTOR", 1.2)
 # self-pause: a bot with nothing to do sleeps (up to BOT_MAX_SLEEP_MIN) and wakes early if price moves.
 # Off by default: the bots watch the market every cycle 24/7 (the AI pre-filter already keeps idle cycles free).
 BOT_SELF_PAUSE = os.getenv("BOT_SELF_PAUSE", "0") == "1"

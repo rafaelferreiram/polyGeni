@@ -387,11 +387,15 @@ class HyperliquidLiveBroker(Broker):
 
 # ─── live engine & controls ──────────────────────────────────────────────────
 
-def _risk() -> RiskAgent:
-    return RiskAgent(max_pos_pct=1.0, max_exposure_pct=1.0, max_positions=cfg.LIVE_MAX_POSITIONS,
+def _risk(lab: bool = False) -> RiskAgent:
+    """Real-account limits. lab=True: same position size, leverage, stops and daily-loss rule, but more slots and
+    capital so the lab collects evidence faster."""
+    return RiskAgent(max_pos_pct=1.0, max_exposure_pct=1.0,
+                     max_positions=cfg.LAB_MAX_POSITIONS if lab else cfg.LIVE_MAX_POSITIONS,
                      max_daily_loss_pct=cfg.LIVE_MAX_DAILY_LOSS_PCT, min_trade_usd=MIN_ORDER_USD,
-                     max_entries_per_day=cfg.LIVE_MAX_ENTRIES_PER_DAY,
-                     max_position_usd=cfg.LIVE_MAX_POSITION_USD, max_capital_usd=cfg.LIVE_MAX_CAPITAL_USD,
+                     max_entries_per_day=cfg.LAB_MAX_ENTRIES_PER_DAY if lab else cfg.LIVE_MAX_ENTRIES_PER_DAY,
+                     max_position_usd=cfg.LIVE_MAX_POSITION_USD,
+                     max_capital_usd=cfg.LAB_CAPITAL_USD if lab else cfg.LIVE_MAX_CAPITAL_USD,
                      leverage=cfg.LIVE_LEVERAGE)
 
 

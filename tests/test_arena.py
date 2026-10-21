@@ -146,3 +146,34 @@ def test_model_boost_runs_n_cycles_then_returns_to_default(tmp_path, monkeypatch
     assert eng.ledger.get_state("boost") == {}
     with pytest.raises(ValueError):
         arena.boost("claude-haiku-5-5", "gpt-5", 1)
+
+
+def test_green_light_needs_trades_profit_win_rate_and_profit_factor(tmp_path, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    bots, _ = make_bots(tmp_path, {"claude-haiku-5-5": "{}"})
+    monkeypatch.setattr(arena, "_bots", bots)
+    monkeypatch.setattr(cfg, "LIVE_MIN_LAB_TRADES", 4)
+    led = bots["claude-haiku-5-5"].ledger
+    def trade(i, px):
+        ts = (datetime.now(timezone.utc) - timedelta(hours=20 - i)).isoformat(timespec="seconds")
+        led.append_fill(dict(order_id=f"b{i}", ts=ts, venue="hyperliquid", side="buy", mint="hl:BTC", symbol="BTC",
+                             strategy="x", qty=10, decimals=0, usd_gross=10, fee_usd=0, price=1, quote_price=1))
+        led.append_fill(dict(order_id=f"s{i}", ts=ts, venue="hyperliquid", side="sell", mint="hl:BTC", symbol="BTC",
+                             strategy="x", qty=10, decimals=0, usd_gross=10 * px, fee_usd=0, price=px, quote_price=px))
+    for i, px in enumerate((1.1, 0.95, 1.1)):
+        trade(i, px)
+    g = arena.green_light("claude-haiku-5-5")
+    assert not g["ok"] and g["missing"] == ["trades"] and g["win_rate"] == 0.667 and g["profit_factor"] == 4.0
+    trade(3, 1.05)
+    assert arena.green_light("claude-haiku-5-5")["ok"]
+    assert arena.green_light("trend") == {"ok": True, "trusted": True}
+
+
+def test_ai_is_asked_only_when_a_setup_exists():
+    from src.solana.llm_trader import _worth_asking
+    flat = [{"t": 3600 * i, "open": 100, "high": 100.1, "low": 99.9, "close": 100, "volume": 1} for i in range(300)]
+    up = {"uptrend": True, "rsi14": 60, "below_lower_band": False}
+    assert not _worth_asking(up, flat, {})
+    assert _worth_asking({**up, "rsi14": 35}, flat, {})                                          # dip in uptrend
+    assert _worth_asking(up, flat, {"whale_flow": {"pressure": "comprando"}})                     # whales buying
+    assert _worth_asking({"uptrend": False}, flat, {"top_traders": {"long": 3, "new_longs_1h": 1}})  # top traders entering

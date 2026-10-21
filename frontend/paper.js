@@ -639,7 +639,7 @@ function renderTeam() {
         <div><div class="nm">${esc(L.label)}${r.model_now && r.model_now !== m.model ? ` <small class="green">🚀 ${esc(look(r.model_now).label)}</small>` : ""}</div><div class="rl">${esc(L.role)}</div></div></div>
       <span class="chip">${esc(chip)}</span>
       <div class="now">Última decisão: ${now}</div>
-      ${rewardLine(r.reward, rankOf[m.model])}
+      ${rewardLine(r.reward, rankOf[m.model])}${greenLine(r.green_light)}
       <div class="stats"><span><b>${pnl(m.pnl_usd ?? 0)}</b>resultado</span><span><b>${m.trades ?? 0}</b>trades</span>
         <span><b>${isRules ? "grátis" : usd(r.ai_cost_usd ?? 0)}</b>custo IA</span></div>
       <div class="tip" role="tooltip">${tip}<div class="note" style="margin-top:6px">${esc(bubble)}</div></div>
@@ -666,8 +666,17 @@ const TIER_PT = { positivo: "✅ positivo", "em observação": "⚠️ em observ
 function rewardLine(rw, rank) {
   if (!rw) return "";
   const medal = rw.points > 0 ? ["🥇", "🥈", "🥉"][rank - 1] || "" : "";
-  return `<div class="reward ${rw.points > 0 ? "up" : rw.points < 0 ? "down" : ""}" title="1 ponto = 1 centavo de lucro líquido (30 dias, já sem o custo da IA). Mais pontos = prioridade no Coordenador e posição cheia; recorde negativo = posição mínima até recuperar.">
-    ${medal} <b>${rw.points >= 0 ? "+" : ""}${rw.points} pts</b> · ${TIER_PT[rw.tier] || esc(rw.tier)}${rw.streak >= 2 ? ` · 🔥 ${rw.streak} seguidas` : ""} · posição ${usd(rw.size_usd, 0)}</div>`;
+  return `<div class="reward ${rw.points > 0 ? "up" : rw.points < 0 ? "down" : ""}" title="${TIER_PT[rw.tier] || esc(rw.tier)} · 1 ponto = 1 centavo de lucro líquido (30 dias, já sem o custo da IA). Mais pontos = prioridade e posição cheia; recorde negativo = posição mínima.">
+    <span>${medal}<b>${rw.points >= 0 ? "+" : ""}${rw.points} pts</b>${rw.streak >= 2 ? ` 🔥${rw.streak}` : ""}</span><span>posição ${usd(rw.size_usd, 0)}</span></div>`;
+}
+// lab → real money gate, per bot
+function greenLine(g) {
+  if (!g) return "";
+  if (g.trusted) return `<div class="gl ok" title="validado no backtest — opera na conta real">✅ conta real</div>`;
+  if (g.ok) return `<div class="gl ok" title="passou no laboratório: ${g.trades} trades, acerto ${pct(g.win_rate)}, fator ${g.profit_factor}">🟢 luz verde · conta real</div>`;
+  const w = clamp01(g.trades / g.needed) * 100;
+  return `<div class="gl" title="Para a conta real: ${g.needed} trades, lucro líquido > 0, acerto ≥ 45%, fator de lucro ≥ 1,2. Falta: ${(g.missing || []).join(", ")}">
+    <span>🚦 lab ${g.trades}/${g.needed}${g.trades ? ` · ${pct(g.win_rate)} · PF ${g.profit_factor}` : ""}</span><i style="width:${w.toFixed(0)}%"></i></div>`;
 }
 
 // ─── advanced (old Solana paper + readiness) ───
@@ -922,6 +931,17 @@ async function loadHistory() {
 }
 safe(loadHistory);
 setInterval(() => safe(loadHistory), 30000);
+
+// ─── confidence: is the real account proven enough to add money? ───
+async function loadConfidence() {
+  const c = await api("/account/confidence?kind=real");
+  const tag = document.getElementById("conf-tag");
+  tag.textContent = c.ready ? "✅ sim — pode recarregar" : `${c.passed} de ${c.total} critérios · ainda não`;
+  tag.style.color = c.ready ? "var(--green)" : "";
+  setHTML("conf", c.checks.map((x) => `<div class="${x.ok ? "ok" : ""}">${x.ok ? "✅" : "⬜"} ${esc(x.name)}<small>${esc(x.value)}</small></div>`).join(""));
+}
+safe(loadConfidence);
+setInterval(() => safe(loadConfidence), 60000);
 
 // ─── add funds: address, QR, balances ───
 async function loadFunding() {

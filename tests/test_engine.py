@@ -332,3 +332,11 @@ def test_trade_stats_summarise_history():
     assert s["by_bot"]["trend"]["pnl_usd"] == 0.9 and list(s["by_coin"]) == ["BTC", "ETH"]
     assert s["by_exit"]["alvo"]["trades"] == 1 and s["by_exit"]["tempo"]["trades"] == 1
     assert trade_stats([]) == {"trades": 0}
+
+
+def test_confidence_checklist_starts_not_ready(ledger):
+    from src.api.paper_routes import confidence
+    eng = build(ledger, Price(1.0))
+    eng.run_cycle()
+    c = confidence(eng)
+    assert c["total"] == 7 and not c["ready"] and any(x["name"].startswith("Sem kill switch") and x["ok"] for x in c["checks"])

@@ -775,6 +775,41 @@ def trade_stats(trades: list[dict]) -> dict:
                              else "tempo" if "holding time" in (t["reason"] or "") else "IA/outro")}
 
 
+def confidence(eng) -> dict:
+    """Is the system proven enough to add money? Objective checks over the real record (the user's rule: a few days
+    in a row of wins, bots behaving, AI cost under control, positive trades)."""
+    from src.solana import hl_live
+    days = hl_live.daily_report(eng, 14)                         # newest first, net = trades − AI that day
+    streak = 0
+    for d in days:
+        if d["trades"] == 0 and d["net_usd"] == 0:
+            continue                                              # a quiet day neither breaks nor builds the streak
+        if d["net_usd"] <= 0:
+            break
+        streak += 1
+    st = trade_stats(eng.ledger.closed_trades())
+    P = profit(eng)
+    trading, ai = P["trading_all"], P["ai_all"]
+    kills = [d for d in eng.ledger.decisions(500, kind="kill_switch")
+             if d["ts"] >= (datetime.now(timezone.utc) - timedelta(days=3)).isoformat() and "reset" not in d["reason"]]
+    checks = [
+        {"name": "3 dias seguidos com lucro líquido", "ok": streak >= 3, "value": f"{streak} dia(s)"},
+        {"name": "10+ trades fechados na conta real", "ok": st.get("trades", 0) >= 10, "value": f"{st.get('trades', 0)} trades"},
+        {"name": "Acerto ≥ 50%", "ok": (st.get("win_rate") or 0) >= 0.5, "value": f"{(st.get('win_rate') or 0) * 100:.0f}%"},
+        {"name": "Fator de lucro ≥ 1,3", "ok": (st.get("profit_factor") or 0) >= 1.3, "value": str(st.get("profit_factor") or "–")},
+        {"name": "IA custa < 25% do lucro dos trades", "ok": trading > 0 and ai < 0.25 * trading, "value": f"IA ${ai:.2f} / trades ${trading:.2f}"},
+        {"name": "Lucro líquido total positivo", "ok": P["net_all"] > 0, "value": f"${P['net_all']:+.2f}"},
+        {"name": "Sem kill switch nos últimos 3 dias", "ok": not kills and not eng.kill_switch().get("active"), "value": f"{len(kills)} vez(es)"},
+    ]
+    passed = sum(c["ok"] for c in checks)
+    return {"checks": checks, "passed": passed, "total": len(checks), "ready": passed == len(checks)}
+
+
+@router.get("/account/confidence")
+def account_confidence(kind: str = "real"):
+    return confidence(_account_engine(kind))
+
+
 @router.get("/account/stats")
 def account_stats(kind: str = "sim"):
     return trade_stats(_account_engine(kind).ledger.closed_trades())

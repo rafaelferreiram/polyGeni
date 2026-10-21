@@ -30,8 +30,10 @@ def _slug(model: str) -> str:
 
 
 def build_bot(model: str, db_dir: str = ".", llm_fn=None, scout=None, broker_factory=None, candles_fn=None) -> PaperEngine:
-    from src.solana.hl_live import _risk          # identical limits to the real account
+    from src.solana.hl_live import _risk          # real-account trade size and stops, more lab slots
     ledger = Ledger(f"{db_dir}/arena_{_slug(model)}.db", cfg.ARENA_START_USDC)
+    if ledger.contributed() < cfg.LAB_CAPITAL_USD:          # paper top-up: counted as a contribution, never as profit
+        ledger.move_cash("deposit", cfg.LAB_CAPITAL_USD - ledger.contributed(), "lab capital for faster evidence")
     decider = None
     if model not in RULE_BOTS:
         decider = LLMDecider(model=model, llm_fn=llm_fn)
@@ -39,7 +41,7 @@ def build_bot(model: str, db_dir: str = ".", llm_fn=None, scout=None, broker_fac
         decider.record_fn = lambda: track_record(model)        # the AI sees its own reward and recent trades
     eng = PaperEngine(
         ledger, [scout or hl.HyperliquidScout()], _PerpsSafety(), [RULE_BOTS[model]()] if model in RULE_BOTS else [],
-        DebateAgent(enabled=False), _risk(),
+        DebateAgent(enabled=False), _risk(lab=True),
         ExecutorAgent(broker_factory(ledger) if broker_factory else hl.HyperliquidPaperBroker(ledger, leverage=cfg.LIVE_LEVERAGE)),
         candles_fn=candles_fn or {hl.VENUE: hl.candles}, bench_fn=bench_prices if candles_fn is None else None,
         llm=decider, profiles={hl.VENUE: {"max_pos_pct": 1.0, "stop_mult": cfg.MARKET_PROFILES.get(hl.VENUE, {}).get("stop_mult", 1.5)}},
@@ -113,6 +115,26 @@ def track_record(model: str, n: int = 8) -> dict:
                     "losing record = minimum size until it recovers; paid analyses cost points"}
 
 
+def green_light(model: str) -> dict:
+    """Is this bot ready for real money? Trusted (backtest-validated) bots are; the others need LIVE_MIN_LAB_TRADES
+    closed lab trades with net profit after their AI cost, win rate ≥ GREEN_LIGHT_WIN_RATE and profit factor ≥
+    GREEN_LIGHT_PROFIT_FACTOR."""
+    if model in cfg.REAL_TRUSTED_BOTS:
+        return {"ok": True, "trusted": True}
+    eng = (_bots or {}).get(model)
+    trades = eng.ledger.closed_trades() if eng else []
+    wins = [t["pnl_usd"] for t in trades if t["pnl_usd"] > 0]
+    losses = [-t["pnl_usd"] for t in trades if t["pnl_usd"] <= 0]
+    n, net = len(trades), net_of_cost(model)[2] if eng else 0.0
+    wr = len(wins) / n if n else 0.0
+    pf = (sum(wins) / sum(losses)) if losses and sum(losses) > 0 else (99.0 if wins else 0.0)
+    need = {"trades": n >= cfg.LIVE_MIN_LAB_TRADES, "lucro": net > 0, "acerto": wr >= cfg.GREEN_LIGHT_WIN_RATE,
+            "fator": pf >= cfg.GREEN_LIGHT_PROFIT_FACTOR}
+    return {"ok": all(need.values()), "trusted": False, "trades": n, "needed": cfg.LIVE_MIN_LAB_TRADES,
+            "win_rate": round(wr, 3), "profit_factor": round(pf, 2), "net_usd": round(net, 4),
+            "missing": [k for k, v in need.items() if not v]}
+
+
 def eligible_for_real(members: list) -> list:
     """Real money only for bots with evidence: REAL_TRUSTED_BOTS (backtest-validated rule bots), and every other bot
     (AI) once it has ≥ LIVE_MIN_LAB_TRADES lab trades and positive expectancy after its AI cost."""
@@ -121,8 +143,7 @@ def eligible_for_real(members: list) -> list:
         if m.model in cfg.REAL_TRUSTED_BOTS:
             ok.append(m)
             continue
-        exp, n = score(m.model)
-        if n >= cfg.LIVE_MIN_LAB_TRADES and exp > 0 and net_of_cost(m.model)[2] > 0:   # profitable AFTER its AI cost
+        if green_light(m.model)["ok"]:
             ok.append(m)
     return ok
 
@@ -262,6 +283,7 @@ def leaderboard() -> list[dict]:
             "trades": len(trades), "win_rate": round(sum(t["pnl_usd"] > 0 for t in trades) / len(trades), 3) if trades else None,
             "open": [x["symbol"] for x in led.positions()], "reward": reward(model),
             "model_now": eng.llm.model if eng.llm else None, "boost": led.get_state("boost") or {},
+            "green_light": green_light(model),
             "last_decision": next(({"market": k, **{x: v.get(x) for x in ("action", "reason", "model")}}
                                    for k, v in sorted(last.items(), key=lambda kv: -(kv[1].get("t") or 0))), None)
                              if eng.llm else _rules_last(led),

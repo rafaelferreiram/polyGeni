@@ -63,6 +63,17 @@ def _candles_brief(candles: list[dict], n: int = 48) -> list[list]:
              round(c["volume"], 2)] for c in candles[-n:]]
 
 
+def _worth_asking(f: dict, candles: list[dict], ctx: dict) -> bool:
+    """Ask the AI only when a setup exists: a dip in an uptrend, a 1h/4h breakout in a strong trend, whales buying
+    hard in an uptrend, or the top traders just going long. Anything else is HOLD for free."""
+    from src.solana.strategies import Trend4h, TrendStrong
+    dip = f.get("uptrend") and (f.get("below_lower_band") or (f.get("rsi14") or 100) < 40)
+    wf, tt = ctx.get("whale_flow") or {}, ctx.get("top_traders") or {}
+    whales = f.get("uptrend") and wf.get("pressure") == "comprando"
+    top = tt.get("new_longs_1h", 0) >= 1 and tt.get("long", 0) >= 2
+    return bool(dip or whales or top or TrendStrong().signal(candles) or Trend4h().signal(candles))
+
+
 class LLMDecider:
     """Drop-in strategy: the engine calls decide(candles, context) instead of signal(candles)."""
     capital_pct = 1.0
@@ -101,8 +112,8 @@ class LLMDecider:
             self.model = self.router(market) or self.model
         from src.solana.strategies import features
         f = features(candles)
-        if cfg.LLM_PREFILTER and not (f.get("uptrend") and (f.get("below_lower_band") or (f.get("rsi14") or 100) < 40)):
-            # no dip inside an uptrend: nothing worth paying an AI call for
+        if cfg.LLM_PREFILTER and not _worth_asking(f, candles, context):
+            # no dip, breakout, whale buying or top-trader entry: nothing worth paying an AI call for
             self.last[market] = {"action": "HOLD", "reason": "sem oportunidade — IA não foi chamada (custo $0)",
                                  "model": self.model, "t": candles[-1]["t"], "free": True}
             return None
