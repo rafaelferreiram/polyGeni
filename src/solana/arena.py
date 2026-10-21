@@ -231,6 +231,56 @@ def can_promote(model: str) -> dict:
             "need_wins": cfg.PROMOTE_MIN_WINS, "need_win_rate": cfg.PROMOTE_MIN_WIN_RATE}
 
 
+def advise(model: str, now: datetime | None = None) -> dict | None:
+    """My read on a reserve, in plain words: ⭐ promote, 🌱 promising, 👀 watching, 🔻 likely cut at the next 20h check.
+    Promotion needs more than the user's minimum (12 wins, 35%): it must also make money (net > 0, profit factor ≥ 1.2,
+    20+ trades), because a bot that wins often but loses big would lose real money. The cut flag mirrors the evolution
+    rule on the current 20h period, plus clearly losing records."""
+    if is_titular(model):
+        return None
+    eng = bots().get(model)
+    if not eng:
+        return None
+    now = now or datetime.now(timezone.utc)
+    trades = eng.ledger.closed_trades()
+    n, wins = len(trades), sum(t["pnl_usd"] > 0 for t in trades)
+    wr = wins / n if n else 0.0
+    gw, gl = sum(t["pnl_usd"] for t in trades if t["pnl_usd"] > 0), -sum(t["pnl_usd"] for t in trades if t["pnl_usd"] <= 0)
+    pf = gw / gl if gl else (99.0 if gw else 0.0)
+    net = net_of_cost(model)[2]
+    born = eng.ledger.get_state("born_at")
+    period = None
+    if born:
+        b = datetime.fromisoformat(born)
+        k = int((now - b) / timedelta(hours=cfg.EVOLVE_PERIOD_H))
+        start, end = b + timedelta(hours=cfg.EVOLVE_PERIOD_H) * k, b + timedelta(hours=cfg.EVOLVE_PERIOD_H) * (k + 1)
+        w = [t for t in trades if t["exit_ts"] >= start.isoformat()]
+        pw = sum(t["pnl_usd"] > 0 for t in w)
+        period = {"trades": len(w), "wins": pw, "win_rate": round(pw / len(w), 3) if w else 0.0, "ends": end.isoformat(timespec="seconds")}
+    c = can_promote(model)
+    reasons = [f"{n} trades, {wins} vitórias ({wr:.0%}), fator de lucro {pf:.2f}, resultado total {'+' if net >= 0 else '−'}${abs(net):.2f} (com as posições abertas)"]
+    if c["ok"] and net > 0 and pf >= 1.2 and n >= 20:
+        flag, label = "promote", "⭐ Potencial para titular"
+        reasons.append("bate a regra de promoção e dá lucro: ganha mais do que perde")
+    elif period and period["trades"] >= 3 and period["win_rate"] < cfg.EVOLVE_MIN_WIN_RATE and (now.isoformat() < period["ends"]):
+        flag, label = "cut", "🔻 Risco de corte"
+        reasons.append(f"neste período de 20h: {period['wins']}/{period['trades']} ({period['win_rate']:.0%}) — abaixo de "
+                       f"{cfg.EVOLVE_MIN_WIN_RATE:.0%}; se seguir assim, nasce um sucessor melhor ajustado no corte")
+    elif n >= 15 and (pf < 0.8 or net < -1):
+        flag, label = "cut", "🔻 Risco de corte"
+        reasons.append("perde mais do que ganha de forma consistente — bom candidato a ser trocado por um sucessor")
+    elif n >= 8 and pf >= 1.0 and net >= 0:
+        flag, label = "promising", "🌱 Promissor"
+        reasons.append("no lucro e acertando — se mantiver, chega à promoção")
+    else:
+        flag, label = "watch", "👀 Em observação"
+        reasons.append("poucos trades ou resultado misto — ainda sem conclusão")
+    if c["ok"] and flag != "promote":
+        reasons.append("bate a sua regra (12 vitórias, ≥35%), mas ainda não recomendo: " +
+                       ("está no prejuízo" if net <= 0 else f"fator de lucro {pf:.2f} < 1,2" if pf < 1.2 else "menos de 20 trades"))
+    return {"flag": flag, "label": label, "reasons": reasons, "period": period}
+
+
 def promote(model: str) -> dict:
     c = can_promote(model)
     if not c["ok"]:
@@ -482,6 +532,7 @@ def leaderboard() -> list[dict]:
             "learned": learning.summary(learning.record(led, model)),
             "lineage": evolution.load()["bots"].get(model), "born_at": led.get_state("born_at"),
             "last_verdict": led.get_state("last_verdict"), "quota": quota_today(model), "can_promote": can_promote(model),
+            "advice": advise(model),
             "last_decision": next(({"market": k, **{x: v.get(x) for x in ("action", "reason", "model")}}
                                    for k, v in sorted(last.items(), key=lambda kv: -(kv[1].get("t") or 0))), None)
                              if eng.llm else _rules_last(led),
