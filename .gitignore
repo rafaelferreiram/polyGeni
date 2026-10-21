@@ -11,4 +11,5 @@ dist/
 build/
 *.egg-info/
 .pytest_cache/
-.claude/
+.claude/*
+!.claude/skills/
