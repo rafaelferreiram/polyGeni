@@ -42,6 +42,12 @@
     .story { background: var(--surface); border: 1px solid var(--border); border-left: 4px solid var(--accent);
              border-radius: 10px; padding: 14px 16px; margin-bottom: 16px; line-height: 1.6; }
     .story b { color: var(--text); }
+    main a { color: var(--accent); }
+    .steps { padding-left: 20px; line-height: 1.7; }
+    .steps li { margin-bottom: 10px; }
+    .warn-note { border-left: 3px solid var(--yellow); padding-left: 10px; }
+    .feed-item { display: flex; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+    .feed-item .when { color: var(--muted); min-width: 64px; font-variant-numeric: tabular-nums; }
     .pipeline { display: flex; align-items: stretch; gap: 6px; flex-wrap: wrap; }
     .pipeline .agent { flex: 1 1 150px; min-width: 150px; border-top: 3px solid var(--border); }
     .pipeline .agent.ok { border-top-color: var(--green); }
@@ -76,12 +82,34 @@
     </div>
   </header>
   <nav class="sections">
-    <a href="#resumo">Resumo</a><a href="#agents">Agents</a><a href="#research-desk">Research</a>
+    <a href="#comece">Comece aqui</a><a href="#agora">Agora</a><a href="#resumo">Resumo</a><a href="#agents">Agents</a><a href="#research-desk">Research</a>
     <a href="#posicoes">Posições & trades</a><a href="#mercados">Mercados</a><a href="#pronto">Pronto p/ real?</a><a href="#decisoes">Decisões</a><a href="#fundos">Fundos & carteiras</a>
   </nav>
 
   <main>
     <div class="story" id="resumo"><span class="muted">A carregar…</span></div>
+
+    <div class="grid">
+      <section class="panel" id="comece">
+        <h2>Comece aqui</h2>
+        <ol class="steps">
+          <li><b>Ligue a sua carteira (só leitura).</b> Veja o saldo da Phantom aqui; o bot não consegue mexer nela.
+            <div class="wallet-btns"><button onclick="connectWallet('phantom')">👻 Conectar Phantom</button>
+            <button onclick="connectWallet('solflare')">☀️ Conectar Solflare</button></div></li>
+          <li><b>Escolha o saldo de treino.</b> Deposite dinheiro <i>simulado</i> para espelhar o que pensa investir.
+            <a href="#fundos">Ir para Fundos →</a></li>
+          <li><b>Ponha os agents a trabalhar.</b> <button onclick="act('/start')">▶ Iniciar 24/7</button>
+            Acompanhe tudo em <b>Agora</b> e no <a href="#agents">fluxo de decisão</a>.</li>
+          <li><b>Espere por evidência.</b> O painel <a href="#pronto">Pronto para dinheiro real?</a> diz quando os números o justificam.</li>
+        </ol>
+        <p class="note warn-note">⚠️ <b>Dinheiro real:</b> nesta fase o bot só negoceia dinheiro <b>simulado</b> com preços reais. Depositar na sua carteira não faz o bot negociar com ela.
+        Com $20, as regras de risco atuais (mínimo $5 por trade, 5–15% por posição) não abririam trades. Simule primeiro com o mesmo valor.</p>
+      </section>
+      <section class="panel" id="agora">
+        <h2>Agora <span class="tag" id="next-cycle">–</span></h2>
+        <div id="live-feed" class="note">A carregar…</div>
+      </section>
+    </div>
 
     <section class="cards-row">
       <div class="card"><div class="card-label">Património (equity) <span class="help" title="Cash + valor atual das posições, se vendesses agora ao preço da Jupiter">?</span></div><div class="card-value" id="equity">–</div></div>

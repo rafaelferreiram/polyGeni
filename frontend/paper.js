@@ -310,10 +310,37 @@ async function loadReadiness() {
     `<p class="note" style="margin-top:8px">${esc(r.note)}</p>`;
 }
 
+const ago = (iso) => {
+  const s = Math.max(0, (Date.now() - new Date(iso)) / 1000);
+  return s < 60 ? `${Math.round(s)}s` : s < 3600 ? `${Math.round(s / 60)} min` : `${Math.round(s / 3600)} h`;
+};
+const KIND_LABEL = { entry: "🟢 compra", exit: "🔵 venda", veto: "🟡 bloqueio", error: "🔴 erro",
+                     kill_switch: "🛑 kill switch", reconcile: "🧾 reconciliação", pause: "⏸ pausa", resume: "▶ retoma" };
+let nextCycleAt = null;
+async function loadLive() {
+  const [{ decisions }, s] = await Promise.all([api("/decisions?limit=8"), api("/status")]);
+  const lc = s.last_cycle || {};
+  const head = s.running
+    ? `<div class="feed-item"><span class="when">${s.heartbeat ? ago(s.heartbeat.ts) : "–"}</span><span>⚙️ Ciclo #${s.cycle}: ${lc.candidates ?? 0} mercados analisados, ${lc.signals ?? 0} sinais, ${lc.entries ?? 0} compras</span></div>`
+    : '<div class="feed-item"><span class="when">—</span><span>⏸️ Parado — clique em <b>Iniciar 24/7</b></span></div>';
+  document.getElementById("live-feed").innerHTML = head + (decisions.length ? decisions.map((d) => `
+    <div class="feed-item"><span class="when">${ago(d.ts)}</span>
+    <span>${KIND_LABEL[d.kind] || esc(d.kind)} <b>${esc(d.symbol || d.mint || "")}</b> ${d.strategy ? `<span class="muted">(${esc(d.strategy)})</span>` : ""} — ${esc(d.reason)}</span></div>`).join("")
+    : '<p class="note">Ainda sem decisões registadas.</p>');
+  nextCycleAt = s.running && s.heartbeat ? new Date(s.heartbeat.ts).getTime() + s.cycle_interval_sec * 1000 : null;
+}
+setInterval(() => {
+  const el = document.getElementById("next-cycle");
+  if (!el) return;
+  if (!nextCycleAt) { el.textContent = "parado"; return; }
+  const left = Math.round((nextCycleAt - Date.now()) / 1000);
+  el.textContent = left > 0 ? `próximo ciclo em ${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}` : "a correr ciclo…";
+}, 1000);
+
 async function refresh() {
-  await Promise.allSettled([loadStatus(), loadAgents(), loadPositions(), loadTrades(), loadDecisions(), loadFunds(), loadChart(), loadResearch(), loadMarkets(), loadReadiness()]);
+  await Promise.allSettled([loadStatus(), loadAgents(), loadPositions(), loadTrades(), loadDecisions(), loadFunds(), loadChart(), loadResearch(), loadMarkets(), loadReadiness(), loadLive()]);
 }
 
 refresh();
 loadWallets();
-setInterval(refresh, 15000);
+setInterval(refresh, 10000);
