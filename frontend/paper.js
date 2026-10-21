@@ -746,67 +746,104 @@ function greenLine(g) {
 }
 // ─── bot modal: everything about one bot ───
 let modalBot = null;
-function closeBot() { modalBot = null; document.getElementById("bot-modal").hidden = true; }
+function closeBot() { modalBot = null; document.getElementById("bot-modal").hidden = true; document.body.style.overflow = ""; }
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && modalBot) closeBot(); });
 const dt = (iso) => new Date(iso).toLocaleString("pt-BR", { timeZone: "Europe/Lisbon", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+let modalTab = "resumo", modalData = null;
 async function openBot(model) {
   modalBot = model;
+  modalTab = "resumo";
+  modalData = null;
   document.getElementById("bot-modal").hidden = false;
-  document.getElementById("bm-body").innerHTML = '<div class="empty">Carregando…</div>';
+  document.body.style.overflow = "hidden";
+  document.getElementById("bm-body").innerHTML = '<div class="bm-body"><div class="empty">Carregando…</div></div>';
   await renderBotModal();
 }
+function botTab(t) { modalTab = t; paintBotModal(); }
 async function renderBotModal() {
   if (!modalBot) return;
   const d = await api(`/arena/bot/${encodeURIComponent(modalBot)}`);
   if (d.model !== modalBot) return;
-  const L = look(d.model), r = d.board || {}, s = d.stats || {}, rs = d.real_stats || {}, g = r.green_light || {}, p = d.projection;
-  const chip = (t) => `<span>${t}</span>`;
-  const chips = [d.titular ? "⚽ titular — opera dinheiro real" : "🪑 reserva — treina no laboratório",
-    r.turbo_until && new Date(r.turbo_until) > new Date() ? `⚡ turbo até ${hhmm(r.turbo_until)}` : "",
-    r.coffee_until && new Date(r.coffee_until) > new Date() ? `☕ café até ${hhmm(r.coffee_until)}` : "",
-    reviewOn(r) ? `🚀 ${esc(look(reviewOn(r).model).label)} revisa até ${hhmm(reviewOn(r).until)}` : ""].filter(Boolean).map(chip).join("");
-  const k = (l, v) => `<div><small>${l}</small><b>${v}</b></div>`;
-  const maxDay = Math.max(...d.days.map((x) => Math.abs(x.lab + x.real)), 0.01);
-  const proj = (h) => `<div class="bm-box"><b>Próximas ${h}</b><br>~${p[h].trades} trades · esperado ${pnl(p[h].expected)}<br>
-    <span class="muted">faixa provável ${pnl(p[h].low)} a ${pnl(p[h].high)}</span></div>`;
-  document.getElementById("bm-body").innerHTML = `
-    <div class="bm-head"><span class="face" aria-hidden="true">${d.mood.emoji}</span>
-      <div><b id="bm-title">${esc(L.ico || "")} ${esc(L.label)}</b> <span class="rl">· ${esc(L.role)}</span>
-        <div class="muted" style="font-size:13px">humor: <b>${esc(d.mood.label)}</b> — ${esc(d.mood.why)}</div><div class="bm-chips">${chips}</div></div></div>
-    <h3>Desempenho no laboratório</h3>
-    <div class="bm-kpis">${k("Resultado", pnl(r.net_usd ?? s.pnl_usd))}${k("Trades", s.trades || 0)}${k("Acerto", pct(s.win_rate))}
-      ${k("Fator de lucro", s.profit_factor ?? "–")}${k("Média por trade", pnl(s.expectancy))}${k("Ganho / perda média", `${pnl(s.avg_win)} / ${pnl(s.avg_loss)}`)}
-      ${k("Tempo médio", s.avg_hold_h != null ? `${s.avg_hold_h}h` : "–")}${k("Trades por dia", p.trades_per_day)}
-      ${!g.ok ? k("Rumo à conta real", `${g.trades || 0}/${g.needed_trades || 20} trades · ${g.wins || 0}/${g.needed || 12} vitórias`) : ""}</div>
-    ${rs.trades ? `<h3>Na conta real</h3><div class="bm-kpis">${k("Resultado", pnl(rs.pnl_usd))}${k("Trades", rs.trades)}${k("Acerto", pct(rs.win_rate))}${k("Média por trade", pnl(rs.expectancy))}</div>` : ""}
-    <h3>Projeção (pelo histórico dele${d.titular ? ", em dinheiro real" : ", no laboratório"})</h3>
-    <div class="bm-two">${proj("24h")}${proj("48h")}</div>
-    <p class="note">Estimativa: trades por dia × média por trade (${p.sample} trades de base). Com poucos trades a faixa é larga — não é promessa.</p>
-    <h3>Possíveis próximas trades</h3>
-    ${d.opportunities.length ? `<div class="tbl"><table><tr><th>Moeda</th><th class="n">Preço</th><th class="n">Distância</th><th>O que falta</th></tr>` +
-      d.opportunities.map((o) => `<tr><td>${coinIcon(o.symbol)}<b>${esc(o.symbol)}</b></td><td class="n">${fmtPx(o.price)}</td>
-        <td class="n">${o.gap_pct > 0 ? "+" : ""}${o.gap_pct}%</td><td>${esc(o.what)}</td></tr>`).join("") + "</table></div>"
-      : '<div class="empty">Nenhuma moeda perto da regra dele agora.</div>'}
-    <h3>🧠 O que ele aprendeu</h3>
-    <div class="bm-box">${d.learned.avoid.length ? `Evita: ${d.learned.avoid.map((x) => `<b>${esc(x.tag)}</b> (${x.wins}/${x.n}, ${pnl(x.pnl)})`).join(", ")}<br>` : ""}
-      ${d.learned.best.length ? `Vai melhor em: ${d.learned.best.map((x) => `<b>${esc(x.tag)}</b> (${x.wins}/${x.n}, ${pnl(x.pnl)})`).join(", ")}` : ""}
-      ${!d.learned.avoid.length && !d.learned.best.length ? `Aprendendo · ${d.learned.seen} trades analisados (precisa de 6 na mesma situação para tirar conclusões)` : ""}</div>
-    <h3>Posições abertas</h3>
-    ${[...d.positions_real.map((x) => ({ ...x, w: "💰 real" })), ...d.positions_lab.map((x) => ({ ...x, w: "🧪 lab" }))].map((x) =>
-      `<div class="bm-box" style="margin-bottom:6px">${x.w} · ${coinIcon(x.symbol)}<b>${esc(x.symbol)}</b> desde ${dt(x.opened_at)} · investido ${usd(x.cost)} → ${usd(x.now)} · ${pnl(x.pnl)}</div>`).join("")
-      || '<div class="empty">Nenhuma posição aberta.</div>'}
-    <h3>Resultado por dia</h3>
-    ${d.days.length ? `<div class="bm-days">${[...d.days].reverse().map((x) => { const v = x.lab + x.real;
-      return `<div title="${x.day}: lab ${usd(x.lab)} · real ${usd(x.real)} · ${x.trades} trades"><small>${v >= 0 ? "+" : "−"}$${Math.abs(v).toFixed(2)}</small>
-        <span style="height:${(Math.abs(v) / maxDay) * 60}px;background:${v >= 0 ? "var(--green)" : "var(--red)"}"></span><small>${x.day.slice(8)}/${x.day.slice(5, 7)}</small></div>`; }).join("")}</div>`
-      : '<div class="empty">Sem trades fechados ainda.</div>'}
-    <h3>Trades (${d.trades.length} mais recentes)</h3>
-    ${d.trades.length ? `<div class="tbl"><table><tr><th>Fechou</th><th>Onde</th><th>Moeda</th><th class="n">Investido</th><th class="n">Resultado</th><th class="n">%</th><th>Como saiu</th></tr>` +
-      d.trades.map((t) => `<tr><td>${dt(t.exit_ts)}</td><td>${t.where === "real" ? "💰 real" : "🧪 lab"}</td><td>${coinIcon(t.symbol)}${esc(t.symbol)}</td>
-        <td class="n">${usd(t.cost)}</td><td class="n">${pnl(t.pnl)}</td><td class="n ${t.pct >= 0 ? "green" : "red"}">${t.pct}%</td><td class="muted">${esc(t.reason)}</td></tr>`).join("") + "</table></div>"
-      : '<div class="empty">Sem trades ainda.</div>'}
-    ${REMOTE ? "" : `<div class="bm-chips" style="margin-top:16px">${trainButton(d.model, r)}${coffeeButton(d.model, r)}</div>`}`;
+  modalData = d;
+  paintBotModal();
 }
+const pct0 = (v) => (v === null || v === undefined ? "–" : `${Math.round(v * 100)}%`);
+function paintBotModal() {
+  const d = modalData;
+  if (!d) return;
+  const L = look(d.model), r = d.board || {}, s = d.stats || {}, rs = d.real_stats || {}, g = r.green_light || {}, p = d.projection;
+  const scrollTop = document.querySelector(".bm-body")?.scrollTop || 0;
+  const chips = [d.titular ? "⚽ Titular · opera dinheiro real" : "🪑 Reserva · treina no laboratório",
+    r.turbo_until && new Date(r.turbo_until) > new Date() ? "⚡ Turbo até a meia-noite" : "",
+    r.coffee_until && new Date(r.coffee_until) > new Date() ? `☕ Café até ${hhmm(r.coffee_until)}` : "",
+    reviewOn(r) ? `🚀 ${esc(look(reviewOn(r).model).label)} revisa até ${hhmm(reviewOn(r).until)}` : ""].filter(Boolean).map((t) => `<span>${t}</span>`).join("") + `<span class="mood">${d.mood.emoji} ${esc(d.mood.label)}</span>`;
+  const narrow = matchMedia("(max-width: 760px)").matches;
+  const tabs = [["resumo", "Resumo"], ["proximas", `${narrow ? "Próximas" : "Próximas trades"}${d.opportunities.length ? ` (${d.opportunities.length})` : ""}`],
+    ["trades", `Trades (${d.trades.length})`], ["aprendizado", narrow ? "Aprendeu" : "Aprendizado"]];
+  const hero = (l, v, sub = "") => `<div><small>${l}</small><b>${v}</b>${sub ? `<em>${sub}</em>` : ""}</div>`;
+  const rows = (pairs) => `<div class="bm-rows">${pairs.filter(Boolean).map(([l, v]) => `<div><span>${l}</span><b>${v}</b></div>`).join("")}</div>`;
+  let body = "";
+  if (modalTab === "resumo") {
+    const realOn = d.titular || rs.trades || d.positions_real.length;
+    const prog = g.ok ? 1 : Math.min((g.trades || 0) / (g.needed_trades || 20), (g.wins || 0) / (g.needed || 12));
+    body = `<h4>${realOn ? "Conta real (dinheiro de verdade)" : "Laboratório"}</h4>
+      <div class="bm-hero">${realOn
+        ? hero("Resultado fechado", pnl(rs.pnl_usd ?? 0), `${rs.trades || 0} trades`) + hero("Acerto", pct0(rs.win_rate), rs.trades ? `${rs.wins} de ${rs.trades}` : "sem trades ainda") +
+          hero("Em aberto agora", pnl(d.open_pnl_real), `${d.positions_real.length} posições`) + hero("Média por trade", pnl(rs.expectancy ?? 0))
+        : hero("Resultado fechado", pnl(s.pnl_usd ?? 0), `${s.trades || 0} trades`) + hero("Acerto", pct0(s.win_rate), s.trades ? `${s.wins} de ${s.trades}` : "sem trades ainda") +
+          hero("Em aberto agora", pnl(d.open_pnl), `${d.positions_lab.length} posições`) + hero("Média por trade", pnl(s.expectancy ?? 0))}</div>
+      <div class="bm-two" style="margin-top:12px">
+        <div class="bm-card"><div class="t">🧪 Laboratório <span class="muted">dinheiro falso, mesmas regras</span></div>${rows([
+          ["Trades fechados", `${s.trades || 0} · acerto ${pct0(s.win_rate)}`], ["Resultado fechado", pnl(s.pnl_usd ?? 0)], ["Em aberto", pnl(d.open_pnl)],
+          ["Ganho médio / perda média", `${pnl(s.avg_win)} / ${pnl(s.avg_loss)}`], ["Fator de lucro", s.profit_factor ?? "–"],
+          ["Tempo médio por trade", s.avg_hold_h != null ? `${s.avg_hold_h}h` : "–"], ["Trades por dia", p.trades_per_day]])}</div>
+        <div class="bm-card"><div class="t">🔮 Projeção <span class="muted">pelo histórico dele</span></div>${rows([
+          ["Próximas 24h", `~${p["24h"].trades} trades · ${pnl(p["24h"].expected)}`], ["faixa provável", `${pnl(p["24h"].low)} a ${pnl(p["24h"].high)}`],
+          ["Próximas 48h", `~${p["48h"].trades} trades · ${pnl(p["48h"].expected)}`], ["faixa provável", `${pnl(p["48h"].low)} a ${pnl(p["48h"].high)}`]])}
+          <p class="note" style="margin:10px 0 0">${p.sample < 10 ? `⚠️ Só ${p.sample} trades de base — estimativa fraca.` : `Base: ${p.sample} trades no laboratório.`} Não é promessa.</p></div>
+      </div>
+      ${g.ok ? "" : `<h4>Rumo à conta real</h4><div class="bm-card"><div class="t"><span>${g.trades || 0} de ${g.needed_trades || 20} trades · ${g.wins || 0} de ${g.needed || 12} vitórias</span><span>${pct0(prog)}</span></div>
+        <div class="bm-prog"><i style="width:${prog * 100}%"></i></div><span class="muted">Falta: ${esc((g.missing || []).join(", ") || "—")}</span></div>`}
+      <h4>Resultado por dia</h4>${daysChart(d.days)}
+      ${REMOTE ? "" : `<div class="bm-actions">${trainButton(d.model, r)}${coffeeButton(d.model, r)}</div>`}`;
+  } else if (modalTab === "proximas") {
+    body = `<p class="note" style="margin:0 0 12px">Moedas mais perto da regra de compra do ${esc(L.label)}. <b>Pronto</b> = a regra bateu; a compra ainda passa pelo revisor e pelo Risk (vagas, moeda já em carteira, aprendizado).</p>` +
+      (d.opportunities.length ? `<div class="bm-opps">${d.opportunities.map((o) => `<div class="bm-opp"><div class="c">${coinIcon(o.symbol)}<span><b>${esc(o.symbol)}</b><br><span class="muted">${fmtPx(o.price)}</span></span></div>
+        <div class="d">${esc(o.detail)}${o.held ? ' · <span class="yellow">já tem posição</span>' : ""}<div class="bm-prog ${o.status}"><i style="width:${o.progress * 100}%"></i></div></div>
+        <span class="st ${o.status}">${o.status === "pronto" ? "✅ pronto" : o.status === "perto" ? "🟡 perto" : "⚪ longe"}</span></div>`).join("")}</div>`
+        : `<div class="empty">Nenhuma moeda perto da regra dele agora. ${d.model.startsWith("rules") ? "Ele espera uma queda forte numa moeda em alta." : ""}</div>`);
+  } else if (modalTab === "trades") {
+    const open = [...d.positions_real.map((x) => ({ ...x, w: "💰 Real" })), ...d.positions_lab.map((x) => ({ ...x, w: "🧪 Lab" }))];
+    body = `<h4>Posições abertas (${open.length})</h4>` + (open.length ? `<div class="tbl"><table><tr><th>Onde</th><th>Moeda</th><th>Desde</th><th class="n">Investido</th><th class="n">Agora</th><th class="n">Resultado</th></tr>` +
+        open.map((x) => `<tr><td>${x.w}</td><td>${coinIcon(x.symbol)}<b>${esc(x.symbol)}</b></td><td>${dt(x.opened_at)}</td><td class="n">${usd(x.cost)}</td><td class="n">${usd(x.now)}</td><td class="n">${pnl(x.pnl)}</td></tr>`).join("") + "</table></div>"
+        : '<div class="empty">Nenhuma posição aberta.</div>') +
+      `<h4>Trades fechados (${d.trades.length} mais recentes)</h4>` + (d.trades.length ? `<div class="tbl"><table><tr><th>Fechou</th><th>Onde</th><th>Moeda</th><th class="n">Investido</th><th class="n">Resultado</th><th class="n">%</th><th>Como saiu</th></tr>` +
+        d.trades.map((t) => `<tr><td>${dt(t.exit_ts)}</td><td>${t.where === "real" ? "💰 Real" : "🧪 Lab"}</td><td>${coinIcon(t.symbol)}${esc(t.symbol)}</td>
+          <td class="n">${usd(t.cost)}</td><td class="n">${pnl(t.pnl)}</td><td class="n ${t.pct >= 0 ? "green" : "red"}">${t.pct > 0 ? "+" : ""}${t.pct.toFixed(2)}%</td><td class="muted">${esc(exitPt(t.reason))}</td></tr>`).join("") + "</table></div>"
+        : '<div class="empty">Sem trades fechados ainda.</div>');
+  } else {
+    const item = (x) => `<div><span>${esc(x.tag)}</span><b>${x.wins}/${x.n} ganhos · ${pnl(x.pnl)}</b></div>`;
+    body = `<p class="note" style="margin:0 0 12px">Cada compra guarda a situação em que foi feita. Quando uma situação junta 6+ trades com acerto abaixo de 35% e prejuízo, o bot passa a evitá-la — até o histórico melhorar.</p>
+      <div class="bm-two"><div class="bm-card"><div class="t">🚫 Evita</div>${d.learned.avoid.length ? `<div class="bm-rows">${d.learned.avoid.map(item).join("")}</div>` : '<span class="muted">Nada ainda.</span>'}</div>
+      <div class="bm-card"><div class="t">✅ Vai melhor em</div>${d.learned.best.length ? `<div class="bm-rows">${d.learned.best.map(item).join("")}</div>` : '<span class="muted">Nada ainda.</span>'}</div></div>
+      <p class="note">${d.learned.seen} trades analisados nos últimos 30 dias.</p>`;
+  }
+  document.getElementById("bm-body").innerHTML = `
+    <div class="bm-top" style="--c:${L.color}"><div class="bm-head">${botFace(L.color, L.ico)}
+      <div style="min-width:0"><div class="bm-name" id="bm-title">${esc(L.label)}</div><div class="bm-role">${esc(L.role)}</div><div class="bm-chips">${chips}</div></div>
+      <div class="bm-mood" title="${esc(d.mood.why)}"><div class="e">${d.mood.emoji}</div><b>${esc(d.mood.label)}</b></div></div>
+      <div class="bm-tabs" role="tablist">${tabs.map(([k, l]) => `<button role="tab" aria-selected="${k === modalTab}" class="${k === modalTab ? "on" : ""}" onclick="botTab('${k}')">${l}</button>`).join("")}</div></div>
+    <div class="bm-body">${body}</div>`;
+  document.querySelector(".bm-body").scrollTop = scrollTop;
+}
+function daysChart(days) {
+  if (!days.length) return '<div class="empty">Sem trades fechados ainda.</div>';
+  const max = Math.max(...days.map((x) => Math.abs(x.lab + x.real)), 0.01);
+  return `<div class="bm-days">${[...days].reverse().map((x) => { const v = x.lab + x.real;
+    return `<div title="${x.day}: lab ${usd(x.lab)} · real ${usd(x.real)} · ${x.trades} trades"><small>${v >= 0 ? "+" : "−"}$${Math.abs(v).toFixed(2)}</small>
+      <span style="height:${Math.max(3, (Math.abs(v) / max) * 70)}px;background:${v >= 0 ? "var(--green)" : "var(--red)"}"></span><small>${x.day.slice(8)}/${x.day.slice(5, 7)}</small></div>`; }).join("")}</div>`;
+}
+const exitPt = (r) => /take-profit/.test(r) ? "🎯 alvo" : /stop-loss/.test(r) ? "🛑 stop" : /max holding/.test(r) ? "⏱ tempo máximo" : /manualmente/.test(r) ? "✋ você vendeu" : r;
 setInterval(() => { if (modalBot) safe(renderBotModal); }, 15000);
 
 // self-learning: what the bot learned from its own closed trades (it skips situations it keeps losing in)

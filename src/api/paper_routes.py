@@ -988,32 +988,47 @@ def _mood(trades: list[dict], open_pnl: float) -> dict:
             "why": f"{sum(t['pnl_usd'] > 0 for t in last)}/{len(last)} ganhos nos últimos trades · resultado recente ${recent:+.2f}"}
 
 
-def _opportunities(model: str, watch: list[dict]) -> list[dict]:
-    """What this bot is watching right now and how close each coin is to its buy rule."""
-    from src.solana import toptraders, whales
+def _opportunities(model: str, watch: list[dict], held: set[str]) -> list[dict]:
+    """Coins this bot is watching and how close each is to its buy rule: status 'pronto' (the rule is met; the buy
+    still goes through the reviewer and Risk), 'perto' or 'longe', with what is missing in plain words."""
+    from src.solana import hl_live, toptraders, whales
     base = model.removesuffix("_15m").rstrip("2")
     out = []
+    try:                                     # live price (the radar's is the last closed candle's close)
+        live = hl_live.live_snapshot()["prices"]
+    except Exception:
+        live = {}
+    watch = [{**w, "price": live.get(w["symbol"], w["price"])} for w in watch]
+
+    def add(w, progress: float, missing: str, ready: str):
+        status = "pronto" if progress >= 1 else "perto" if progress >= 0.6 else "longe"
+        out.append({"symbol": w["symbol"], "price": w["price"], "progress": round(min(progress, 1), 3), "status": status,
+                    "detail": ready if status == "pronto" else missing, "held": w["symbol"] in held})
     for w in watch:
         if base == "rules" and w.get("up") and w.get("dip_at"):
-            gap = (w["price"] - w["dip_at"]) / w["price"]
-            out.append({"symbol": w["symbol"], "price": w["price"], "trigger": w["dip_at"], "gap_pct": round(-gap * 100, 2),
-                        "what": f"compra se cair até {w['dip_at']:.6g} (queda forte numa alta)"})
+            drop = (w["price"] - w["dip_at"]) / w["price"]          # how much it still has to fall
+            if drop <= 0 and (w.get("rsi") or 100) >= 30:            # in the zone, but not oversold yet
+                add(w, 0.95, f"já na zona de compra; falta o RSI cair abaixo de 30 (agora {w.get('rsi', 0):.0f})", "")
+            else:
+                add(w, 1 - drop / 0.05, f"precisa cair {drop:.1%} até {w['dip_at']:.6g} (e RSI abaixo de 30)",
+                    f"caiu até a zona de compra ({w['dip_at']:.6g}) com RSI abaixo de 30")
         elif base in ("trend", "trend4h") and w.get("strong") and w.get("break_at"):
-            gap = (w["break_at"] - w["price"]) / w["price"]
-            out.append({"symbol": w["symbol"], "price": w["price"], "trigger": w["break_at"], "gap_pct": round(gap * 100, 2),
-                        "what": f"compra se romper {w['break_at']:.6g}"})
+            rise = (w["break_at"] - w["price"]) / w["price"]
+            add(w, 1 - rise / 0.03, f"precisa subir {rise:.1%} e romper {w['break_at']:.6g}", f"rompeu {w['break_at']:.6g}")
         elif base == "whales" and w.get("up"):
-            s = whales.summary(w["symbol"])
-            net, need = (s.get("1h") or {}).get("net_usd", 0), 2 * s.get("threshold_usd", 0)
+            sm = whales.summary(w["symbol"])
+            net, need = (sm.get("1h") or {}).get("net_usd", 0), 2 * sm.get("threshold_usd", 0)
             if net > 0 and need:
-                out.append({"symbol": w["symbol"], "price": w["price"], "gap_pct": round(max(0.0, 1 - net / need) * 100, 1),
-                            "what": f"baleias compraram ${net:,.0f} em 1h (precisa ${need:,.0f})"})
+                add(w, net / need, f"baleias compraram ${net:,.0f} na última hora; precisa ${need:,.0f}",
+                    f"baleias compraram ${net:,.0f} na última hora (mínimo ${need:,.0f})")
         elif base == "copy" and w.get("up"):
             c = toptraders.consensus(w["symbol"])
             if c.get("long", 0) >= 1:
-                out.append({"symbol": w["symbol"], "price": w["price"], "gap_pct": round(max(0, 2 - c["long"]) * 50.0, 1),
-                            "what": f"{c['long']} dos top traders comprados, {c.get('new_longs_1h', 0)} entraram em 1h (precisa 2 + 1 entrando)"})
-    return sorted(out, key=lambda o: abs(o["gap_pct"]))[:8]
+                ok = c["long"] >= 2 and c.get("new_longs_1h", 0) >= 1
+                add(w, 1 if ok else min(c["long"], 2) / 2 * 0.9,
+                    f"{c['long']} dos top 10 comprados, {c.get('new_longs_1h', 0)} entraram na última hora (precisa 2 + 1 entrando)",
+                    f"{c['long']} dos top 10 comprados e {c.get('new_longs_1h', 0)} entrando agora")
+    return sorted(out, key=lambda o: -o["progress"])[:8]
 
 
 @router.get("/arena/bot/{model}")
@@ -1059,11 +1074,13 @@ def arena_bot(model: str):
                "cost": round(t["cost_usd"], 2), "pnl": round(t["pnl_usd"], 4), "pct": round(t["pnl_pct"] * 100, 2),
                "reason": (t.get("reason") or "")[:80]} for t in sorted(lab + real, key=lambda t: t["exit_ts"], reverse=True)[:60]]
     return {"model": model, "titular": arena.is_titular(model), "board": lb, "stats": st,
+            "open_pnl": round(open_pnl, 4), "open_pnl_real": round(sum(p["pnl"] for p in pos_real), 4),
             "real_stats": {k: v for k, v in trade_stats(real).items() if k not in ("best", "worst")},
             "positions_lab": pos_lab, "positions_real": pos_real, "trades": trades,
             "days": [{"day": k, **v} for k, v in sorted(days.items(), reverse=True)][:14],
             "mood": _mood(lab, open_pnl), "learned": learning.summary(learning.record(eng.ledger, model)),
-            "opportunities": _opportunities(model, _market_temp().get("watch") or []),
+            "opportunities": _opportunities(model, _market_temp().get("watch") or [],
+                                            {p["symbol"] for p in pos_lab} | {p["symbol"] for p in pos_real}),
             "projection": {**proj, "trades_per_day": round(tpd, 1), "expectancy": round(exp, 4), "sample": len(pnls),
                            "real_size": arena.is_titular(model)}}
 
