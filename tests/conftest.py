@@ -47,3 +47,10 @@ def _isolated_team_chat(tmp_path, monkeypatch):
     monkeypatch.setattr(cfg, "TEAM_CHAT_DB_PATH", str(tmp_path / "team_chat.db"))
     monkeypatch.setattr(teamchat, "_conn", None)
     monkeypatch.setattr(teamchat, "_recent", {})
+
+
+@pytest.fixture(autouse=True)
+def _no_btc_filter(monkeypatch):
+    """The BTC filter reads live BTC candles; tests turn it off (its own test turns it back on with fake candles)."""
+    from src.solana import config as cfg
+    monkeypatch.setattr(cfg, "BTC_FILTER", False)

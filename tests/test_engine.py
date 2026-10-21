@@ -360,9 +360,10 @@ def test_protected_stop_breakeven_then_trails():
     pos = {"stop_price": 98.0, "tp_price": 106.0, "qty": 1.0, "cost_usd": 100.0}
     assert protected_stop(pos, 100.4) is None                     # small move: keep the original stop
     assert abs(protected_stop(pos, 101.0) - 100.5) < 1e-9         # quick win (+1%): lock half of the gain
-    assert abs(protected_stop(pos, 103.2) - 101.6) < 1e-9         # halfway: the higher of half the gain and 1 ATR trail
-    assert abs(protected_stop(pos, 105.0) - 103.0) < 1e-9         # and it keeps trailing up
-    assert protected_stop({**pos, "stop_price": 104.0}, 105.0) is None   # never lowers the stop
+    assert abs(protected_stop(pos, 101.5) - 101.2) < 1e-9         # +1.5% (second tier): lock 80% of the gain
+    assert abs(protected_stop(pos, 103.2) - 102.56) < 1e-9        # keeps locking 80% as it rises
+    assert abs(protected_stop(pos, 105.0) - 104.0) < 1e-9
+    assert protected_stop({**pos, "stop_price": 104.5}, 105.0) is None   # never lowers the stop
 
 
 def test_no_reentry_on_the_same_signal_candle(ledger):
@@ -459,3 +460,22 @@ def test_margin_of_error_skips_only_confident_losers():
     assert edge.estimate(["RSI alto"], {}, bad, 0.10, 0.10, baseline=0.55)["skip"]
     thin = edge.estimate(["RSI alto"], {"RSI alto": {"n": 3, "wins": 0}}, {}, 0.10, 0.10)
     assert not thin["skip"] and thin["margin"] > 0.2            # too little evidence: wide margin, never blocks
+
+
+def test_btc_filter_blocks_new_buys_when_btc_is_weak(ledger, monkeypatch):
+    from src.solana import config as cfg, hyperliquid as hl
+    from tests.conftest import flat_candles
+    monkeypatch.setattr(cfg, "BTC_FILTER", True)
+    falling = flat_candles(200)
+    for i, c in enumerate(falling):
+        c["close"] = 100 - i * 0.1                     # steady fall: last close below its 50h average
+    monkeypatch.setattr(hl, "candles", lambda coin, interval="1h": falling)
+    eng = build(ledger, Price(1.0))
+    assert eng.run_cycle()["entries"] == 0 and "filtro BTC" in ledger.decisions(kind="btc_filter")[0]["reason"]
+
+
+def test_titular_holds_at_most_3_positions_on_the_account(ledger, monkeypatch):
+    from src.solana import config as cfg
+    monkeypatch.setattr(cfg, "MAX_POSITIONS_PER_BOT", 0)       # already at the cap
+    eng = build(ledger, Price(1.0))
+    assert eng.run_cycle()["entries"] == 0

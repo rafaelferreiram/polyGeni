@@ -601,6 +601,11 @@ scale: recommendations, the "ready to add money?" checklist and a linear project
 
 ## Exits
 
+**BTC filter** (`BTC_FILTER`): no new buys while BTC is below its 50-hour average (sells and stops keep working); the
+flip is announced in the Vestiário. **3 positions per titular** (`MAX_POSITIONS_PER_BOT`) on the accounts. **Second quick-win
+tier**: from +1.2% (`QUICK_WIN2_PCT`) the stop locks 80% of the gain (a half sale is impossible: Hyperliquid's minimum
+order is $10 and positions are $10).
+
 **Quick wins**: once a trade is up 0.6% (`QUICK_WIN_PCT`), the stop locks half of the gain (`QUICK_WIN_KEEP`, never
 below entry + 0.3% fees), so small wins are banked if the price turns while the target stays reachable. Titulares
 keep their strategy's own time limit (the turbo's forced 2h exit only applies to reserves).
