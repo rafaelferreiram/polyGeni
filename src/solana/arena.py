@@ -8,6 +8,7 @@ import re
 from datetime import datetime, timedelta, timezone
 
 from src.solana import config as cfg
+from src.solana import learning
 from src.solana import hyperliquid as hl
 from src.solana.agents import DebateAgent, ExecutorAgent, RiskAgent, Vote
 from src.solana.engine import PaperEngine, bench_prices
@@ -436,6 +437,7 @@ def leaderboard() -> list[dict]:
             "ai_full_scan_until": led.get_state("ai_full_scan_until"), "turbo_until": led.get_state("turbo_until"),
             "coffee_until": led.get_state("coffee_until"), "coffee_day": led.get_state("coffee_day"),
             "review_boost": led.get_state("review_boost"),
+            "learned": learning.summary(learning.record(led, model)),
             "last_decision": next(({"market": k, **{x: v.get(x) for x in ("action", "reason", "model")}}
                                    for k, v in sorted(last.items(), key=lambda kv: -(kv[1].get("t") or 0))), None)
                              if eng.llm else _rules_last(led),
