@@ -133,3 +133,19 @@ def test_account_sim_and_real_share_shape_and_controls(client, local, monkeypatc
     # real cannot start without the API wallet configured
     assert client.post("/api/paper/account/start", json={"kind": "real"}, headers=local).status_code == 400
     assert client.post("/api/paper/account/start", json={"kind": "sim"}).status_code == 403   # token required
+
+
+def test_admin_metrics_page_data(client, monkeypatch, tmp_path):
+    from src.solana import arena, config as scfg, costs, hl_live
+    monkeypatch.setattr(scfg, "SHADOW_DB_PATH", str(tmp_path / "shadow.db"))
+    monkeypatch.setattr(scfg, "LIVE_DB_PATH", str(tmp_path / "live.db"))
+    monkeypatch.setattr(hl_live, "_shadow", None)
+    monkeypatch.setattr(hl_live, "_live", None)
+    monkeypatch.setattr(arena, "_bots", {})
+    book = costs.CostBook(str(tmp_path / "costs.db"))
+    book.record("claude-haiku-5-5", "debate", {"input_tokens": 1000, "output_tokens": 100})
+    monkeypatch.setattr(costs, "_book", book)
+    d = client.get("/api/paper/admin").json()
+    assert d["ai"]["by_who"][0]["key"] == "debate" and d["ai"]["calls_30d"] == 1
+    assert {"real", "sim", "lab", "scale"} <= set(d) and len(d["scale"]["scenarios"]) == 4
+    assert client.get("/admin").status_code == 200

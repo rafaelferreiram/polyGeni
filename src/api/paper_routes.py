@@ -873,6 +873,82 @@ def confidence(eng) -> dict:
     return {"checks": checks, "passed": passed, "total": len(checks), "ready": passed == len(checks)}
 
 
+@router.get("/admin")
+def admin():
+    """Owner's control room: money, AI spend, profit per trade per account and per bot, and where scaling would pay.
+    Read-only; every number comes from the ledgers and the append-only cost book."""
+    from src.solana import arena, costs, hl_live
+    book = costs.book()
+    now = datetime.now(timezone.utc)
+
+    def account(kind: str) -> dict:
+        eng = _account_engine(kind)
+        p, led = eng.portfolio(), eng.ledger
+        st = trade_stats(led.closed_trades())
+        st.pop("best", None), st.pop("worst", None)
+        week = now - timedelta(days=7)
+        entries_7d = sum(1 for f in led.fills(2000) if f["side"] == "buy" and f["ts"] >= week.isoformat())
+        return {"equity": round(p.equity, 4), "contributed": round(led.contributed(), 4),
+                "profit": round(p.equity - led.contributed(), 4), "exposure": round(p.exposure, 4),
+                "positions": len(p.open_mints), "stats": st, "entries_per_day_7d": round(entries_7d / 7, 2)}
+
+    real, sim = account("real"), account("sim")
+    lab = []
+    for model, eng in arena.bots().items():
+        trades = eng.ledger.closed_trades()
+        st = trade_stats(trades)
+        st.pop("best", None), st.pop("worst", None)
+        pnl, ai, net = arena.net_of_cost(model)
+        first = min((t["entry_ts"] for t in trades), default=None)
+        days = max((now - datetime.fromisoformat(first)).total_seconds() / 86400, 1) if first else None   # no extrapolating hours
+        ret = [t["pnl_usd"] / t["cost_usd"] for t in trades if t.get("cost_usd")]
+        lab.append({"model": model, **st, "lab_pnl": round(pnl, 4), "ai_usd": round(ai, 4), "net": round(net, 4),
+                    "trades_per_day": round(len(trades) / days, 1) if days else 0,
+                    "ret_per_trade": round(sum(ret) / len(ret), 5) if ret else None,
+                    "green_light": arena.green_light(model)})
+    ai = {"total": round(book.total(), 4), "d30": round(book.total(30), 4), "d7": round(book.total(7), 4),
+          "d1": round(book.total(1), 4), "month": round(book.month_spent(), 4), "allowance": round(costs.allowance(), 2),
+          "calls_30d": book.calls(30), "by_model": book.breakdown("model"), "by_who": book.breakdown("who"),
+          "by_day": book.breakdown("day", 14)}
+
+    # scaling: per-trade return (real once it has 10+ trades, else every lab trade pooled) x size x trades/day
+    real_trades = hl_live.get_live_engine().ledger.closed_trades()
+    pool = real_trades if len(real_trades) >= 10 else [t for m in arena.bots().values() for t in m.ledger.closed_trades()]
+    rets = [t["pnl_usd"] / t["cost_usd"] for t in pool if t.get("cost_usd")]
+    r = sum(rets) / len(rets) if rets else 0.0
+    tpd = max(real["entries_per_day_7d"], 1.0)
+    ai_month = min(ai["d7"] / 7 * 30, ai["allowance"])     # the monthly allowance is a hard cap on AI spend
+    scen = []
+    for cap in (cfg.LIVE_MAX_CAPITAL_USD, 100, 250, 500):
+        size = cfg.LIVE_MAX_POSITION_USD * cap / cfg.LIVE_MAX_CAPITAL_USD
+        month = r * size * tpd * 30
+        scen.append({"capital": cap, "position_usd": round(size, 2), "month_trading": round(month, 2),
+                     "month_net": round(month - ai_month, 2)})
+    conf = confidence(hl_live.get_live_engine())
+    util = real["exposure"] / cfg.LIVE_MAX_CAPITAL_USD if cfg.LIVE_MAX_CAPITAL_USD else 0
+    advice = []
+    if len(real_trades) < 20:
+        advice.append(f"Ainda cedo para pôr mais dinheiro: a conta real fechou {len(real_trades)} trades; espere 20+ e o checklist 'Pronto para recarregar' todo ✅.")
+    if util >= 0.8:
+        advice.append(f"O capital é o gargalo: {util:.0%} do limite de ${cfg.LIVE_MAX_CAPITAL_USD:.0f} está em posições — quando o checklist passar, subir o limite rende mais trades.")
+    if ai["d30"] and real["stats"].get("pnl_usd", 0) < ai["d30"]:
+        advice.append(f"A IA custou ${ai['d30']:.2f} em 30 dias, mais do que os trades reais renderam — mantenha os bots de regras como titulares.")
+    ready = [b["model"] for b in lab if b["green_light"].get("ok") and not b["green_light"].get("trusted")]
+    if ready:
+        advice.append(f"Prontos para a conta real: {', '.join(ready)} — mais titulares = mais trades com o mesmo capital.")
+    near = sorted((b for b in lab if not b["green_light"].get("ok") and b.get("trades")), key=lambda b: -(b.get("expectancy") or -9))[:2]
+    if near:
+        advice.append("Mais perto da luz verde: " + ", ".join(f"{b['model']} ({b['trades']} trades, acerto {b.get('win_rate', 0):.0%})" for b in near) + " — turbo neles.")
+    if r <= 0 and rets:
+        advice.append("O retorno médio por trade ainda é negativo: escalar agora só aumentaria a perda.")
+    return {"ts": now.isoformat(timespec="seconds"), "real": real, "sim": sim, "lab": lab, "ai": ai,
+            "limits": {"capital": cfg.LIVE_MAX_CAPITAL_USD, "position": cfg.LIVE_MAX_POSITION_USD,
+                       "positions": cfg.LIVE_MAX_POSITIONS, "leverage": cfg.LIVE_LEVERAGE},
+            "scale": {"ret_per_trade": round(r, 5), "source": "conta real" if pool is real_trades else "laboratório",
+                      "sample": len(rets), "trades_per_day": tpd, "ai_month": round(ai_month, 2), "utilization": round(util, 3),
+                      "scenarios": scen, "confidence": conf, "advice": advice}}
+
+
 @router.get("/account/confidence")
 def account_confidence(kind: str = "real"):
     return confidence(_account_engine(kind))
