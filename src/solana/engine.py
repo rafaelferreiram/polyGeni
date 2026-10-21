@@ -215,10 +215,19 @@ class PaperEngine:
         self.ledger.set_state("heartbeat", {"ts": now_iso(), "cycle": cycle})
         stats = {"cycle": cycle, "candidates": 0, "safe": 0, "signals": 0, "entries": 0, "vetoes": 0}
         try:
+            sync_ok = True
             try:
                 problems = self.executor.sync()        # live venues: exchange is the source of truth
+                self.ledger.set_state("sync_failures", 0)
             except Exception as e:
-                problems = [f"venue sync failed: {e}"]
+                # a network error / rate limit is not a mismatch: skip new entries this cycle (exchange state unknown;
+                # open positions keep their exchange stops) and only stop the bots if the exchange stays unreachable
+                sync_ok, problems = False, []
+                fails = self.ledger.get_state("sync_failures", 0) + 1
+                self.ledger.set_state("sync_failures", fails)
+                self.ledger.log_decision("error", cycle=cycle, reason=f"exchange unreachable ({fails}x): {str(e)[:160]}")
+                if fails >= cfg.SYNC_FAIL_LIMIT:
+                    problems = [f"exchange unreachable for {fails} cycles in a row: {str(e)[:120]}"]
             for msg in problems:
                 self.ledger.log_decision("reconcile", cycle=cycle, reason=msg)
             if problems and not self.kill_switch().get("active"):
@@ -242,6 +251,8 @@ class PaperEngine:
                                       f"(${p.day_start_equity:.2f} → ${p.equity:.2f})")
             if self.kill_switch().get("active"):
                 stats["skipped"] = "kill switch active"
+            elif not sync_ok:
+                stats["skipped"] = "exchange unreachable this cycle"
             elif not self.coffee() and self._sleeping(stats):
                 pass
             else:
@@ -383,7 +394,9 @@ class PaperEngine:
                     if not strat.enabled:
                         self._agent(strat.name, last_reason="sem ANTHROPIC_API_KEY — este bot não decide", vetoed=1)
                         continue
-                    sig = strat.decide(candles, {**c.summary(), "symbol": c.symbol, "venue": c.venue})
+                    from src.solana import whales
+                    sig = strat.decide(candles, {**c.summary(), "symbol": c.symbol, "venue": c.venue,
+                                                 "whale_flow": whales.summary(c.symbol)})
                     d = strat.last.get(c.symbol, {})
                     msg = f"{c.symbol}: {d.get('action', 'HOLD')} — {d.get('reason', '')}"[:200]
                     self._agent(strat.name, last_reason=msg, approved=int(sig is not None))
@@ -455,15 +468,28 @@ def bench_prices() -> dict:
 
 def _market_temp(ready: list) -> dict:
     """Market thermometer from the candles the bots already fetched: trend breadth, RSI, 24h moves, near-signal coins."""
-    from src.solana.strategies import ema, rsi
+    from statistics import mean, pstdev
+    from src.solana.strategies import MeanReversionATR, TrendStrong, ema, rsi
     rows = []
     for c, candles, *_ in ready:
         closes = [k["close"] for k in candles]
         if len(closes) < 30:
             continue
+        px = closes[-1]
         trend = ema(closes[-600:], 200) if len(closes) >= 200 else None
-        rows.append({"symbol": c.symbol, "up": bool(trend and closes[-1] > trend), "rsi": round(rsi(closes), 1),
-                     "ch24": round((closes[-1] / closes[-25] - 1) * 100, 2)})
+        e50 = ema(closes[-150:], 50)
+        slope = e50 / ema(closes[-174:-24], 50) - 1 if len(closes) >= 174 else 0
+        lower = mean(closes[-20:]) - 2 * pstdev(closes[-20:])          # dip bot buys below this (with RSI < 30)
+        high24 = max(k.get("high", k["close"]) for k in candles[-25:-1])  # trend bot buys above this
+        up = bool(trend and px > trend)
+        strong = bool(up and e50 > trend and slope >= TrendStrong.min_slope)
+        ready_now = "quedas" if MeanReversionATR().signal(candles) else "tendência" if TrendStrong().signal(candles) else None
+        dip, brk = lower / px - 1, high24 / px - 1
+        status = ("pronto" if ready_now else "sem tendência" if not up
+                  else "perto" if dip > -0.015 or (strong and brk < 0.01) else "aguardando")
+        rows.append({"symbol": c.symbol, "price": px, "up": up, "strong": strong, "rsi": round(rsi(closes), 1),
+                     "ch24": round((px / closes[-25] - 1) * 100, 2), "dip_at": lower, "dip_pct": round(dip * 100, 2),
+                     "break_at": high24, "break_pct": round(brk * 100, 2), "status": status, "ready_by": ready_now})
     if not rows:
         return {}
     by = sorted(rows, key=lambda r: r["ch24"])
@@ -471,7 +497,10 @@ def _market_temp(ready: list) -> dict:
             "avg_rsi": round(sum(r["rsi"] for r in rows) / len(rows), 1),
             "avg_ch24": round(sum(r["ch24"] for r in rows) / len(rows), 2),
             "near": [r["symbol"] for r in rows if r["up"] and r["rsi"] < 40],
-            "best": [[r["symbol"], r["ch24"]] for r in by[-3:][::-1]], "worst": [[r["symbol"], r["ch24"]] for r in by[:3]]}
+            "best": [[r["symbol"], r["ch24"]] for r in by[-3:][::-1]], "worst": [[r["symbol"], r["ch24"]] for r in by[:3]],
+            # the radar: closest to a buy first
+            "watch": sorted(rows, key=lambda r: (["pronto", "perto", "aguardando", "sem tendência"].index(r["status"]),
+                                                 min(-r["dip_pct"], r["break_pct"] if r["strong"] else 99)))}
 
 
 def _setup_rank(candles: list[dict]) -> tuple:

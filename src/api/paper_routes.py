@@ -665,6 +665,14 @@ def account_mode(req: AccountMode):
     return {"mode": req.mode}
 
 
+@router.get("/whales")
+def whales_board():
+    """Whale flow per coin (last 1h / 4h) and the latest whale trades, from the live Hyperliquid trades feed."""
+    from src.solana import whales
+    coins = cfg.HL_LIVE_MARKETS
+    return {"status": whales.status(), "coins": {c: whales.summary(c) for c in coins}, "recent": whales.recent(15)}
+
+
 @router.get("/health")
 def health():
     """Is every third party (exchange, data, AI, RPCs) reachable? Cached 60s, read-only calls."""

@@ -231,7 +231,25 @@ def test_setup_rank_prefers_oversold_uptrend():
 def test_market_temp_summarises_breadth_and_moves():
     from types import SimpleNamespace
     from src.solana.engine import _market_temp
-    up = [{"close": 100 + i * 0.5} for i in range(250)]
-    down = [{"close": 300 - i * 0.5} for i in range(250)]
+    bar = lambda i, px: {"t": i, "open": px, "high": px * 1.001, "low": px * 0.999, "close": px, "volume": 1}
+    up = [bar(i, 100 + i * 0.5) for i in range(250)]
+    down = [bar(i, 300 - i * 0.5) for i in range(250)]
     t = _market_temp([(SimpleNamespace(symbol="UP"), up), (SimpleNamespace(symbol="DOWN"), down)])
     assert t["n"] == 2 and t["uptrend"] == 1 and t["best"][0][0] == "UP" and t["worst"][0][0] == "DOWN"
+    radar = {r["symbol"]: r for r in t["watch"]}
+    assert radar["DOWN"]["status"] == "sem tendência" and radar["UP"]["status"] != "sem tendência"
+    assert radar["UP"]["dip_at"] < radar["UP"]["price"] < radar["UP"]["break_at"] * 1.01
+
+
+def test_unreachable_exchange_skips_entries_without_tripping_the_kill_switch(ledger, monkeypatch):
+    from src.solana import config as cfg
+    eng = build(ledger, Price(1.0))
+    def down():
+        raise RuntimeError("HTTP 429 from https://api.hyperliquid.xyz/info")
+    monkeypatch.setattr(eng.executor, "sync", down)
+    monkeypatch.setattr(cfg, "SYNC_FAIL_LIMIT", 3)
+    s = eng.run_cycle()
+    assert s["entries"] == 0 and s["skipped"] == "exchange unreachable this cycle" and not eng.kill_switch()["active"]
+    eng.run_cycle()
+    eng.run_cycle()                                   # third failure in a row: now it is an outage
+    assert eng.kill_switch()["active"]

@@ -220,6 +220,32 @@
     .conn { background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; font-size: 12px; color: var(--muted); }
     .conn b { color: var(--text); font-size: 13px; } .conn .d { margin-top: 3px; color: var(--text); overflow-wrap: anywhere; }
     .conn.bad { border-color: rgba(248,113,113,.5); } .conn.bad .d { color: var(--red); }
+    .positions { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+    .pos { background: var(--surface-2); border: 1px solid var(--border); border-radius: 14px; padding: 14px; }
+    .pos.win { border-color: rgba(52,211,153,.45); } .pos.lose { border-color: rgba(248,113,113,.45); }
+    .pos .top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+    .pos .sym { font-size: 18px; font-weight: 700; } .pos .pl { font-size: 18px; font-weight: 650; font-variant-numeric: tabular-nums; }
+    .pos .sub { font-size: 12px; color: var(--muted); margin-top: 2px; display: flex; justify-content: space-between; gap: 8px; }
+    .track { position: relative; height: 8px; border-radius: 999px; margin: 16px 0 6px;
+             background: linear-gradient(90deg, rgba(248,113,113,.55), var(--surface) 50%, rgba(52,211,153,.55)); }
+    .track .entry { position: absolute; top: -4px; width: 2px; height: 16px; background: var(--muted); }
+    .track .now { position: absolute; top: -5px; width: 12px; height: 18px; margin-left: -6px; border-radius: 4px; background: #fff;
+                  box-shadow: 0 0 0 2px var(--bg); transition: left .5s; }
+    .pos .ends { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+    .empty { color: var(--muted); font-size: 13px; padding: 6px 0; }
+    .radar-tbl { max-height: none; }
+    .radar-tbl td, .radar-tbl th { white-space: nowrap; }
+    .st-chip { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 600; border: 1px solid var(--border); color: var(--muted); }
+    .st-chip.pronto { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); }
+    .st-chip.perto { color: var(--yellow); border-color: rgba(251,191,36,.5); }
+    .legend b { color: var(--text); }
+    .whale-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+    @media (max-width: 960px) { .whale-grid { grid-template-columns: 1fr; } }
+    .flows { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+    .flow-c { background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; font-size: 12px; color: var(--muted); }
+    .flow-c b { color: var(--text); font-size: 13px; } .flow-c .bar2 { display: flex; height: 6px; border-radius: 3px; overflow: hidden; margin: 6px 0 4px; background: var(--surface); }
+    .flow-c .bar2 i { display: block; } .flow-c .bar2 .b { background: var(--green); } .flow-c .bar2 .s { background: var(--red); }
+    .flow-c.comprando { border-color: rgba(52,211,153,.5); } .flow-c.vendendo { border-color: rgba(248,113,113,.5); }
     .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 12px; font-size: 12px; color: var(--muted); }
     .thermos { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
     .thermo { background: var(--surface-2); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; }
@@ -341,6 +367,28 @@
       </div>
     </section>
 
+    <section class="panel" id="posicoes">
+      <h2><span>Posições abertas <span class="tag" id="pos-tag">–</span></span><span class="note" id="pos-head"></span></h2>
+      <div class="positions" id="positions"></div>
+    </section>
+
+    <section class="panel" id="radar">
+      <h2><span>Radar de oportunidades <span class="tag">o que os bots estão vigiando</span></span>
+        <span class="ctrls"><span class="note" id="radar-head"></span><button id="radar-all" onclick="radarAll = !radarAll; renderRadar(acc)">Ver todas</button></span></h2>
+      <div class="tbl radar-tbl"><table id="radar-table"></table></div>
+      <div class="legend"><span>📐 <b>Quedas</b> compra se o preço cair abaixo da linha <i>e</i> o RSI ficar abaixo de 30</span><span>📈 <b>Tendência</b> compra se romper a máxima de 24h numa tendência forte</span><span>🧠 <b>IA</b> só é consultada quando há uma queda numa alta</span></div>
+      <div class="legend"><span>✅ <b>pronto</b> = há sinal agora → o Coordenador escolhe o bot, o Risk confere vagas e limites, o Executor compra com stop e alvo → aparece em <b>Posições abertas</b></span><span>👀 <b>perto</b> = a menos de ~1,5% da linha de compra</span><span>⏳ <b>aguardando</b> = em alta, mas longe da linha</span><span>⬇ <b>sem tendência</b> = em baixa: os bots não compram</span></div>
+    </section>
+
+    <section class="panel" id="baleias">
+      <h2><span>🐋 Baleias <span class="tag" id="whale-tag">–</span></span><span class="note" id="whale-head"></span></h2>
+      <div class="whale-grid">
+        <div><div class="note" style="margin-bottom:8px">Fluxo da última hora por moeda (ordens grandes a mercado)</div><div class="flows" id="whale-flows"></div></div>
+        <div><div class="note" style="margin-bottom:8px">Últimas ordens de baleia</div><div class="tbl"><table id="whale-recent"></table></div></div>
+      </div>
+      <div class="legend"><span>🐋 baleia = ordem a mercado ≥ $25 mil e ≥ 0,02% do volume diário da moeda</span><span>🟢 comprando / 🔴 vendendo = mais de 30% de diferença entre compras e vendas</span><span>🧠 o bot de IA recebe este fluxo antes de decidir</span></div>
+    </section>
+
     <section class="panel" id="team">
       <h2><span>Equipe de bots</span>
         <span class="ctrls"><span class="note" id="team-head"></span><button id="btn-coffee" onclick="giveCoffee(this)" title="4 horas de modo day trade nas contas simulada e real: sem pausas, análise a cada 5 min e até 6 compras por dia (as regras de compra e os stops não mudam)">☕ Café</button><button id="btn-scan" onclick="scanNow(this)">🔍 Analisar agora</button></span></h2>
@@ -401,6 +449,6 @@
     </details>
   </main>
 
-  <script src="/static/paper.js?v=27"></script>
+  <script src="/static/paper.js?v=30"></script>
 </body>
 </html>

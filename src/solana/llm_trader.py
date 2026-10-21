@@ -18,7 +18,9 @@ logger = logging.getLogger("solana.llm_trader")
 TRADER_SYSTEM = (
     "You are the trading decision agent of a small, risk-averse long-only crypto bot on Hyperliquid (isolated low leverage, size set by the risk engine). For the "
     "market given, decide whether to open a LONG now (BUY) or do nothing (HOLD). You get precomputed indicators "
-    "(RSI, ATR%, EMA50/EMA200 trend, Bollinger dip, funding, the rules engine's own signal, suggested ATR stops) "
+    "(RSI, ATR%, EMA50/EMA200 trend, Bollinger dip, funding, the rules engine's own signal, suggested ATR stops), "
+    "whale_flow (aggressive orders above the coin's whale size in the last 1h/4h: buy vs sell USD; heavy whale selling "
+    "into a dip is a reason for caution, whale buying supports the entry) "
     "and the round-trip cost. Evidence from our walk-forward tests: buying dips in a downtrend (price below "
     "EMA200) lost money; dips inside an uptrend with ATR-sized stops made money. So: BUY only in an uptrend, "
     "only when the expected move to target is at least 3x the round-trip cost, and prefer the suggested ATR "

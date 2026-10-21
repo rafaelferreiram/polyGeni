@@ -276,6 +276,8 @@ async function refresh() {
   if (!replay) renderRoom(a);
   renderTeam();
   renderThermo(a);
+  renderPositions(a);
+  renderRadar(a);
   maybeReplay(a);
   renderFoot();
   // feed + trades
@@ -290,6 +292,48 @@ async function refresh() {
     <td>${pnl(t.pnl_usd)}<br><span class="muted">${pct(t.pnl_pct)}</span></td><td class="muted">${esc(t.reason)}</td></tr>`));
   const L = a.limits;
   document.getElementById("limits").textContent = `Limites (iguais na simulação e no real): capital ${usd(L.max_capital_usd, 0)}, posição ${usd(L.max_position_usd, 0)}, ${L.max_positions || "auto"} de cada vez, ${L.leverage}x isolada só compra, perda diária ${pct(L.max_daily_loss_pct)}, mercados ${L.markets.join(", ")}.`;
+}
+
+// ─── open positions: how each trade is doing between its stop and its target ───
+const fmtPx = (v) => (v == null ? "–" : `$${Number(v) >= 100 ? Number(v).toFixed(2) : Number(v).toPrecision(4)}`);
+const botName = (s) => (s?.startsWith("llm:") ? look(s.slice(4)).label : s === "trend" ? "Tendência" : "Quedas");
+function renderPositions(a) {
+  const ps = a.positions || [];
+  document.getElementById("pos-tag").textContent = KIND === "sim" ? "conta simulada" : "conta real";
+  const closed = a.trades.length;
+  document.getElementById("pos-head").innerHTML = `${ps.length} aberta${ps.length === 1 ? "" : "s"} · ${closed} trade${closed === 1 ? "" : "s"} fechado${closed === 1 ? "" : "s"}${closed ? ` · resultado ${pnl(a.trades.reduce((x, t) => x + t.pnl_usd, 0))}` : ""}`;
+  setHTML("positions", ps.length ? ps.map((p) => {
+    const value = p.mark_value ?? p.cost_usd;
+    const now = p.mark_price ?? p.entry_price * value / p.cost_usd;
+    const pl = value - p.cost_usd, plPct = pl / p.cost_usd;
+    const span = p.tp_price - p.stop_price;
+    const at = (x) => `${(clamp01((x - p.stop_price) / span) * 100).toFixed(1)}%`;
+    return `<div class="pos ${pl >= 0 ? "win" : "lose"}">
+      <div class="top"><span class="sym">${esc(p.symbol)}</span><span class="pl">${pnl(pl)} <small class="muted">${(plPct * 100).toFixed(2)}%</small></span></div>
+      <div class="sub"><span>bot ${esc(botName(p.strategy))} · aberta há ${ago(p.opened_at)}</span><span>${usd(p.cost_usd)}</span></div>
+      <div class="track" title="entre o stop e o alvo"><span class="entry" style="left:${at(p.entry_price)}"></span><span class="now" style="left:${at(now)}"></span></div>
+      <div class="ends"><span>🛑 stop ${fmtPx(p.stop_price)}</span><span>entrada ${fmtPx(p.entry_price)} · agora ${fmtPx(now)}</span><span>🎯 ${fmtPx(p.tp_price)}</span></div>
+    </div>`;
+  }).join("") : `<div class="empty">Nenhuma posição aberta agora — os bots estão procurando a próxima entrada (veja o radar abaixo).</div>`);
+}
+
+// ─── radar: every coin the bots watch, and the exact level that would trigger a buy ───
+let radarAll = false;
+const STATUS_PT = { pronto: "✅ pronto", perto: "👀 perto", aguardando: "⏳ aguardando", "sem tendência": "⬇ sem tendência" };
+function renderRadar(a) {
+  const w = a.market_temp?.watch || [];
+  document.getElementById("radar-all").textContent = radarAll ? "Ver só as melhores" : `Ver todas (${w.length})`;
+  const near = w.filter((r) => r.status === "pronto" || r.status === "perto").length;
+  document.getElementById("radar-head").textContent = a.market_temp?.ts ? `${near} perto de compra · atualizado há ${ago(a.market_temp.ts)}` : "aguardando a primeira análise";
+  const rows = (radarAll ? w : w.slice(0, 8)).map((r) => `<tr>
+    <td><b>${esc(r.symbol)}</b><br><span class="muted">${r.ch24 >= 0 ? "+" : ""}${r.ch24}% 24h</span></td>
+    <td>${fmtPx(r.price)}</td>
+    <td>${r.strong ? "⬆⬆ forte" : r.up ? "⬆ alta" : "⬇ baixa"}<br><span class="muted">RSI ${r.rsi}</span></td>
+    <td>${r.up ? `abaixo de <b>${fmtPx(r.dip_at)}</b><br><span class="muted">${r.dip_pct}% de distância${r.rsi >= 30 ? " · RSI precisa cair" : ""}</span>` : '<span class="muted">só em alta</span>'}</td>
+    <td>${r.strong ? `acima de <b>${fmtPx(r.break_at)}</b><br><span class="muted">+${Math.max(r.break_pct, 0).toFixed(2)}% de distância</span>` : '<span class="muted">precisa de tendência forte</span>'}</td>
+    <td>${(() => { const s = lastWhales?.coins?.[r.symbol]; return s && s["1h"].n ? `${WHALE_PT[s.pressure]}<br><span class="muted">${kusd(s["1h"].net_usd)} líquido 1h</span>` : '<span class="muted">—</span>'; })()}</td>
+    <td><span class="st-chip ${r.status === "pronto" ? "pronto" : r.status === "perto" ? "perto" : ""}">${STATUS_PT[r.status] || esc(r.status)}</span>${r.ready_by ? `<br><span class="muted">sinal do bot ${esc(r.ready_by === "quedas" ? "Quedas" : "Tendência")}</span>` : ""}</td></tr>`);
+  table("radar-table", ["Moeda", "Preço", "Tendência", "📐 Compra na queda", "📈 Compra no rompimento", "🐋 Baleias 1h", "Status"], rows);
 }
 
 // ─── thermometer: market temperature (from the bots' own scan) and our performance vs simply holding BTC ───
@@ -542,6 +586,37 @@ async function loadDaily() {
 }
 safe(loadDaily);
 setInterval(() => safe(loadDaily), 30000);
+
+// ─── whales: big market orders on the coins the bots watch (live Hyperliquid trades feed) ───
+let lastWhales = null;
+const kusd = (v) => (Math.abs(v) >= 1e6 ? `$${(v / 1e6).toFixed(1)}M` : `$${Math.round(v / 1e3)}k`);
+const WHALE_PT = { comprando: "🟢 comprando", vendendo: "🔴 vendendo", neutro: "⚖️ neutro", "sem baleias": "—" };
+async function loadWhales() {
+  const w = await api("/whales");
+  lastWhales = w;
+  const st = w.status || {};
+  const tag = document.getElementById("whale-tag");
+  tag.textContent = st.connected ? "ao vivo" : "desconectado";
+  tag.style.color = st.connected ? "var(--green)" : "var(--red)";
+  const coins = Object.entries(w.coins).sort((a, b) => (b[1]["1h"].buy_usd + b[1]["1h"].sell_usd) - (a[1]["1h"].buy_usd + a[1]["1h"].sell_usd));
+  const active = coins.filter(([, s]) => s["1h"].n);
+  document.getElementById("whale-head").textContent = st.connected
+    ? `${active.length} moedas com baleias na última hora · desde ${hhmm(new Date(st.since * 1000).toISOString())}` : (st.error || "a ligar…");
+  setHTML("whale-flows", active.length ? active.slice(0, 12).map(([c, s]) => {
+    const h = s["1h"], tot = h.buy_usd + h.sell_usd || 1;
+    return `<div class="flow-c ${s.pressure}" title="4h: compras ${kusd(s["4h"].buy_usd)} · vendas ${kusd(s["4h"].sell_usd)} · baleia ≥ ${kusd(s.threshold_usd)}">
+      <b>${esc(c)}</b> ${WHALE_PT[s.pressure] || ""}
+      <div class="bar2"><i class="b" style="width:${(h.buy_usd / tot * 100).toFixed(0)}%"></i><i class="s" style="width:${(h.sell_usd / tot * 100).toFixed(0)}%"></i></div>
+      ${kusd(h.buy_usd)} / ${kusd(h.sell_usd)} · ${h.n} ordens</div>`;
+  }).join("") : '<div class="empty">Ainda sem ordens de baleia desde que o feed ligou.</div>');
+  table("whale-recent", ["Quando", "Moeda", "Lado", "Valor", "Carteira"], w.recent.map((t) => `<tr>
+    <td>${hhmm(new Date(t.ts * 1000).toISOString())}</td><td><b>${esc(t.coin)}</b></td>
+    <td class="${t.side === "compra" ? "green" : "red"}">${t.side}</td><td>${kusd(t.usd)}</td>
+    <td class="muted">${t.wallet ? `<a href="https://hypurrscan.io/address/${esc(t.wallet)}" target="_blank" rel="noopener">${short(t.wallet)}</a>` : "–"}</td></tr>`));
+  if (acc) renderRadar(acc);
+}
+safe(loadWhales);
+setInterval(() => safe(loadWhales), 10000);
 
 // ─── connections: exchange, data, AI and RPC providers ───
 async function loadHealth() {

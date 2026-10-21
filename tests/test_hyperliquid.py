@@ -95,3 +95,17 @@ def test_scout_lists_fixed_markets():
     cs = scout.candidates()
     assert [c.mint for c in cs] == ["hl:BTC", "hl:xyz:GOLD"]
     assert all(c.venue == "hyperliquid" and c.price_usd == 100.5 for c in cs)
+
+
+def test_live_candles_are_fetched_once_per_hour_and_shared(monkeypatch):
+    # a coin no other test uses: background scan threads from API tests may be fetching real coins meanwhile
+    calls = []
+    real_info = hl.info
+    monkeypatch.setattr(hl, "info", lambda body, url=None: (calls.append(body) or
+                        [{"t": 3_600_000, "o": "1", "h": "1", "l": "1", "c": "1", "v": "1"}])
+                        if body.get("req", {}).get("coin") == "TESTCOIN" else real_info(body, url))
+    hl._candle_cache.pop(("TESTCOIN", None), None)
+    a, b = hl.candles("TESTCOIN"), hl.candles("TESTCOIN")   # e.g. the real account, then the simulation
+    assert a == b and len(calls) == 1
+    hl.candles("TESTCOIN", "1h", start_ms=0, end_ms=10)     # explicit windows (backtests) are never cached
+    assert len(calls) == 2

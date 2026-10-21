@@ -13,13 +13,13 @@ _cache: dict = {"ts": 0.0, "rows": []}
 
 
 def _hl(url: str, body: dict):
-    r = httpx.post(url, json=body, timeout=10)
-    r.raise_for_status()
-    return r.json()
+    from src.solana import hyperliquid as hl
+    return hl.info(body, url)           # same throttled, retrying client the bots use (no 429 from the health check)
 
 
 def _hyperliquid():
-    listed = {u["name"] for u in _hl(cfg.HYPERLIQUID_INFO_URL, {"type": "meta"})["universe"] if not u.get("isDelisted")}
+    from src.solana import hyperliquid as hl
+    listed = {name for name, a in hl.asset_ctxs().items() if not a.get("isDelisted")}   # cached 60s, shared with the bots
     missing = [m for m in cfg.HL_LIVE_MARKETS if m not in listed]
     return not missing, f"{len(listed)} mercados listados" + (f" · faltam {', '.join(missing)}" if missing else f" · os {len(cfg.HL_LIVE_MARKETS)} dos bots OK")
 
@@ -80,10 +80,19 @@ def _solana():
     return r.json().get("result") == "ok", str(r.json().get("result") or r.json().get("error"))[:80]
 
 
+def _whales():
+    from src.solana import whales
+    st = whales.status()
+    if st["connected"]:
+        return True, f"WebSocket ligado · {st['messages']} lotes de trades recebidos"
+    return (None if not st["since"] and not st["error"] else False), st["error"] or "a ligar…"
+
+
 # (name, what it is used for, check). None as ok = not used / optional, shown grey.
 CHECKS = [
     ("Hyperliquid (dados)", "preços, candles e order books dos 29 mercados", _hyperliquid),
     ("Hyperliquid (conta real)", "ordens reais com stop e alvo", _hl_account),
+    ("Hyperliquid (baleias)", "feed ao vivo de ordens grandes nas 29 moedas", _whales),
     ("Anthropic Claude", "decisões do bot de IA e debate", _anthropic),
     ("Arbitrum RPC", "saldos da MetaMask no painel", _arbitrum),
     ("Jupiter", "paper de tokens Solana (legado)",

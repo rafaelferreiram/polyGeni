@@ -20,7 +20,7 @@ _MIN_INTERVAL = {
     "api.geckoterminal.com": 2.1,
     "api.mainnet-beta.solana.com": 0.5,
     "api.jup.ag": 1.0,
-    "api.hyperliquid.xyz": 0.6,           # weight-based limit per IP; heavy history paging triggers 429s
+    "api.hyperliquid.xyz": 1.5,           # 1200 weight/min per IP; candleSnapshot ≈ 26 weight → ≤ ~40 calls/min
     "api.hyperliquid-testnet.xyz": 0.6,
 }
 _last_call: dict[str, float] = {}
@@ -37,7 +37,7 @@ def _throttle(url: str):
         _last_call[host] = time.monotonic()
 
 
-def request_json(method: str, url: str, retries: int = 3, timeout: float = 10, **kw):
+def request_json(method: str, url: str, retries: int = 4, timeout: float = 10, **kw):
     """HTTP with per-host rate limit, timeout and exponential backoff on 429/5xx/network errors."""
     last_err = None
     for attempt in range(retries):
@@ -46,6 +46,9 @@ def request_json(method: str, url: str, retries: int = 3, timeout: float = 10, *
             resp = httpx.request(method, url, timeout=timeout, **kw)
             if resp.status_code == 429 or resp.status_code >= 500:
                 last_err = RuntimeError(f"HTTP {resp.status_code} from {url}")
+                if resp.status_code == 429:          # rate limited: every thread backs off this host for a few seconds
+                    with _lock:
+                        _last_call[urlparse(url).hostname or ""] = time.monotonic() + 3 * (attempt + 1)
             else:
                 resp.raise_for_status()
                 return resp.json()

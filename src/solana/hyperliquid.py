@@ -8,6 +8,7 @@ walking the real L2 book, taker fee per market, hourly funding accrued on open p
 Verified against docs + live API 2026-10-21.
 """
 import json
+import threading
 import time
 from datetime import datetime
 
@@ -63,11 +64,15 @@ def asset_ctxs(dex: str = "", url: str | None = None) -> dict[str, dict]:
     return out
 
 
+class UnknownMarket(RuntimeError):
+    """The coin is not listed on this network (not a network error)."""
+
+
 def asset_ctx(coin: str, url: str | None = None) -> dict:
     dex, full = split_coin(coin)
     ctx = asset_ctxs(dex, url).get(full)
     if ctx is None:
-        raise RuntimeError(f"unknown Hyperliquid market {full}")
+        raise UnknownMarket(f"unknown Hyperliquid market {full}")
     return ctx
 
 
@@ -82,8 +87,24 @@ def taker_fee_bps(ctx: dict) -> float:
     return BASE_TAKER_BPS * mult
 
 
+_candle_cache: dict[tuple, tuple[int, list[dict]]] = {}
+_candle_lock = threading.Lock()
+
+
 def candles(coin: str, interval: str = "1h", start_ms: int | None = None, end_ms: int | None = None,
             url: str | None = None) -> list[dict]:
+    # Live use (default window): every engine (real, simulation, lab bots) asks for the same 29 coins each cycle.
+    # Closed 1h candles only change once an hour, so one fetch per coin per hour is shared by all of them —
+    # without this, ~150 heavy candleSnapshot calls per round exceed Hyperliquid's 1200 weight/min and return 429.
+    if start_ms is None and end_ms is None and interval == "1h":
+        with _candle_lock:            # one fetch even when several engines miss at once (e.g. right after a restart)
+            hour = int(time.time()) // 3600
+            hit = _candle_cache.get((coin, url))
+            if hit and hit[0] == hour:
+                return hit[1]
+            rows = candles(coin, interval, end_ms=int(time.time() * 1000), url=url)
+            _candle_cache[(coin, url)] = (hour, rows)
+            return rows
     end_ms = end_ms or int(time.time() * 1000)
     start_ms = start_ms or end_ms - 400 * 3600 * 1000      # ≥ 200 closed bars for EMA200
     rows = info({"type": "candleSnapshot", "req": {"coin": split_coin(coin)[1], "interval": interval,
@@ -212,7 +233,7 @@ class HyperliquidScout:
         for coin in self.markets:
             try:
                 ctx = self.ctx_fn(coin)
-            except RuntimeError:          # market not listed on this network (e.g. XRP on testnet)
+            except UnknownMarket:         # not listed on this network (e.g. XRP on testnet); network errors propagate
                 continue
             mark = float(ctx["markPx"])
             out.append(Candidate(
