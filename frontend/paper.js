@@ -45,7 +45,9 @@ const ago = (iso) => {
   return s < 60 ? `${Math.round(s)}s` : s < 3600 ? `${Math.round(s / 60)} min` : `${Math.round(s / 3600)} h`;
 };
 function table(id, head, rows) {
-  document.getElementById(id).innerHTML =
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.innerHTML =
     `<thead><tr>${head.map((h) => `<th>${h}</th>`).join("")}</tr></thead>` +
     `<tbody>${rows.length ? rows.join("") : `<tr><td colspan="${head.length}" class="muted">Ainda nada</td></tr>`}</tbody>`;
 }
@@ -545,72 +547,16 @@ function flatten(btn) {
   run(btn, "Fechando…", () => api("/live/flatten", "POST"),
       (r) => (r.errors.length ? `Fechadas: ${r.closed.join(", ") || "nenhuma"} · erros: ${r.errors.join("; ")}` : `✓ Fechadas: ${r.closed.join(", ") || "nenhuma posição aberta"}`));
 }
-function testOrder(btn) {
-  run(btn, "Enviando…", () => api("/live/test-order", "POST"),
-      (r) => (r.position ? `✓ Ordem de teste: ${r.position.symbol} com stop e alvo na exchange` : "Sem ordem — veja o feed"));
-}
 function killReset(btn) {
   if (KIND === "real" && !confirm("Rearmar o kill switch da conta REAL? Os bots voltam a poder abrir posições com dinheiro real.")) return;
   run(btn, "Rearmando…", () => api("/account/kill-switch/reset", "POST", { kind: KIND }), "✓ Kill switch rearmado — os bots voltam a operar");
 }
 
-// ─── wallets (watch-only) ───
-// EIP-6963: each wallet extension announces itself with a stable id (rdns), so we can ask for MetaMask by name
-// instead of trusting window.ethereum, which Coinbase Wallet and others take over.
-const announced = new Map();
-window.addEventListener("eip6963:announceProvider", (e) => announced.set(e.detail.info.rdns, e.detail.provider));
-window.dispatchEvent(new Event("eip6963:requestProvider"));
-
-function metamaskProvider() {
-  const byId = announced.get("io.metamask") || announced.get("io.metamask.flask");
-  if (byId) return byId;
-  const eth = window.ethereum;
-  const list = eth?.providers || (eth ? [eth] : []);
-  // older extensions without EIP-6963: only a provider that is MetaMask and nothing else
-  return list.find((p) => p.isMetaMask && !p.isCoinbaseWallet && !p.isPhantom && !p.isBraveWallet && !p.isRabby && !p.isTrust) || null;
-}
-
-function phantomProvider() {
-  const p = window.phantom?.solana;
-  return p?.isPhantom ? p : null;
-}
-async function connectWallet(kind) {
-  try {
-    let address, label;
-    if (kind === "metamask") {
-      const mm = metamaskProvider();
-      if (!mm) throw new Error("MetaMask não encontrada. Só conectamos a MetaMask e a Phantom — instale/ative a extensão MetaMask neste navegador (outras carteiras são ignoradas).");
-      [address] = await mm.request({ method: "eth_requestAccounts" });   // public address only, no signature
-      label = "MetaMask";
-    } else {
-      const provider = phantomProvider();
-      if (!provider) throw new Error("Phantom não encontrada neste navegador. Instale a extensão Phantom no Chrome ou no Brave.");
-      const res = await provider.connect();
-      address = (res?.publicKey || provider.publicKey).toString();
-      label = "Phantom";
-    }
-    await api("/wallets", "POST", { address, label });
-    toast(`✓ ${label} conectada: ${short(address)} (só leitura)`);
-    safe(loadWallets);
-  } catch (e) { toast(`✖ ${e.message || e}`, true); }
-}
-async function removeWallet(addr) {
-  await api(`/wallets/${encodeURIComponent(addr)}`, "DELETE");
-  safe(loadWallets);
-}
-function walletCard(w) {
-  const head = `<h3><span>${esc(w.label || "Carteira")} <span class="muted">${short(w.address)}</span></span><button onclick="removeWallet('${esc(w.address)}')">remover</button></h3>`;
-  if (w.error) return `<div class="wcard">${head}<div class="red note">${esc(w.error)}</div></div>`;
-  if (w.chain === "evm") {
-    const hl = (k, name) => { const x = w[k] || {}; return x.error ? `<div>${name}<b>–</b></div>` : `<div>${name}<b>${usd(x.account_value)}</b>${x.positions || 0} posições</div>`; };
-    return `<div class="wcard">${head}<div class="wbal"><div>USDC Arbitrum<b>${Number(w.arbitrum_usdc).toFixed(2)}</b></div>
-      <div>ETH Arbitrum<b>${Number(w.arbitrum_eth).toFixed(5)}</b></div>${hl("hyperliquid", "Hyperliquid")}${hl("hyperliquid_testnet", "HL testnet")}</div></div>`;
-  }
-  return `<div class="wcard">${head}<div class="wbal"><div>SOL<b>${Number(w.sol).toFixed(4)}</b></div><div>Tokens<b>${w.tokens.length}</b></div></div></div>`;
-}
-async function loadWallets() {
-  const { wallets } = await api("/wallets");
-  document.getElementById("wallets").innerHTML = wallets.length ? wallets.map(walletCard).join("") : '<p class="note">Nenhuma carteira conectada.</p>';
+let teamFilterBy = "";
+function teamFilter(btn) {
+  teamFilterBy = btn.dataset.f;
+  document.querySelectorAll("#team-filter button").forEach((b) => b.classList.toggle("on", b === btn));
+  renderTeam();
 }
 
 // ─── team of bots (one shared wallet) + lab results ───
@@ -640,10 +586,6 @@ let lastArena = null;
 async function loadArena() {
   const a = await api("/arena");
   lastArena = a;
-  table("arena-table", ["#", "Bot", "Saldo", "Retorno", "Trades", "Acerto", "Estado"],
-    a.leaderboard.map((r, i) => `<tr><td>${i + 1}</td><td><b>${esc(look(r.model).label)}</b><br><span class="muted">${esc(r.model)}</span></td>
-      <td>${usd(r.equity)}</td><td><span class="${r.twr >= 0 ? "green" : "red"}">${pct(r.twr)}</span></td><td>${r.trades}</td>
-      <td>${r.win_rate === null ? "–" : pct(r.win_rate)}</td><td class="muted">${esc(r.state)}</td></tr>`));
   renderTeam();
   renderBoost();
 }
@@ -656,15 +598,18 @@ function renderTeam() {
   const members = [...team, ...lastArena.leaderboard.filter((r) => !team.some((m) => m.model === r.model)).map((r) => ({ model: r.model, name: r.model }))];
   const liveName = acc.live?.running && Date.now() - new Date(acc.live.ts) < 30000 ? acc.live.agent : null;
   const awake = members.filter((m) => lab[m.model]?.running && !lab[m.model]?.needs_key).length;
+  const isTitular = (m) => !!lab[m.model]?.green_light?.ok;
+  const nTit = members.filter(isTitular).length;
   document.getElementById("team-head").innerHTML = acc.running
-    ? `<b>${awake}</b> de ${members.length} ligados`
+    ? `⚽ <b>${nTit}</b> titulares · 🪑 <b>${members.length - nTit}</b> na reserva`
     : "desligados — clique em ▶ Start";
   const coffee = acc.running && acc.coffee_until;
   const cb = document.getElementById("btn-coffee");
   cb.classList.toggle("on", !!coffee);
   cb.textContent = coffee ? `☕ até ${hhmm(coffee)}` : "☕ Café";
   const rankOf = Object.fromEntries([...members].sort((x, y) => ((lab[y.model]?.reward?.points) ?? 0) - ((lab[x.model]?.reward?.points) ?? 0)).map((m, i) => [m.model, i + 1]));
-  setHTML("team-grid", members.map((m) => {
+  const shown = members.filter((m) => !teamFilterBy || (teamFilterBy === "titular") === isTitular(m));
+  setHTML("team-grid", shown.map((m) => {
     const L = look(m.model), r = lab[m.model] || {};
     const working = acc.running && (liveName === m.name || (r.state === "trabalhando" || r.state === "a trabalhar"));
     const cls = !acc.running || !r.running ? "off" : r.needs_key ? "nokey" : working ? "working" : (m.open || []).length || r.open?.length ? "holding" : r.sleep_until ? "sleeping" : "";
@@ -744,21 +689,10 @@ function trainBoost(model, btn) {
       `🚀 ${look(model).label} em treino intensivo por 24h: 29 vagas e $200 simulados, mesmas regras`);
 }
 
-// ─── advanced (old Solana paper + readiness) ───
-async function loadAdvanced() {
-  const [s, r, dec] = await Promise.all([api("/status"), api("/readiness"), api("/decisions?limit=100")]);
-  document.getElementById("old-paper").textContent = `${s.running ? "Rodando" : "Parado"} · patrimônio ${usd(s.equity)} · ${s.closed_trades} trades · ciclo #${s.cycle}`;
-  document.getElementById("readiness").innerHTML = r.checks.map((c) => `<div class="note">${c.ok ? "✅" : "⬜"} ${esc(c.name)} (${esc(c.value)})</div>`).join("");
-  table("decisions", ["Quando", "Tipo", "Ativo", "Motivo"], dec.decisions.map((d) =>
-    `<tr><td>${time(d.ts)}</td><td class="k-${esc(d.kind)}">${esc(d.kind)}</td><td>${esc(d.symbol || "")}</td><td>${esc(d.reason)}</td></tr>`));
-}
-
-safe(refresh); safe(loadWallets); safe(loadArena); safe(loadAdvanced);
+safe(refresh); safe(loadArena);
 setInterval(() => safe(loadArena), 5000);
 setInterval(() => safe(refresh), 2000);
 setInterval(renderFoot, 1000);
-setInterval(() => safe(loadAdvanced), 30000);
-setInterval(() => safe(loadWallets), 60000);
 
 // ─── daily report ───
 async function loadDaily() {
@@ -1022,8 +956,9 @@ setTimeout(() => safe(loadNews), 1500);
 setInterval(() => safe(loadNews), 120000);
 
 // ─── collapsible sections (remembered in this browser) ───
-let folded = [];
-try { folded = JSON.parse(localStorage.getItem("folded") || "[]"); } catch (e) { /* storage blocked */ }
+// secondary panels start minimized on a first visit; after that the user's own choice is remembered
+let folded = ["room", "baleias", "toptraders", "noticias", "transacoes", "relatorio", "fundos", "conexoes", "treino"];
+try { const saved = localStorage.getItem("folded2"); if (saved) folded = JSON.parse(saved); } catch (e) { /* storage blocked */ }
 document.querySelectorAll("main section.panel").forEach((sec, i) => {
   const h2 = sec.querySelector("h2");
   if (!h2) return;
@@ -1037,7 +972,7 @@ document.querySelectorAll("main section.panel").forEach((sec, i) => {
     const on = sec.classList.toggle("collapsed");
     btn.setAttribute("aria-expanded", String(!on));
     folded = on ? [...new Set([...folded, key])] : folded.filter((k) => k !== key);
-    try { localStorage.setItem("folded", JSON.stringify(folded)); } catch (e) { /* ignore */ }
+    try { localStorage.setItem("folded2", JSON.stringify(folded)); } catch (e) { /* ignore */ }
   };
   h2.appendChild(btn);
   if (folded.includes(key)) { sec.classList.add("collapsed"); btn.setAttribute("aria-expanded", "false"); }

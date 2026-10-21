@@ -298,6 +298,8 @@
     .ni .w { color: var(--muted); font-size: 12px; } .ni a { color: var(--text); text-decoration: none; } .ni a:hover { color: var(--accent); }
     .ni .src { color: var(--muted); font-size: 11.5px; } .coin-tag { display: inline-block; font-size: 11px; padding: 0 6px; margin-left: 4px; border-radius: 999px; border: 1px solid var(--border); color: var(--accent); }
     #radar-table tbody tr { cursor: pointer; } #radar-table tbody tr:hover { background: var(--surface-2); }
+    #team-filter { margin-left: 10px; text-transform: none; letter-spacing: 0; vertical-align: middle; }
+    #team-filter button { padding: 4px 10px; font-size: 12px; }
     .boost { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-top: 14px; padding: 10px 12px;
              border: 1px dashed var(--border); border-radius: 12px; font-size: 13px; }
     .boost select, .boost input { padding: 6px 8px; }
@@ -434,28 +436,19 @@
     </div>
   </header>
   <div class="statusbar"><div class="sb-items" id="statusbar-items"></div>
-    <nav class="sb-nav" aria-label="Seções"><a href="#g-visao">Visão geral</a><a href="#posicoes">Posições</a><a href="#radar">Radar</a><a href="#grafico">Gráfico</a><a href="#baleias">Baleias</a><a href="#toptraders">Top traders</a><a href="#noticias">Notícias</a><a href="#team">Bots</a><a href="#treino">Treino</a><a href="#logs">Logs</a><a href="#ecg">Sinais vitais</a><a href="#g-hist">Histórico</a><a href="#g-sist">Sistema</a></nav></div>
+    <nav class="sb-nav" aria-label="Seções"><a href="#g-visao">Visão geral</a><a href="#posicoes">Posições</a><a href="#g-bots">Bots</a><a href="#ecg">Sinais vitais</a><a href="#g-oport">Mercado</a><a href="#g-hist">Histórico</a><a href="#g-sist">Sistema</a></nav></div>
   <div class="alert" id="alert" hidden><span>🛑 <span id="alert-text"></span></span><button onclick="killReset(this)">Rearmar</button></div>
   <div class="scanbar" id="scanbar" hidden><span class="spin"></span><span id="scan-text">Analisando o mercado…</span></div>
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
   <main>
     <div class="setup" id="setup" hidden></div>
-
     <h3 class="band" id="g-visao">Visão geral</h3>
     <section class="kpis">
       <div class="kpi"><div class="l" id="k-eq-l">Saldo</div><div class="v" id="k-eq">–</div><div class="s" id="k-eq-s">–</div></div>
       <div class="kpi"><div class="l">Lucro líquido <span class="muted">(depois de IA e custos)</span></div><div class="v" id="k-pnl">–</div><div class="s" id="k-pnl-s">–</div></div>
       <div class="kpi"><div class="l">Posição aberta</div><div class="v" id="k-pos">–</div><div class="s" id="k-pos-s">–</div></div>
       <div class="kpi"><div class="l">Trades · acerto</div><div class="v" id="k-tr">–</div><div class="s" id="k-tr-s">–</div></div>
-    </section>
-    <section class="panel" id="metas">
-      <h2><span>🎯 Metas de hoje <span class="tag" id="goal-tag">–</span></span><span class="note">bateu a meta → descansa e guarda o lucro · nunca força um trade</span></h2>
-      <div class="goals" id="goals"></div>
-    </section>
-    <section class="panel" id="confianca">
-      <h2><span>🛡️ Pronto para recarregar? <span class="tag" id="conf-tag">–</span></span><span class="note">critérios objetivos sobre a conta real — quando todos ficarem ✅, vale pôr mais $20</span></h2>
-      <div class="conf" id="conf"></div>
     </section>
     <div class="two">
     <section class="panel" id="posicoes">
@@ -483,6 +476,10 @@
       </div>
     </section>
     </div>
+    <section class="panel" id="metas">
+      <h2><span>🎯 Metas de hoje <span class="tag" id="goal-tag">–</span></span><span class="note">bateu a meta → descansa e guarda o lucro · nunca força um trade</span></h2>
+      <div class="goals" id="goals"></div>
+    </section>
     <section class="panel" id="lucro">
       <h2><span>Lucro real <span class="tag" id="verdict">–</span></span>
         <span class="ctrls"><label class="switch"><input type="checkbox" id="ai-toggle" checked onchange="toggleAI(this.checked)"><span></span>incluir custo da IA</label><span class="note" id="budget-note"></span></span></h2>
@@ -499,56 +496,14 @@
       <div class="note" style="margin-top:14px">Evolução do saldo · <span style="color:#34d399">■ nossos bots</span> · <span style="color:#fbbf24">■ se tivesse só segurado BTC</span></div>
       <div id="equity-chart" class="chartbox small"></div>
     </section>
-
-    <h3 class="band" id="g-oport">Oportunidades</h3>
-    <section class="panel" id="radar">
-      <h2><span>Radar de oportunidades <span class="tag">o que os bots estão vigiando</span></span>
-        <span class="ctrls"><span class="note" id="radar-head"></span><button id="radar-all" onclick="radarAll = !radarAll; renderRadar(acc)">Ver todas</button></span></h2>
-      <div class="tbl radar-tbl"><table id="radar-table"></table></div>
-      <div class="legend"><span>🧤 <b>São Marcos</b> compra se o preço cair abaixo da linha <i>e</i> o RSI ficar abaixo de 30</span><span>⚡ <b>Endrick</b> compra se romper a máxima de 24h numa tendência forte</span><span>🎯 <b>Gabriel Jesus</b> o mesmo em velas de 4h</span><span>🐋 <b>Evair</b> compra quando baleias compram forte numa alta</span><span>🧠 <b>Valdivia</b> (IA) só é consultado quando há uma queda numa alta</span></div>
-      <div class="legend"><span>✅ <b>pronto</b> = há sinal agora → o Coordenador escolhe o bot, o Risk confere vagas e limites, o Executor compra com stop e alvo → aparece em <b>Posições abertas</b></span><span>👀 <b>perto</b> = a menos de ~1,5% da linha de compra</span><span>⏳ <b>aguardando</b> = em alta, mas longe da linha</span><span>⬇ <b>sem tendência</b> = em baixa: os bots não compram</span></div>
+    <section class="panel" id="confianca">
+      <h2><span>🛡️ Pronto para recarregar? <span class="tag" id="conf-tag">–</span></span><span class="note">critérios objetivos sobre a conta real — quando todos ficarem ✅, vale pôr mais $20</span></h2>
+      <div class="conf" id="conf"></div>
     </section>
-    <section class="panel" id="grafico">
-      <h2><span>📈 Gráfico <span class="tag">velas de 1h · Hyperliquid</span></span>
-        <span class="ctrls"><select id="chart-coin" aria-label="Moeda" onchange="loadChart()"></select></span></h2>
-      <div id="chart" class="chartbox"></div>
-      <div class="legend" id="chart-legend"></div>
-    </section>
-
-    <section class="panel" id="baleias">
-      <h2><span>🐋 Baleias <span class="tag" id="whale-tag">–</span></span><span class="note" id="whale-head"></span></h2>
-      <div class="whale-grid">
-        <div><div class="note" style="margin-bottom:8px">Nas nossas 29 moedas · fluxo da última hora</div><div class="flows" id="whale-flows"></div>
-          <div class="note" style="margin:14px 0 8px">No resto do mercado cripto · moedas que os bots ainda não operam</div><div class="flows" id="whale-market"></div></div>
-        <div><div class="note" style="margin-bottom:8px">Últimas ordens de baleia</div><div class="tbl"><table id="whale-recent"></table></div></div>
-      </div>
-      <div class="note" style="margin:16px 0 8px">🐋 Carteiras baleia mais ativas (4h) — clique para ver a carteira no Hypurrscan</div>
-      <div class="tbl"><table id="whale-wallets"></table></div>
-      <div class="legend"><span>🐋 baleia = ordem a mercado ≥ $25 mil e ≥ 0,02% do volume diário da moeda</span><span>🟢 comprando / 🔴 vendendo = mais de 30% de diferença entre compras e vendas</span><span>🧠 o bot de IA recebe este fluxo antes de decidir</span></div>
-    </section>
-
-    <section class="panel" id="toptraders">
-      <h2><span>👑 Top 10 traders da Hyperliquid <span class="tag" id="top-tag">–</span></span></h2>
-      <div class="tbl"><table id="top-table"></table></div>
-      <div class="note" style="margin:14px 0 8px">Últimos movimentos deles (comparados a cada 2 min)</div>
-      <div class="tbl" style="max-height:260px"><table id="top-moves"></table></div>
-      <div class="legend"><span>Escolhidos no ranking público: lucrativos no mês, na semana e no total, ROI realista, conta ≥ $100 mil, operando de verdade (sem market makers)</span>
-        <span>👑 <b>Veiga</b> copia em escala pequena quando ≥ 2 deles estão comprados numa moeda nossa e um acabou de entrar, numa alta — sempre com stop, alvo e aprovação do comitê (Coordenador + Debate + Risk)</span>
-        <span>🧠 Valdivia (IA) também vê o que eles estão fazendo antes de decidir</span></div>
-    </section>
-
-    <section class="panel" id="noticias">
-      <h2><span>📰 Notícias <span class="tag" id="news-tag">–</span></span>
-        <span class="ctrls"><select id="news-coin" aria-label="Moeda" onchange="newsAll = true; loadNews()"><option value="">Todas as moedas</option></select>
-          <button id="news-all" onclick="newsAll = !newsAll; loadNews()">Ver todas</button></span></h2>
-      <div class="hot" id="news-hot"></div>
-      <div class="news" id="news"></div>
-      <div class="legend"><span>Fontes: CoinDesk, Cointelegraph, Decrypt, The Block (atualiza a cada 5 min)</span><span>🧠 o bot de IA lê as manchetes das últimas 12h da moeda antes de decidir</span><span>X.com não incluído: a API do X não tem leitura gratuita</span></div>
-    </section>
-
-    <h3 class="band" id="g-bots">Bots ao vivo</h3>
+    <h3 class="band" id="g-bots">Bots</h3>
     <section class="panel" id="team">
-      <h2><span>Equipe de bots</span>
+      <h2><span>Equipe de bots <span class="seg" id="team-filter" role="group" aria-label="Filtrar bots">
+          <button data-f="" class="on" onclick="teamFilter(this)">Todos</button><button data-f="titular" onclick="teamFilter(this)">⚽ Titulares</button><button data-f="reserva" onclick="teamFilter(this)">🪑 Reserva</button></span></span>
         <span class="ctrls"><span class="note" id="team-head"></span><button id="btn-coffee" onclick="giveCoffee(this)" title="4 horas de modo day trade nas contas simulada e real: até 24 compras por dia em vez de 12 (as regras de compra e os stops não mudam)">☕ Café</button><button id="btn-scan" onclick="scanNow(this)">🔍 Analisar agora</button></span></h2>
       <div class="team" id="team-grid"></div>
       <div class="boost">
@@ -564,17 +519,15 @@
         <button onclick="startBoost(this)">Ativar</button>
         <span class="note" id="boost-status"></span>
       </div>
-      <div class="legend"><span>🚦 Luz verde para a conta real: ≥ 10 trades vencedores no laboratório, acerto ≥ 50%, fator de lucro ≥ 1,2 e lucro líquido positivo</span><span>🚀 Treino intensivo: uma vaga por moeda (29), $200 simulados e sem limite diário por 24h — mesmas regras, mais trades, prova mais rápida</span><span>🏆 Recompensa: 1 ponto = 1 centavo de lucro líquido (30 dias) → mais pontos = prioridade e posição cheia; prejuízo = posição mínima</span><span>🛡️ Na conta real: São Marcos e Endrick já operam; Gabriel Jesus, Evair, Veiga e Valdivia só depois da luz verde; as versões ⏱ 15m são só treino (nunca dinheiro real)</span><span>👆 Passe o mouse num bot para ver detalhes</span></div>
+      <div class="legend"><span>⚽ Titular = já opera dinheiro real</span><span>🪑 Reserva = em treino: entra no jogo com 10 vitórias, acerto ≥ 50% e lucro</span><span>👆 passe o mouse no robô para detalhes</span></div>
     </section>
-    <section class="panel" id="treino">
-      <h2><span>🎓 Centro de treino <span class="tag" id="train-tag">–</span></span><span class="note">dados de treino dos bots — separados da prova do laboratório</span></h2>
-      <div class="goals" id="train-kpis"></div>
-      <div class="tbl" style="margin-top:12px"><table id="train-table"></table></div>
-      <div class="legend"><span>A cada vela de 1h, cada uma das 29 moedas vira um trade virtual com tudo o que os bots viam (indicadores, tendência, baleias, top traders, notícias, mercado)</span>
-        <span>24h depois anota-se: a compra bateria o alvo (3 ATR) antes do stop (2 ATR)? E uma venda (short)?</span>
-        <span>🧠 Valdivia lê estas lições dos casos parecidos antes de cada decisão</span></div>
+    <section class="panel" id="ecg">
+      <h2><span>💓 Sinais vitais <span class="tag ecg-state" id="ecg-state">–</span></span><span class="note">cada batimento é uma ação real dos bots</span></h2>
+      <div class="ecg-wrap"><canvas id="ecg-canvas" aria-label="Eletrocardiograma da atividade dos bots" role="img"></canvas>
+        <div class="ecg-bpm"><b id="ecg-bpm">–</b><small>ações/min</small></div></div>
+      <div class="ecg-stats" id="ecg-stats"></div>
+      <div class="legend"><span><span style="color:#34d399">▲</span> compra/venda</span><span><span style="color:#fbbf24">▲</span> veto/aviso</span><span><span style="color:#f87171">▼</span> erro</span><span><span style="color:#7dd3fc">▲</span> análise</span><span>linha reta = nenhuma ação há mais de 5 min</span></div>
     </section>
-
     <section class="panel" id="logs">
       <h2><span>Logs ao vivo <span class="live-chip" id="log-live">ao vivo</span></span>
         <span class="ctrls">
@@ -587,24 +540,59 @@
         </span></h2>
       <div class="term" id="term" role="log" aria-live="off"></div>
     </section>
-
-    <section class="panel" id="ecg">
-      <h2><span>💓 Sinais vitais <span class="tag ecg-state" id="ecg-state">–</span></span><span class="note">cada batimento é uma ação real dos bots</span></h2>
-      <div class="ecg-wrap"><canvas id="ecg-canvas" aria-label="Eletrocardiograma da atividade dos bots" role="img"></canvas>
-        <div class="ecg-bpm"><b id="ecg-bpm">–</b><small>ações/min</small></div></div>
-      <div class="ecg-stats" id="ecg-stats"></div>
-      <div class="legend"><span><span style="color:#34d399">▲</span> compra/venda</span><span><span style="color:#fbbf24">▲</span> veto/aviso</span><span><span style="color:#f87171">▼</span> erro</span><span><span style="color:#7dd3fc">▲</span> análise</span><span>linha reta = nenhuma ação há mais de 5 min</span></div>
+    <section class="panel" id="treino">
+      <h2><span>🎓 Centro de treino <span class="tag" id="train-tag">–</span></span><span class="note">dados de treino dos bots — separados da prova do laboratório</span></h2>
+      <div class="goals" id="train-kpis"></div>
+      <div class="tbl" style="margin-top:12px"><table id="train-table"></table></div>
+      <div class="legend"><span>1 trade virtual por moeda por hora → lições que o Valdivia lê antes de decidir</span></div>
     </section>
-
-    <section class="panel">
+    <section class="panel" id="room">
       <h2><span>Como uma decisão é feita <span class="tag" id="room-tag">–</span></span><span class="note" id="room-head"></span></h2>
-      <p class="note" style="margin:-6px 0 12px">Dados reais do último ciclo da conta selecionada: cada etapa mostra o que fez, quando, e os números. Durante um ciclo a etapa ativa acende; depois o ciclo é repassado passo a passo.</p>
+      
       <div class="room">
         <div class="line" id="line"></div>
         <div class="room-foot"><span id="room-left"></span><span id="room-right"></span></div>
       </div>
     </section>
-
+    <h3 class="band" id="g-oport">Mercado</h3>
+    <section class="panel" id="radar">
+      <h2><span>Radar de oportunidades <span class="tag">o que os bots estão vigiando</span></span>
+        <span class="ctrls"><span class="note" id="radar-head"></span><button id="radar-all" onclick="radarAll = !radarAll; renderRadar(acc)">Ver todas</button></span></h2>
+      <div class="tbl radar-tbl"><table id="radar-table"></table></div>
+      <div class="legend"><span>Clique numa moeda para ver o gráfico</span></div>
+    </section>
+    <section class="panel" id="grafico">
+      <h2><span>📈 Gráfico <span class="tag">velas de 1h · Hyperliquid</span></span>
+        <span class="ctrls"><select id="chart-coin" aria-label="Moeda" onchange="loadChart()"></select></span></h2>
+      <div id="chart" class="chartbox"></div>
+      <div class="legend" id="chart-legend"></div>
+    </section>
+    <section class="panel" id="baleias">
+      <h2><span>🐋 Baleias <span class="tag" id="whale-tag">–</span></span><span class="note" id="whale-head"></span></h2>
+      <div class="whale-grid">
+        <div><div class="note" style="margin-bottom:8px">Nas nossas 29 moedas · fluxo da última hora</div><div class="flows" id="whale-flows"></div>
+          <div class="note" style="margin:14px 0 8px">No resto do mercado cripto · moedas que os bots ainda não operam</div><div class="flows" id="whale-market"></div></div>
+        <div><div class="note" style="margin-bottom:8px">Últimas ordens de baleia</div><div class="tbl"><table id="whale-recent"></table></div></div>
+      </div>
+      <div class="note" style="margin:16px 0 8px">🐋 Carteiras baleia mais ativas (4h) — clique para ver a carteira no Hypurrscan</div>
+      <div class="tbl"><table id="whale-wallets"></table></div>
+      <div class="legend"><span>🐋 baleia = ordem ≥ $25 mil e ≥ 0,02% do volume diário</span></div>
+    </section>
+    <section class="panel" id="toptraders">
+      <h2><span>👑 Top 10 traders da Hyperliquid <span class="tag" id="top-tag">–</span></span></h2>
+      <div class="tbl"><table id="top-table"></table></div>
+      <div class="note" style="margin:14px 0 8px">Últimos movimentos deles (comparados a cada 2 min)</div>
+      <div class="tbl" style="max-height:260px"><table id="top-moves"></table></div>
+      <div class="legend"><span>Os 10 mais lucrativos e consistentes do ranking público · o Veiga copia quando ≥ 2 deles compram</span></div>
+    </section>
+    <section class="panel" id="noticias">
+      <h2><span>📰 Notícias <span class="tag" id="news-tag">–</span></span>
+        <span class="ctrls"><select id="news-coin" aria-label="Moeda" onchange="newsAll = true; loadNews()"><option value="">Todas as moedas</option></select>
+          <button id="news-all" onclick="newsAll = !newsAll; loadNews()">Ver todas</button></span></h2>
+      <div class="hot" id="news-hot"></div>
+      <div class="news" id="news"></div>
+      <div class="legend"><span>CoinDesk · Cointelegraph · Decrypt · The Block</span></div>
+    </section>
     <h3 class="band" id="g-hist">Histórico</h3>
     <section class="panel" id="analise">
       <h2><span>📊 Análise do histórico <span class="tag" id="stats-tag">–</span></span></h2>
@@ -613,18 +601,15 @@
         <div><div class="note">Por moeda</div><div class="tbl"><table id="stats-coin"></table></div></div>
         <div><div class="note">Como saiu</div><div class="tbl"><table id="stats-exit"></table></div></div></div>
     </section>
-
+    <section class="panel" id="fechados"><h2><span>Trades fechados</span><span class="tag" id="trades-total"></span></h2><div class="tbl"><table id="trades"></table></div></section>
     <section class="panel" id="transacoes">
       <h2><span>🧾 Transações <span class="tag" id="tx-tag">–</span></span><span class="note">compras, vendas, depósitos e saques</span></h2>
       <div class="tbl"><table id="tx-table"></table></div>
     </section>
-
-    <section class="panel"><h2><span>Trades fechados</span><span class="tag" id="trades-total"></span></h2><div class="tbl"><table id="trades"></table></div></section>
     <section class="panel" id="relatorio">
       <h2><span>Relatório diário <span class="tag" id="rep-tag">–</span></span><span class="note">salvo também em reports/daily/ às 23:55</span></h2>
       <div class="tbl"><table id="daily"></table></div>
     </section>
-
     <h3 class="band" id="g-sist">Sistema</h3>
     <section class="panel" id="fundos">
       <h2><span>💵 Adicionar fundos <span class="tag">USDC · rede Arbitrum One</span></span></h2>
@@ -643,41 +628,21 @@
         </div>
       </div>
     </section>
-    <div class="two">
-      <section class="panel" id="carteiras">
-        <h2>Carteiras <span class="tag">só leitura</span></h2>
-        <div class="wallet-row">
-          <button onclick="connectWallet('metamask')">🦊 Conectar MetaMask</button>
-          <button onclick="connectWallet('phantom')">👻 Conectar Phantom</button>
-        </div>
-        <p class="note">Só leitura: a conexão compartilha o endereço público para mostrar saldos. Nada é assinado.</p>
-        <div id="wallets"></div>
-      </section>
-      <section class="panel" id="arena">
-        <h2><span>Laboratório <span class="tag">cada bot com $20 simulados</span></span></h2>
-        <p class="note">Resultados de cada bot em sua própria carteira simulada — é daqui que o Coordenador aprende quem é melhor em cada mercado.</p>
-        <div class="tbl"><table id="arena-table"></table></div>
-      </section>
-    </div>
     <section class="panel" id="conexoes">
       <h2><span>Conexões <span class="tag" id="conn-tag">–</span></span><span class="note">verificado a cada minuto</span></h2>
       <div class="conns" id="conns"></div>
     </section>
-    <details class="more"><summary>Avançado</summary>
+    <details class="more" id="avancado"><summary>Controles avançados</summary>
       <div class="wallet-row">
         <button class="btn-danger" id="btn-flat" onclick="flatten(this)">Fechar todas as posições reais</button>
-        <button id="btn-test" onclick="testOrder(this)">Ordem de teste (testnet)</button>
         <button id="btn-kill" onclick="killReset(this)">Rearmar kill switch</button>
       </div>
       <p class="note" id="limits"></p>
-      <h3 style="margin-top:12px">Pronto para dinheiro real?</h3><div id="readiness"></div>
-      <h3 style="margin-top:12px">Paper de tokens Solana ($100)</h3><p class="note" id="old-paper"></p>
-      <h3 style="margin-top:12px">Registro de decisões (paper Solana)</h3><div class="tbl"><table id="decisions"></table></div>
     </details>
   </main>
 
   <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <script src="https://unpkg.com/qrcode-generator@1.4.4/qrcode.js"></script>
-  <script src="/static/paper.js?v=65"></script>
+  <script src="/static/paper.js?v=66"></script>
 </body>
 </html>
