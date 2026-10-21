@@ -421,7 +421,9 @@
     /* Lite = only what answers "is it working, am I making money, what are the bots doing" */
     #rank-sort, #rank-who { margin-left: 10px; text-transform: none; letter-spacing: 0; vertical-align: middle; }
     #rank-table td.pos { font-size: 18px; width: 36px; text-align: center; } #rank-table tr.me1 td { background: rgba(111,211,160,.06); }
-    .tb.boostable { cursor: pointer; } body.ro .tb.boostable { cursor: default; }
+    .tb.boostable { cursor: pointer; }
+    .tcoffee { margin-top: 6px; width: 100%; } .tcoffee.on { color: var(--yellow); }
+    body.ro .tcoffee:not(.on) { display: none !important; } body.ro .tb.boostable { cursor: default; }
     #view-seg button { min-width: 52px; } .logout { color: var(--muted); font-size: 13px; padding: 4px 10px; }
     body.lite :is(#termometro, #metas, #lucro, #confianca, #logs, #treino, #room, #g-oport, #radar, #baleias,
       #toptraders, #g-hist, #analise, #transacoes, #relatorio, #g-sist, #fundos, #conexoes, #avancado,
@@ -528,10 +530,11 @@
     <section class="panel" id="team">
       <h2><span>Equipe de bots <span class="seg" id="team-filter" role="group" aria-label="Filtrar bots">
           <button data-f="" class="on" onclick="teamFilter(this)">Todos</button><button data-f="titular" onclick="teamFilter(this)">⚽ Titulares</button><button data-f="reserva" onclick="teamFilter(this)">🪑 Reserva</button></span></span>
-        <span class="ctrls"><span class="note" id="team-head"></span><button id="btn-coffee" onclick="giveCoffee(this)" title="4 horas de modo day trade nas contas simulada e real: até 24 compras por dia em vez de 12 (as regras de compra e os stops não mudam)">☕ Café</button><button id="btn-scan" onclick="scanNow(this)">🔍 Analisar agora</button></span></h2>
+        <span class="ctrls"><span class="note" id="team-head"></span><button id="btn-coffee" onclick="giveCoffee(this)" title="4 horas de modo day trade para os titulares, nas contas simulada e real: até 24 compras por dia em vez de 12 (as regras de compra e os stops não mudam). Reservas: 1 café por dia no próprio card.">☕ Café</button><button id="btn-scan" onclick="scanNow(this)">🔍 Analisar agora</button></span></h2>
       <div class="team" id="team-grid"></div>
       <div class="boost">
-        <span>🚀 <b>Turbo da IA</b> — trocar o modelo do bot de IA por alguns ciclos (1 ciclo = 5 min), depois volta ao Haiku:</span>
+        <span>🚀 <b>Modelo para titulares</b> — um modelo melhor revisa os sinais do titular por alguns ciclos da conta (1 ciclo = 5 min), depois volta ao Haiku:</span>
+        <select id="boost-bot" aria-label="Titular"></select>
         <select id="boost-model" aria-label="Modelo">
           <option value="claude-sonnet-5-5">Sonnet 5.5 · ~$0,015/análise</option>
           <option value="claude-opus-5-5">Opus 5.5 · ~$0,03/análise</option>
@@ -660,6 +663,6 @@
 
   <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <script src="https://unpkg.com/qrcode-generator@1.4.4/qrcode.js"></script>
-  <script src="/static/paper.js?v=79"></script>
+  <script src="/static/paper.js?v=80"></script>
 </body>
 </html>

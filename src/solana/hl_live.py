@@ -408,6 +408,11 @@ class _NoSafety:
         return Vote("safety", True, "n/a for perps")
 
 
+def _reviewer_model(strategy: str) -> str | None:
+    from src.solana import arena
+    return arena.reviewer_model(strategy)
+
+
 _live: PaperEngine | None = None
 
 
@@ -418,7 +423,7 @@ def get_live_engine() -> PaperEngine:
         url = info_url()
         _live = PaperEngine(
             ledger, [hl.HyperliquidScout(cfg.HL_LIVE_MARKETS, ctx_fn=lambda c: hl.asset_ctx(c, url))], _NoSafety(),
-            default_strategies(), DebateAgent(), _risk(), ExecutorAgent(HyperliquidLiveBroker(ledger)),
+            default_strategies(), DebateAgent(model_for=_reviewer_model), _risk(), ExecutorAgent(HyperliquidLiveBroker(ledger)),
             candles_fn={hl.VENUE: lambda coin: hl.candles(coin, url=url)},
             profiles={hl.VENUE: {"max_pos_pct": 1.0, "stop_mult": cfg.MARKET_PROFILES.get(hl.VENUE, {}).get("stop_mult", 1.5)}},
             llm=team(), coordinator=_coordinate_real,
@@ -460,7 +465,7 @@ def get_shadow_engine() -> PaperEngine:
         ledger = Ledger(cfg.SHADOW_DB_PATH, cfg.SHADOW_START_USDC)
         from src.solana.engine import bench_prices
         _shadow = PaperEngine(
-            ledger, [hl.HyperliquidScout(cfg.HL_MARKETS)], _NoSafety(), default_strategies(), DebateAgent(),
+            ledger, [hl.HyperliquidScout(cfg.HL_MARKETS)], _NoSafety(), default_strategies(), DebateAgent(model_for=_reviewer_model),
             _risk(), ExecutorAgent(hl.HyperliquidPaperBroker(ledger, leverage=cfg.LIVE_LEVERAGE)), candles_fn={hl.VENUE: hl.candles},
             profiles={hl.VENUE: {"max_pos_pct": 1.0, "stop_mult": cfg.MARKET_PROFILES.get(hl.VENUE, {}).get("stop_mult", 1.5)}},
             llm=team(), coordinator=_coordinate, bench_fn=bench_prices,

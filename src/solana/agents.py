@@ -212,9 +212,11 @@ class DebateAgent:
     """Bull vs bear LLM review. Returns a Vote whose only effect can be a veto.
     Disabled (approve, abstained) without an API key. LLM errors or unparsable output => veto."""
 
-    def __init__(self, llm_fn=None, enabled: bool | None = None):
+    def __init__(self, llm_fn=None, enabled: bool | None = None, model_for=None):
         self.enabled = bool(cfg.ANTHROPIC_API_KEY) if enabled is None else enabled
-        self.llm_fn = llm_fn or (lambda prompt: anthropic_llm(prompt, who="debate", max_searches=cfg.LLM_WEB_SEARCHES))
+        self.llm_fn = llm_fn or (lambda prompt, model=None: anthropic_llm(prompt, model=model, who="debate",
+                                                                           max_searches=cfg.LLM_WEB_SEARCHES))
+        self.model_for = model_for          # strategy -> model the user picked for its reviews (None = default)
 
     def review(self, c: Candidate, sig: Signal, context: dict) -> Vote:
         if not self.enabled:
@@ -223,7 +225,8 @@ class DebateAgent:
                              "signal": sig.reason, "stop_pct": sig.stop_pct, "tp_pct": sig.tp_pct,
                              "context": context}, default=str)
         try:
-            text = self.llm_fn(prompt)
+            model = self.model_for(sig.strategy) if self.model_for else None
+            text = self.llm_fn(prompt, model) if model else self.llm_fn(prompt)
             m = re.search(r"\{.*\}", text, re.S)
             out = json.loads(m.group(0)) if m else None
             if not isinstance(out, dict) or not isinstance(out.get("veto"), bool):
