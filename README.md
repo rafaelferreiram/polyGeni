@@ -74,6 +74,9 @@ Same engine and agents; only the broker is real (`HyperliquidLiveBroker`, offici
 - **Leverage** `LIVE_LEVERAGE` (default 2x isolated, max 3x): with $18 the team can hold up to 3 positions of ~$12 at
   once instead of one. Each keeps its own stop and target on the exchange; daily loss (10%) and the kill switch work on
   equity, so the worst day is still capped.
+- **Daily goal** `DAILY_GOAL_PCT` (default 2%): once an account is up 2% on the day (open positions included) its
+  bots rest — no new entries until tomorrow, open positions still run to their stop/target (`DAILY_GOAL_REST=1`).
+  Lab bots never rest (they keep measuring). The goal never loosens entry rules.
 - **Thermometer** on the dashboard: market temperature from the bots' own scan (how many of the 29 coins are in an
   uptrend, average RSI and 24h move, coins close to a buy) and our return vs simply holding BTC.
 - **Connections** panel (`GET /api/paper/health`, cached 60s): Hyperliquid data and real account (API wallet

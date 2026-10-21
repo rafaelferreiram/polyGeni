@@ -259,6 +259,9 @@ class PaperEngine:
                 stats["skipped"] = "kill switch active"
             elif not sync_ok:
                 stats["skipped"] = "exchange unreachable this cycle"
+            elif self.rests_on_goal and cfg.DAILY_GOAL_REST and self._goal_hit(p):
+                stats["skipped"] = (f"meta do dia batida (+{(p.equity / p.day_start_equity - 1) * 100:.1f}%) — "
+                                    "descansando até amanhã; posições abertas seguem protegidas")
             elif cfg.BOT_SELF_PAUSE and not self.coffee() and self._sleeping(stats):
                 pass
             else:
@@ -286,6 +289,11 @@ class PaperEngine:
                                            "cycle": cycle, "running": False})
             logger.info(f"[paper] cycle {cycle}: {stats}")
         return stats
+
+    rests_on_goal = True        # lab bots set False: they keep trading to keep measuring
+
+    def _goal_hit(self, p) -> bool:
+        return p.day_start_equity > 0 and (p.equity - p.day_start_equity) / p.day_start_equity >= cfg.DAILY_GOAL_PCT
 
     # ─── coffee: the user keeps the bots awake (no self-pause) for a while; entry rules are unchanged ───
     def coffee(self) -> str | None:

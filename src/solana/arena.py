@@ -44,6 +44,7 @@ def build_bot(model: str, db_dir: str = ".", llm_fn=None, scout=None, broker_fac
         llm=decider, profiles={hl.VENUE: {"max_pos_pct": 1.0, "stop_mult": cfg.MARKET_PROFILES.get(hl.VENUE, {}).get("stop_mult", 1.5)}},
     )
     ledger.set_state("decision_mode", "rules" if model in RULE_BOTS else "llm")
+    eng.rests_on_goal = False                 # the lab keeps measuring all day
     ledger.set_state("model", model)
     return eng
 

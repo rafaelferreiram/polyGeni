@@ -173,6 +173,7 @@ def test_daily_entry_cap(ledger):
     from src.solana.agents import RiskAgent
     price = Price(1.0)
     eng = build(ledger, price, risk=RiskAgent(max_entries_per_day=1))
+    eng.rests_on_goal = False                         # the +20% win would otherwise end the day (daily goal)
     eng.run_cycle()
     price.p = 1.2                                     # TP exit next cycle, strategy still firing
     eng.run_cycle()
@@ -285,3 +286,16 @@ def test_daily_goals_track_entries_and_cycles(ledger):
     g = goals(eng)
     assert g["trades"]["done"] == 1 and g["analyses"]["done"] >= 1
     assert g["profit"]["target_usd"] > 0 and g["hit"] is False
+
+
+def test_bots_rest_after_the_daily_goal(ledger, monkeypatch):
+    from src.solana import config as cfg
+    eng = build(ledger, Price(1.0))
+    eng.run_cycle()                                           # sets day start, opens one position
+    day = ledger.get_state("day_start")
+    ledger.set_state("day_start", {**day, "equity": day["equity"] / 1.05})   # pretend we are +5% today
+    monkeypatch.setattr(cfg, "DAILY_GOAL_PCT", 0.02)
+    s = eng.run_cycle()
+    assert s["entries"] == 0 and "meta do dia batida" in s["skipped"]
+    eng.rests_on_goal = False                                 # lab bots keep going
+    assert "skipped" not in eng.run_cycle()

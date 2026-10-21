@@ -127,9 +127,11 @@ HL_LIVE_MARKETS = [m for m in os.getenv("HL_LIVE_MARKETS", HL_BROAD).split(",") 
 ARENA_MODELS = [m for m in os.getenv("ARENA_MODELS", "rules,trend,claude-haiku-5-5").split(",") if m]
 WHALES_ENABLED = os.getenv("WHALES_ENABLED", "1") == "1"      # live whale-trade feed (WebSocket, read-only)
 WHALE_MIN_USD = float(os.getenv("WHALE_MIN_USD", "25000"))    # whale = ≥ this and ≥ 0.02% of the coin's daily volume
-# daily goals shown to the user and logged by the bots (targets to measure against, never a reason to force a trade):
-# profit ≈ 0.5%/day is what the backtested edge supports at this size; 2 trades/day; one analysis every cycle.
-DAILY_GOAL_PCT = float(os.getenv("DAILY_GOAL_PCT", "0.005"))
+# daily goal: once the account is up DAILY_GOAL_PCT on the day, the bots rest (no new entries) until tomorrow and keep
+# managing open positions — a good day is banked instead of given back. 2% is a good day for day trading at 2x;
+# an average day is lower. Goals are never a reason to force a trade.
+DAILY_GOAL_PCT = float(os.getenv("DAILY_GOAL_PCT", "0.02"))
+DAILY_GOAL_REST = os.getenv("DAILY_GOAL_REST", "1") == "1"
 DAILY_GOAL_TRADES = int(os.getenv("DAILY_GOAL_TRADES", "4"))
 SYNC_FAIL_LIMIT = int(os.getenv("SYNC_FAIL_LIMIT", "6"))   # consecutive unreachable-exchange cycles before the kill switch
 # bots allowed to spend real money without first proving themselves in the lab (validated by backtest; "trend"

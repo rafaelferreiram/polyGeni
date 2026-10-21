@@ -336,13 +336,13 @@ function renderGoals(a) {
   if (!g) return;
   const pctOf = (x, t) => `${(clamp01(t ? x / t : 0) * 100).toFixed(0)}%`;
   const tag = document.getElementById("goal-tag");
-  tag.textContent = g.hit ? "🎯 meta de lucro batida" : KIND === "sim" ? "conta simulada" : "conta real";
+  tag.textContent = g.hit ? (g.rest ? "🎯 meta batida — bots descansando até amanhã" : "🎯 meta batida") : KIND === "sim" ? "conta simulada" : "conta real";
   tag.style.color = g.hit ? "var(--green)" : "";
   const card = (done, k, v, w, s) => `<div class="goal ${done ? "done" : ""}"><div class="k">${k}</div><div class="v">${v}</div>
     <div class="bar"><span style="width:${w}"></span></div><div class="s">${s}</div></div>`;
   setHTML("goals", [
-    card(g.hit, "💰 Lucro do dia", `${pnl(g.profit.done_usd)} <small>de +$${g.profit.target_usd.toFixed(2)} (${(g.profit.target_pct * 100).toFixed(1)}%)</small>`,
-         pctOf(g.profit.done_usd, g.profit.target_usd), `limite de perda do dia: −$${Math.abs(g.loss_limit_usd).toFixed(2)} (kill switch)`),
+    card(g.hit, "💰 Ganho do dia (com posições abertas)", `${pnl(g.day_gain_usd)} <small>de +$${g.profit.target_usd.toFixed(2)} (${(g.profit.target_pct * 100).toFixed(1)}%)</small>`,
+         pctOf(g.day_gain_usd, g.profit.target_usd), `${g.rest ? "ao bater a meta os bots param de comprar até amanhã · " : ""}trades fechados ${pnl(g.profit.done_usd)} · perda máx. −$${Math.abs(g.loss_limit_usd).toFixed(2)}`),
     card(g.trades.done >= g.trades.target, "🔁 Trades abertos hoje", `${g.trades.done} <small>de ${g.trades.target}</small>`,
          pctOf(g.trades.done, g.trades.target), `${g.trades.closed} fechados · ${g.trades.wins} com lucro · sem limite baixo: até ${a.coffee_until ? 24 : 12}/dia com sinal válido`),
     card(g.analyses.done >= g.analyses.target_so_far, "🔍 Análises (ciclos) hoje", `${g.analyses.done} <small>de ${g.analyses.target_so_far} até agora</small>`,

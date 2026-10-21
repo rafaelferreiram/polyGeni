@@ -538,7 +538,8 @@ def goals(eng) -> dict:
                        "closed": today.get("trades", 0) or 0, "wins": today.get("wins", 0) or 0},
             "analyses": {"target_so_far": cycles_target, "done": today.get("cycles", 0) or 0},
             "loss_limit_usd": round(-start * cfg.LIVE_MAX_DAILY_LOSS_PCT, 2),
-            "hit": pnl >= target_usd > 0}
+            "hit": eng._goal_hit(eng.portfolio()), "rest": cfg.DAILY_GOAL_REST,
+            "day_gain_usd": round(eng.portfolio().equity - start, 4)}
 
 
 def _market_temp() -> dict:
