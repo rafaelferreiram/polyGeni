@@ -169,6 +169,26 @@
       <div class="feed" id="live-feed" style="max-height:160px"></div>
     </section>
 
+    <section class="panel" id="sim">
+      <h2><span>Simulação da conta real <span class="tag">dinheiro falso · preços reais da Hyperliquid</span></span>
+        <span class="ctrls">
+          <span class="pill" id="sim-mode">–</span>
+          <button id="btn-sim-scan" onclick="simScan(this)">🔍 Analisar agora</button>
+          <button id="btn-sim-run" onclick="simToggle(this)">Pausar</button>
+        </span></h2>
+      <p class="note">O que a conta real faria com <b id="sim-start">$20</b>: mesmos mercados, mesmos limites ($12 por posição, 1x, stop obrigatório) e o mesmo modo de decisão — mas sem dinheiro real. Fills simulados no order book real.</p>
+      <div class="live-grid">
+        <div><div class="l">Saldo simulado</div><div class="v" id="sim-eq">–</div><div class="s" id="sim-cash">–</div></div>
+        <div><div class="l">Lucro</div><div class="v" id="sim-pnl">–</div><div class="s" id="sim-vs">–</div></div>
+        <div><div class="l">Posição aberta</div><div class="v" id="sim-pos">–</div><div class="s" id="sim-pos-s">–</div></div>
+        <div><div class="l">Trades · acerto</div><div class="v" id="sim-trades">–</div><div class="s" id="sim-cycle">–</div></div>
+      </div>
+      <div class="two">
+        <div class="feed" id="sim-feed" style="max-height:220px"></div>
+        <div class="tbl" style="max-height:220px"><table id="sim-trades-t"></table></div>
+      </div>
+    </section>
+
     <section class="kpis">
       <div class="kpi"><div class="l">Património (simulado)</div><div class="v" id="k-equity">–</div><div class="s" id="k-cash">–</div></div>
       <div class="kpi"><div class="l">Lucro total</div><div class="v" id="k-pnl">–</div><div class="s" id="k-pnl-s">–</div></div>
@@ -264,6 +284,6 @@
   </main>
 
   <script src="/static/chart.min.js"></script>
-  <script src="/static/paper.js?v=7"></script>
+  <script src="/static/paper.js?v=8"></script>
 </body>
 </html>

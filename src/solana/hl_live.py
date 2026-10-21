@@ -340,6 +340,57 @@ def get_live_engine() -> PaperEngine:
     return _live
 
 
+_shadow: PaperEngine | None = None
+
+
+def get_shadow_engine() -> PaperEngine:
+    """'What would the real account do?': identical limits, markets and decision mode, but fills are simulated
+    on real Hyperliquid MAINNET order books with fake money (SHADOW_START_USDC)."""
+    global _shadow
+    if _shadow is None:
+        ledger = Ledger(cfg.SHADOW_DB_PATH, cfg.SHADOW_START_USDC)
+        from src.solana.engine import bench_prices
+        _shadow = PaperEngine(
+            ledger, [hl.HyperliquidScout(cfg.HL_LIVE_MARKETS)], _NoSafety(), default_strategies(), DebateAgent(),
+            _risk(), ExecutorAgent(hl.HyperliquidPaperBroker(ledger)), candles_fn={hl.VENUE: hl.candles},
+            profiles={hl.VENUE: {"max_pos_pct": 1.0, "stop_mult": cfg.MARKET_PROFILES.get(hl.VENUE, {}).get("stop_mult", 1.5)}},
+            llm=LLMDecider(), bench_fn=bench_prices,
+        )
+        if ledger.get_state("running") is None:
+            ledger.set_state("running", True)
+    return _shadow
+
+
+def shadow_cycle() -> dict | None:
+    eng = get_shadow_engine()
+    if not eng.ledger.get_state("running", False):
+        return None
+    live = get_live_engine()
+    # mirror the real account's decision mode and model
+    mode = live.decision_mode()
+    if mode == "llm" and not (eng.llm and eng.llm.enabled):
+        mode = "rules"
+    eng.ledger.set_state("decision_mode", mode)
+    eng.llm.model = live.llm.model
+    return eng.run_cycle()
+
+
+def shadow_status() -> dict:
+    from src.api.paper_routes import performance
+    eng = get_shadow_engine()
+    led = eng.ledger
+    p = eng.portfolio()
+    trades = led.closed_trades()
+    return {"mode": "PAPER", "running": led.get_state("running", False), "scanning": eng.scanning(),
+            "decision_mode": eng.decision_mode(), "model": eng.llm.model if eng.llm else None,
+            "start_usdc": cfg.SHADOW_START_USDC, "equity": round(p.equity, 4), "cash": round(p.cash, 4),
+            "exposure": round(p.exposure, 4), "pnl_usd": round(p.equity - led.contributed(), 4),
+            "performance": performance(led.equity_history(100_000)), "positions": led.positions(),
+            "trades": trades[:50], "win_rate": round(sum(t["pnl_usd"] > 0 for t in trades) / len(trades), 3) if trades else None,
+            "decisions": led.decisions(15), "last_cycle": led.get_state("last_cycle"), "cycle": eng.cycle,
+            "kill_switch": eng.kill_switch()}
+
+
 def _broker(eng: PaperEngine) -> HyperliquidLiveBroker:
     return eng.executor._b(hl.VENUE)
 
@@ -350,6 +401,10 @@ def schedule():
     sch = paper_engine.scheduler()
     if sch.get_job("live_cycle") is None:
         sch.add_job(live_cycle, "interval", seconds=cfg.LIVE_CYCLE_SEC, id="live_cycle", max_instances=1, coalesce=True)
+    if sch.get_job("shadow_cycle") is None:
+        from datetime import datetime
+        sch.add_job(shadow_cycle, "interval", seconds=cfg.LIVE_CYCLE_SEC, id="shadow_cycle", max_instances=1,
+                    coalesce=True, next_run_time=datetime.now())
 
 
 def is_armed() -> bool:

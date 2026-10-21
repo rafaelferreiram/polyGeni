@@ -466,3 +466,28 @@ def live_model(req: LiveModel):
     eng.ledger.set_state("live_model", req.model)
     eng.ledger.log_decision("mode", reason=f"real account decisions by {req.model}")
     return {"live_model": req.model}
+
+
+# ─── simulation of the real account (fake money, real mainnet prices, same limits as live) ───
+
+@router.get("/shadow")
+def shadow():
+    from src.solana import hl_live
+    return hl_live.shadow_status()
+
+
+@router.post("/shadow", dependencies=LOCAL)
+def shadow_toggle(req: Toggle):
+    from src.solana import hl_live
+    hl_live.get_shadow_engine().ledger.set_state("running", req.on)
+    return {"running": req.on}
+
+
+@router.post("/shadow/scan", dependencies=LOCAL)
+def shadow_scan():
+    from src.solana import hl_live
+    eng = hl_live.get_shadow_engine()
+    if eng.scanning():
+        return {"started": False}
+    threading.Thread(target=hl_live.shadow_cycle, daemon=True).start()
+    return {"started": True}

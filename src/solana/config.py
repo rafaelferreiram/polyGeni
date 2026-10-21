@@ -110,3 +110,7 @@ HL_LIVE_MARKETS = [m for m in os.getenv("HL_LIVE_MARKETS", "BTC,ETH,SOL,xyz:GOLD
 ARENA_MODELS = [m for m in os.getenv("ARENA_MODELS", "claude-opus-5-5,claude-sonnet-5-5,claude-haiku-5-5").split(",") if m]
 ARENA_START_USDC = _f("ARENA_START_USDC", 100.0)
 ARENA_CYCLE_SEC = _i("ARENA_CYCLE_SEC", 900)
+
+# ─── Simulation of the real account: same limits/markets as live, real mainnet books, fake money ───
+SHADOW_DB_PATH = os.getenv("SHADOW_DB_PATH", "./shadow.db")
+SHADOW_START_USDC = _f("SHADOW_START_USDC", 20.0)

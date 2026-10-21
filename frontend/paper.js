@@ -468,3 +468,46 @@ function setLiveModel(sel) {
 
 safe(loadArena);
 setInterval(() => safe(loadArena), 10000);
+
+// ─── simulation of the real account ───
+let lastSim = null;
+async function loadSim() {
+  const s = await api("/shadow");
+  lastSim = s;
+  document.getElementById("sim-start").textContent = usd(s.start_usdc, 0);
+  const mode = document.getElementById("sim-mode");
+  mode.textContent = s.decision_mode === "llm" ? `🧠 ${s.model}` : "Regras";
+  document.getElementById("sim-eq").textContent = usd(s.equity);
+  document.getElementById("sim-cash").textContent = `cash ${usd(s.cash)} · em posição ${usd(s.exposure)}`;
+  document.getElementById("sim-pnl").innerHTML = pnl(s.pnl_usd);
+  const all = s.performance?.all;
+  document.getElementById("sim-vs").textContent = all ? `${pct(all.twr)} vs segurar BTC ${pct(all.hold_btc)}` : "";
+  const p = s.positions[0];
+  document.getElementById("sim-pos").textContent = p ? p.symbol : "nenhuma";
+  document.getElementById("sim-pos-s").innerHTML = p ? `${usd(p.cost_usd)} → ${usd(p.mark_value)} · stop ${Number(p.stop_price).toPrecision(5)} / alvo ${Number(p.tp_price).toPrecision(5)}` : "à espera de um sinal";
+  document.getElementById("sim-trades").textContent = `${s.trades.length} · ${s.win_rate === null ? "–" : pct(s.win_rate)}`;
+  const lc = s.last_cycle;
+  document.getElementById("sim-cycle").textContent = s.scanning ? "🔍 a analisar agora…" : lc ? `último ciclo #${lc.cycle} há ${ago(lc.finished)}` : "ainda sem ciclos";
+  const runBtn = document.getElementById("btn-sim-run");
+  if (!runBtn.classList.contains("busy")) runBtn.textContent = s.running ? "Pausar" : "Retomar";
+  const scanBtn = document.getElementById("btn-sim-scan");
+  if (!scanBtn.classList.contains("busy")) scanBtn.disabled = s.scanning;
+  document.getElementById("sim-feed").innerHTML = (lc ? `<div class="fi"><span class="w">${ago(lc.finished)}</span><span>⚙️ Ciclo #${lc.cycle}: ${lc.candidates} mercados, ${lc.signals} sinais, ${lc.entries} compras</span></div>` : "") +
+    s.decisions.map((d) => `<div class="fi"><span class="w">${ago(d.ts)}</span><span><span class="k-${esc(d.kind)}">${KIND[d.kind] || esc(d.kind)}</span> <b>${esc(d.symbol || "")}</b> — ${esc(d.reason)}</span></div>`).join("");
+  table("sim-trades-t", ["Ativo", "Entrada → saída", "Lucro"], s.trades.map((t) => `
+    <tr><td><b>${esc(t.symbol)}</b><br><span class="muted">${time(t.exit_ts)}</span></td>
+    <td>${Number(t.entry_price).toPrecision(6)} → ${Number(t.exit_price).toPrecision(6)}</td>
+    <td>${pnl(t.pnl_usd)}<br><span class="muted">${pct(t.pnl_pct)}</span></td></tr>`));
+}
+function simScan(btn) {
+  run(btn, "A pedir análise…", async () => { const r = await api("/shadow/scan", "POST"); setTimeout(() => safe(loadSim), 1500); return r; },
+      (r) => (r.started ? "🔍 Simulação a analisar o mercado agora" : "Já está uma análise a correr"));
+}
+function simToggle(btn) {
+  const on = !lastSim?.running;
+  run(btn, on ? "A retomar…" : "A pausar…", async () => { await api("/shadow", "POST", { on }); await loadSim(); },
+      on ? "▶ Simulação a correr (a cada 5 min)" : "⏸ Simulação pausada");
+}
+safe(loadSim);
+setInterval(() => safe(loadSim), 5000);
+
