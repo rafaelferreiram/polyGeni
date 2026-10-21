@@ -501,6 +501,41 @@ def _broker(eng: PaperEngine) -> HyperliquidLiveBroker:
     return eng.executor._b(hl.VENUE)
 
 
+_snap: dict = {}
+
+
+def live_snapshot(max_age_s: float = 5) -> dict:
+    """The real account straight from Hyperliquid (not the 5-minute ledger): collateral, every open position with its
+    live mark and unrealized P&L, the latest fills and the mid price of every coin the bots watch. Cached a few
+    seconds so dashboards polling it cost at most ~4 light info calls per 5s whatever the number of viewers."""
+    if _snap.get("at", 0) > time.time() - max_age_s:
+        return _snap["data"]
+    b = _broker(get_live_engine())
+    _, info = b._connect()
+    mids = {k: float(v) for k, v in info.all_mids().items() if not k.startswith("@")}
+    positions = []
+    for dex in ("", "xyz"):
+        for p in info.user_state(b.address, dex)["assetPositions"]:
+            q = p["position"]
+            if not float(q["szi"]):
+                continue
+            positions.append({"coin": q["coin"], "size": float(q["szi"]), "entry": float(q["entryPx"]),
+                              "mark": mids.get(q["coin"]), "value": float(q["positionValue"]),
+                              "upnl": float(q["unrealizedPnl"]), "roe": float(q["returnOnEquity"]),
+                              "liq": float(q["liquidationPx"]) if q.get("liquidationPx") else None,
+                              "lev": (q.get("leverage") or {}).get("value"),
+                              "funding": -float((q.get("cumFunding") or {}).get("sinceOpen") or 0)})
+    fills = [{"ts": f["time"] / 1000, "coin": f["coin"], "side": "compra" if f["side"] == "B" else "venda",
+              "px": float(f["px"]), "sz": float(f["sz"]), "usd": round(float(f["px"]) * float(f["sz"]), 4),
+              "fee": float(f.get("fee") or 0), "pnl": float(f.get("closedPnl") or 0), "dir": f.get("dir")}
+             for f in info.user_fills(b.address)[:30]]
+    data = {"ts": time.time(), "network": network(), "address": b.address, **b.balances(), "positions": positions,
+            "upnl": round(sum(p["upnl"] for p in positions), 4), "fills": fills,
+            "prices": {c: mids[c] for c in cfg.HL_LIVE_MARKETS if c in mids}}
+    _snap.update(at=time.time(), data=data)
+    return data
+
+
 def schedule():
     """Register the live job (a no-op while disarmed); safe to call more than once."""
     from src.solana import engine as paper_engine

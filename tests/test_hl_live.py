@@ -289,3 +289,38 @@ def test_real_account_refuses_short_orders(live):
     ledger, info, ex, br = live
     with pytest.raises(RuntimeError, match="short"):
         br.buy("x", "hl:BTC~short", "BTC", 12, strategy="short", stop_price=1, tp_price=2)
+
+
+def test_live_snapshot_maps_exchange_state(monkeypatch):
+    from src.solana import hl_live
+
+    class Info:
+        def all_mids(self):
+            return {"BTC": "100000", "@1": "1"}
+
+        def user_state(self, addr, dex=""):
+            if dex:
+                return {"assetPositions": []}
+            return {"assetPositions": [{"position": {"coin": "BTC", "szi": "0.0001", "entryPx": "99000", "positionValue": "10",
+                                                     "unrealizedPnl": "0.1", "returnOnEquity": "0.02", "liquidationPx": "50000",
+                                                     "leverage": {"value": 2}, "cumFunding": {"sinceOpen": "0.001"}}}]}
+
+        def user_fills(self, addr):
+            return [{"time": 1_000_000, "coin": "BTC", "side": "B", "px": "99000", "sz": "0.0001", "fee": "0.004", "closedPnl": "0"}]
+
+    class B:
+        address = "0xabc"
+
+        def _connect(self):
+            return None, Info()
+
+        def balances(self):
+            return {"collateral": 35.0, "margin_used": 5.0, "available": 30.0}
+
+    monkeypatch.setattr(hl_live, "_broker", lambda eng: B())
+    monkeypatch.setattr(hl_live, "get_live_engine", lambda: None)
+    monkeypatch.setattr(hl_live, "_snap", {})
+    d = hl_live.live_snapshot()
+    [p] = d["positions"]
+    assert p["mark"] == 100000 and p["upnl"] == 0.1 and p["funding"] == -0.001 and d["upnl"] == 0.1
+    assert d["fills"][0]["side"] == "compra" and d["available"] == 30.0 and "@1" not in d["prices"]

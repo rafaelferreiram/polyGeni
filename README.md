@@ -522,7 +522,8 @@ polyGeni/
 ## Admin page
 
 `/admin` (link "📊 Admin" in the dashboard's top bar; data from `GET /api/paper/admin`, read-only, works remotely after
-login): money (real equity, contributions, profit, net after AI), AI spend (today/7d/month vs the monthly allowance, by
+login): **live from Hyperliquid every 10s** (`GET /api/paper/admin/live`, cached 5s: balance, margin, open positions with live
+mark, unrealized P&L, liquidation price and funding, the latest fills, and the price of every watched coin), money (real equity, contributions, profit, net after AI), AI spend (today/7d/month vs the monthly allowance, by
 model, by use, per day, per call, tokens), profit per trade for the real and simulation accounts and for every lab bot
 (win rate, expectancy, return per trade, profit factor, trades/day, AI cost, progress to the green light), and where to
 scale: recommendations, the "ready to add money?" checklist and a linear projection of monthly profit at $40/$100/$250/$500.

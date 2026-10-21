@@ -43,6 +43,13 @@
     .checks { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; margin-top: 12px; }
     .checks div { background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; font-size: 12.5px; }
     .note { color: var(--muted); font-size: 12.5px; }
+    .live { color: var(--green); font-size: 11px; vertical-align: middle; } .live.off { color: var(--red); }
+    .live.pulse { animation: pulse 1s ease-out; } @keyframes pulse { 0% { opacity: .2; } 100% { opacity: 1; } }
+    .prices { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 6px; max-height: 360px; overflow-y: auto; }
+    .prices div { background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 6px 9px; font-size: 12.5px;
+      display: flex; justify-content: space-between; gap: 6px; transition: background .6s; font-variant-numeric: tabular-nums; }
+    .prices div.up { background: rgba(52,211,153,.18); } .prices div.down { background: rgba(248,113,113,.18); }
+    @media (prefers-reduced-motion: reduce) { .live.pulse { animation: none; } .prices div { transition: none; } }
     .empty { color: var(--muted); padding: 12px 0; }
     #acc-real td, #acc-sim td { white-space: normal; }
     @media (max-width: 900px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .two { grid-template-columns: 1fr; } }
@@ -55,6 +62,14 @@
 <body>
   <header><span><b>Kairos · Admin</b><small id="ts">carregando…</small></span><a href="/">← Painel</a></header>
   <main>
+    <h3 class="band">Ao vivo na Hyperliquid <span class="live" id="live-dot">●</span> <small class="muted" id="live-ts" style="text-transform:none;letter-spacing:0;font-weight:500"></small></h3>
+    <section class="kpis" id="live-kpis"></section>
+    <section class="panel"><h2>Posições abertas (preço ao vivo)</h2><div class="tbl"><table id="live-pos"></table></div></section>
+    <div class="two">
+      <section class="panel"><h2>Últimas execuções na corretora</h2><div class="tbl" style="max-height:360px;overflow-y:auto"><table id="live-fills"></table></div></section>
+      <section class="panel"><h2>Preço das moedas</h2><div class="prices" id="live-prices"></div></section>
+    </div>
+
     <h3 class="band">Dinheiro</h3>
     <section class="kpis" id="money"></section>
 
@@ -85,6 +100,6 @@
     </div>
     <section class="panel"><h2>Bots no laboratório</h2><div class="tbl"><table id="lab"></table></div></section>
   </main>
-  <script src="/static/admin.js?v=1"></script>
+  <script src="/static/admin.js?v=2"></script>
 </body>
 </html>
