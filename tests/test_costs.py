@@ -65,3 +65,18 @@ def test_net_profit_subtracts_ai_and_server(ledger, book, monkeypatch):
     eng.ledger.move_cash("deposit", 0.000001)               # contributed stays ~100
     p = profit(eng)
     assert p["ai_all"] == pytest.approx(0.60) and p["net_all"] == pytest.approx(p["trading_all"] - 0.60)
+
+
+def test_ai_allowance_grows_only_with_real_profit(monkeypatch):
+    from src.solana import costs, config as cfg
+    monkeypatch.setattr(cfg, "AI_BASE_MONTHLY_USD", 1.5)
+    monkeypatch.setattr(cfg, "AI_PROFIT_SHARE", 0.25)
+    monkeypatch.setattr(cfg, "LLM_MONTHLY_BUDGET_USD", 5.0)
+    monkeypatch.setattr(costs, "real_profit_month", lambda: 0.0)
+    assert costs.allowance() == 1.5
+    monkeypatch.setattr(costs, "real_profit_month", lambda: -3.0)    # losses never raise it
+    assert costs.allowance() == 1.5
+    monkeypatch.setattr(costs, "real_profit_month", lambda: 8.0)     # +$8 trading → +$2 for AI
+    assert costs.allowance() == 3.5
+    monkeypatch.setattr(costs, "real_profit_month", lambda: 100.0)   # hard cap
+    assert costs.allowance() == 5.0

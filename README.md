@@ -177,7 +177,10 @@ stop/target orders); for true 24/7 use a small cloud server. The agent runs from
 ### Profitability guards — the AI must earn more than it costs
 - **Real cost per call** (`costs.py`, `costs.db`): priced from the usage each API response returns (tokens,
   cache, web searches at $10/1000) with the published per-model rates.
-- **Monthly budget** `LLM_MONTHLY_BUDGET_USD` (default $5): once spent, no AI call is made; the rules bot keeps going.
+- **AI pays for itself**: this month AI may spend `AI_BASE_MONTHLY_USD` ($1.50, to keep learning) + `AI_PROFIT_SHARE`
+  (25%) of the real account's trading profit this month, never more than `LLM_MONTHLY_BUDGET_USD` ($5). Over it, AI
+  calls stop and the free rule bots keep trading. Web search is off (`LLM_WEB_SEARCHES=0`), coins already held are not
+  re-analysed, and the debate reviews each signal once per candle.
 - **Pre-filter** `LLM_PREFILTER=1`: the AI is only asked when there is a dip inside an uptrend; otherwise HOLD for $0.
 - **Auto-pause**: an AI bot whose cost exceeds its lab gains by `LLM_BOT_MAX_NET_LOSS_USD` stops; AI bots reach the
   real wallet only when profitable *after* their AI cost.

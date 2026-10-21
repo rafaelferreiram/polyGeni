@@ -155,6 +155,12 @@ SHADOW_START_USDC = _f("SHADOW_START_USDC", 20.0)
 # ─── Profitability guards: AI must earn more than it costs ───
 COSTS_DB_PATH = os.getenv("COSTS_DB_PATH", "./costs.db")
 LLM_MONTHLY_BUDGET_USD = _f("LLM_MONTHLY_BUDGET_USD", 5.0)      # hard cap on AI spend per calendar month
+# AI must pay for itself: this month it may spend AI_BASE_MONTHLY_USD (to keep learning) plus AI_PROFIT_SHARE of the
+# real account's trading profit this month, never more than LLM_MONTHLY_BUDGET_USD. Over it, only rule bots trade.
+AI_BASE_MONTHLY_USD = _f("AI_BASE_MONTHLY_USD", 1.5)
+AI_PROFIT_SHARE = _f("AI_PROFIT_SHARE", 0.25)
+# web search inflates every call (search results + $0.01/search); off unless it proves worth it
+LLM_WEB_SEARCHES = _i("LLM_WEB_SEARCHES", 0)
 LLM_PREFILTER = os.getenv("LLM_PREFILTER", "1") == "1"           # ask the AI only when there is a real setup
 LLM_BOT_MAX_NET_LOSS_USD = _f("LLM_BOT_MAX_NET_LOSS_USD", 1.0)   # pause an AI bot whose cost exceeds its gains by this
 VPS_MONTHLY_USD = _f("VPS_MONTHLY_USD", 0.0)                     # server cost, counted in net profit

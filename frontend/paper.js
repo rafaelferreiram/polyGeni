@@ -430,7 +430,8 @@ function renderProfit(P) {
   const bar = document.getElementById("budget-bar");
   bar.style.width = `${(used * 100).toFixed(1)}%`;
   bar.className = used >= 1 ? "full" : used > 0.8 ? "warn" : "";
-  document.getElementById("budget-note").innerHTML = `Orçamento de IA este mês: <b>${usd(P.ai_month)}</b> de ${usd(P.ai_budget)}${used >= 1 ? " — esgotado: só o bot de Regras (grátis) trabalha" : ""}`;
+  document.getElementById("budget-note").innerHTML = `IA este mês: <b>${usd(P.ai_month)}</b> de ${usd(P.ai_budget)} permitidos
+    <span title="A IA só gasta o que o trading paga: base de ${usd(P.ai_base)} para aprender + ${(P.ai_share * 100).toFixed(0)}% do lucro real do mês, até ${usd(P.ai_hard_cap)}.">(base ${usd(P.ai_base)} + ${(P.ai_share * 100).toFixed(0)}% do lucro ⓘ)</span>${used >= 1 ? " — <b>IA pausada</b>: os bots de regras (grátis) continuam" : ""}`;
 }
 
 function renderFoot() {

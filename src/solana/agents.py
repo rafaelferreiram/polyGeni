@@ -181,7 +181,7 @@ def anthropic_llm(prompt: str, system: str = DEBATE_SYSTEM, max_searches: int = 
     # dynamic-filtering web search only on Opus/Sonnet; server-side refusal fallback not on Haiku
     dynamic_search = model.startswith(("claude-opus", "claude-sonnet"))
     tools = [{"type": "web_search_20260209" if dynamic_search else "web_search_20250305", "name": "web_search",
-              "max_uses": max_searches}]
+              "max_uses": max_searches}] if max_searches > 0 else []
     kwargs, betas = {}, []
     if model in ("claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5"):
         kwargs["fallbacks"] = "default"
@@ -214,7 +214,7 @@ class DebateAgent:
 
     def __init__(self, llm_fn=None, enabled: bool | None = None):
         self.enabled = bool(cfg.ANTHROPIC_API_KEY) if enabled is None else enabled
-        self.llm_fn = llm_fn or (lambda prompt: anthropic_llm(prompt, who="debate"))
+        self.llm_fn = llm_fn or (lambda prompt: anthropic_llm(prompt, who="debate", max_searches=cfg.LLM_WEB_SEARCHES))
 
     def review(self, c: Candidate, sig: Signal, context: dict) -> Vote:
         if not self.enabled:

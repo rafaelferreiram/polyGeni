@@ -68,7 +68,7 @@ class LLMDecider:
         self.model = model or cfg.DEBATE_MODEL
         self.router = router            # market -> model chosen by the coordinator (None = always self.model)
         self.name = "llm"
-        self.llm_fn = llm_fn or (lambda prompt, system: anthropic_llm(prompt, system=system, max_searches=2,
+        self.llm_fn = llm_fn or (lambda prompt, system: anthropic_llm(prompt, system=system, max_searches=cfg.LLM_WEB_SEARCHES,
                                                                        model=self.model, who=self.name))
         self.entry_system, self.exit_system = entry_system, exit_system
         self._seen: dict[tuple, object] = {}     # (kind, market) -> last candle t already decided on

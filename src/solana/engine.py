@@ -403,7 +403,10 @@ class PaperEngine:
         # best opportunity first: with one slot, the deepest dip inside an uptrend gets it, not the first coin listed
         ready.sort(key=lambda r: _setup_rank(r[1]))
         self.ledger.set_state("market_temp", _market_temp(ready))
+        held = {x["mint"] for x in self.ledger.positions()}
         for c, candles, safety, profile in ready:
+            if c.mint in held:          # already holding it: its stop/target and exit review handle it — no AI tokens
+                continue
             for strat in self._ordered(c):
                 if hasattr(strat, "decide"):
                     if not strat.enabled:
@@ -437,10 +440,12 @@ class PaperEngine:
                     research_vote = self.research.vote(brief)
                     self._agent("research", last_reason=f"{c.symbol}: {research_vote.reason}",
                                 approved=int(research_vote.approve), vetoed=int(not research_vote.approve))
+                key = (c.mint, strat.name, candles[-1]["t"])     # one review per signal per candle, not every 5 min
+                debated = self.__dict__.setdefault("_debated", {})
                 debate = (Vote("debate", True, "skipped: the LLM already made this decision")
-                          if strat.name.startswith("llm") else
-                          self.debate.review(c, sig, {"closes_24h": closes, "safety": safety.detail,
-                                                      "research_brief": brief}))
+                          if strat.name.startswith("llm") else debated.get(key) or
+                          debated.setdefault(key, self.debate.review(c, sig, {"closes_24h": closes, "safety": safety.detail,
+                                                                                    "research_brief": brief})))
                 self._agent("debate", last_reason=f"{c.symbol}: {debate.reason}",
                             approved=int(debate.approve), vetoed=int(not debate.approve))
                 p = self.portfolio()

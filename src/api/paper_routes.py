@@ -519,7 +519,8 @@ def profit(eng) -> dict:
     return {"trading_30d": round(trade_30, 4), "ai_30d": round(ai_30, 4), "server_30d": round(vps_30, 4),
             "net_30d": round(net_30, 4), "trading_all": round(trade_all, 4), "ai_all": round(ai_all, 4),
             "server_all": round(vps_all, 4), "net_all": round(net_all, 4),
-            "ai_month": round(b.month_spent(), 4), "ai_budget": cfg.LLM_MONTHLY_BUDGET_USD, "ai_calls_30d": b.calls(30),
+            "ai_month": round(b.month_spent(), 4), "ai_budget": round(costs.allowance(), 4), "ai_hard_cap": cfg.LLM_MONTHLY_BUDGET_USD,
+            "ai_base": cfg.AI_BASE_MONTHLY_USD, "ai_share": cfg.AI_PROFIT_SHARE, "ai_calls_30d": b.calls(30),
             "prefilter": cfg.LLM_PREFILTER,
             "verdict": "sem dados ainda" if not (ai_all or trade_all) else ("dando lucro" if net_all > 0 else "dando prejuízo")}
 
