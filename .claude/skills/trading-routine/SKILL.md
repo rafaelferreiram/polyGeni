@@ -1,12 +1,12 @@
 ---
 name: trading-routine
-description: Morning and evening review of the polyGeni trading bots (Hyperliquid real account + simulation + AI lab) — what traded, what went well or badly, wins/losses and net profit after AI costs, today's projection, market setups and concrete improvement proposals, written in Portuguese to reports/routines/. Use whenever the user asks for the "rotina", "relatório da manhã/noite", "como foram os trades", "balanço do dia", "projeção de hoje", or a scheduled morning/evening routine fires — even if they don't name the skill.
+description: Morning and evening review of the polyGeni trading bots (Hyperliquid real account + simulation + AI lab) — what traded, what went well or badly, wins/losses and net profit after AI costs, today's projection, market setups and concrete improvement proposals, written in Brazilian Portuguese (pt-BR) to reports/routines/. Use whenever the user asks for the "rotina", "relatório da manhã/noite", "como foram os trades", "balanço do dia", "projeção de hoje", or a scheduled morning/evening routine fires — even if they don't name the skill.
 ---
 
 # Rotina de trading (manhã / noite)
 
 Goal: in 2 minutes of reading, the user knows whether the bots are healthy, whether they are making or losing
-money after every cost, why, and what (if anything) should change. Plain Portuguese, no jargon without a gloss.
+money after every cost, why, and what (if anything) should change. Plain Brazilian Portuguese (pt-BR, not pt-PT: "analisando", "equipe", "você"), no jargon without a gloss.
 The user is proving with ~$18 of real money that the system works before scaling — honesty beats optimism.
 
 ## 1. Get the data (one command)
@@ -28,6 +28,23 @@ If `server` is OFFLINE, that is the headline: the bots are not trading. Tell the
 
 For a single trade or decision that needs more detail you can also read
 `GET http://127.0.0.1:8000/api/paper/account?kind=real` directly. Do not call POST endpoints.
+
+### Market context from CoinMarketCap (MCP)
+
+If the CoinMarketCap connector is available, also call, in parallel:
+- `get_global_metrics_latest` — Fear & Greed, BTC dominance, altcoin-season index, average funding, open interest,
+  liquidations. Use it to frame the day: fear + falling prices = dips are more likely (our strategy buys dips in
+  uptrends); extreme greed + rising funding = crowded longs, expect fewer clean entries.
+- `get_crypto_quotes_latest` for the markets the bots trade (ids via `search_cryptos`; common ones: BTC 1, ETH 1027,
+  XRP 52, BNB 1839, SOL 5426, DOGE 74, ADA 2010, TRX 1958, HBAR 4642, LINK 1975, AVAX 5805, XLM 512, SUI 20947,
+  BCH 1831, LTC 2, DOT 6636, UNI 7083, NEAR 6535, AAVE 7278, ZEC 1437, XMR 328, HYPE 32196, TAO 22974, ONDO 21159,
+  ENA 30171, WLD 13502, ARB 11841) — 24h/7d moves and volume, to spot which coins are pulling back.
+- `get_crypto_latest_news` only for a coin the bots traded or that is close to a buy signal, to explain a move.
+- `trending_crypto_narratives` once a day (morning) — which sectors are moving.
+
+Cite which numbers came from CoinMarketCap. If the connector fails, say so in one line and continue with the snapshot.
+These are context for the report and for proposals (e.g. "add coin X to `HL_BROAD`"); the bots themselves trade only
+on Hyperliquid's own prices and rules.
 
 ## 2. Analyse
 
@@ -71,7 +88,7 @@ Save to `reports/routines/YYYY-MM-DD-manha.md` or `-noite.md` (local date; morni
 ## Estado dos bots
 ## Trades das últimas 24h  (o que foi bom / o que foi ruim)
 ## Ganhos e perdas  (hoje · 7 dias · total · líquido após IA)
-## Mercado agora e projeção do dia
+## Mercado agora e projeção do dia  (inclui o contexto do CoinMarketCap: medo/ganância, dominância do BTC, moedas em queda)
 ## Melhorias propostas  (precisam da tua aprovação)
 ## Atenção  (only if something needs action now)
 ```

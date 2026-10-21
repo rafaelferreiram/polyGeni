@@ -79,9 +79,11 @@ HL_ENABLED = os.getenv("HL_ENABLED", "1") == "1"
 # crypto first (more volatility); gold/silver are opt-in with HL_INCLUDE_METALS=1
 HL_INCLUDE_METALS = os.getenv("HL_INCLUDE_METALS", "0") == "1"
 _METALS = ["xyz:GOLD", "xyz:SILVER"] if HL_INCLUDE_METALS else []
-# broad, liquid crypto set (by Hyperliquid volume, ≥ 208 days of history) for simulation, lab and real account:
-# the bots scan all of it every cycle and take the best setup; risk limits are per position, not per coin
-HL_BROAD = "BTC,ETH,SOL,HYPE,XRP,BNB,DOGE,ADA,AVAX,LINK,LTC,SUI,NEAR,AAVE,UNI,ARB,TAO,ZEC,XMR,WLD,ENA,ZRO,ONDO,kPEPE"
+# broad crypto set for simulation, lab and real account: CoinMarketCap top-50 by market cap plus Hyperliquid's most
+# traded perps, each listed on Hyperliquid with ≥ 208 days of history and ≥ $1M daily volume (checked 2026-10-21).
+# The bots scan all of it every cycle and take the best setup; risk limits are per position, not per coin.
+HL_BROAD = ("BTC,ETH,SOL,HYPE,XRP,BNB,DOGE,ADA,TRX,AVAX,LINK,LTC,BCH,XLM,HBAR,DOT,SUI,NEAR,AAVE,UNI,ARB,TAO,ZEC,XMR,"
+            "WLD,ENA,ZRO,ONDO,kPEPE")
 HL_MARKETS = [m for m in os.getenv("HL_MARKETS", HL_BROAD).split(",") if m] + _METALS
 HL_ALLOW_SHORT = False  # long-only in phase 1
 
