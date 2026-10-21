@@ -74,6 +74,43 @@ function render(d) {
     }).join(""));
 }
 
+// ─── live: the real account straight from Hyperliquid, every 10s ───
+const fmtPx = (v) => (v == null ? "–" : v >= 1000 ? v.toLocaleString("pt-BR", { maximumFractionDigits: 1 }) : v >= 1 ? v.toFixed(3) : v.toPrecision(4));
+let lastPrices = {};
+function renderLive(d) {
+  const dot = document.getElementById("live-dot");
+  dot.className = "live pulse";
+  void dot.offsetWidth;                       // restart the pulse
+  document.getElementById("live-ts").textContent = `${d.network} · ${new Date(d.ts * 1000).toLocaleTimeString("pt-BR", { timeZone: "Europe/Lisbon" })}`;
+  set("live-kpis", kpi("Saldo na corretora", usd(d.collateral), `livre ${usd(d.available)}`) +
+    kpi("Margem em uso", usd(d.margin_used), `${d.positions.length} posições`) +
+    kpi("Resultado aberto", pnl(d.upnl), "lucro/prejuízo não realizado") +
+    kpi("Valor das posições", usd(d.positions.reduce((s, p) => s + p.value, 0)), "a preço de agora"));
+  set("live-pos", `<tr><th>Moeda</th><th class="n">Qtd</th><th class="n">Entrada</th><th class="n">Agora</th><th class="n">Valor</th>
+    <th class="n">Resultado</th><th class="n">%</th><th class="n">Liquidação</th><th class="n">Funding</th></tr>` +
+    (d.positions.length ? d.positions.map((p) => `<tr><td><b>${esc(p.coin)}</b> <span class="muted">${p.lev}x</span></td><td class="n">${p.size}</td>
+      <td class="n">${fmtPx(p.entry)}</td><td class="n">${fmtPx(p.mark)}</td><td class="n">${usd(p.value)}</td><td class="n">${pnl(p.upnl, 3)}</td>
+      <td class="n ${p.roe >= 0 ? "green" : "red"}">${(p.roe * 100).toFixed(2)}%</td><td class="n muted">${fmtPx(p.liq)}</td><td class="n">${pnl(p.funding, 4)}</td></tr>`).join("")
+      : `<tr><td class="empty" colspan="9">Nenhuma posição aberta.</td></tr>`));
+  set("live-fills", `<tr><th>Quando</th><th>Moeda</th><th>Lado</th><th class="n">Preço</th><th class="n">Valor</th><th class="n">Taxa</th><th class="n">Lucro</th></tr>` +
+    d.fills.map((f) => `<tr><td class="muted">${new Date(f.ts * 1000).toLocaleString("pt-BR", { timeZone: "Europe/Lisbon", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</td>
+      <td><b>${esc(f.coin)}</b></td><td class="${f.side === "compra" ? "" : "yellow"}">${f.side}</td><td class="n">${fmtPx(f.px)}</td><td class="n">${usd(f.usd)}</td>
+      <td class="n muted">${usd(f.fee, 4)}</td><td class="n">${f.pnl ? pnl(f.pnl, 3) : "–"}</td></tr>`).join(""));
+  set("live-prices", Object.entries(d.prices).map(([c, v]) => {
+    const was = lastPrices[c], cls = was == null || was === v ? "" : v > was ? "up" : "down";
+    return `<div class="${cls}"><b>${esc(c)}</b><span>${fmtPx(v)}</span></div>`;
+  }).join(""));
+  lastPrices = d.prices;
+}
+async function loadLive() {
+  const res = await fetch("/api/paper/admin/live");
+  if (res.status === 401) { location.href = "/login"; return; }
+  if (!res.ok) { document.getElementById("live-dot").className = "live off"; document.getElementById("live-ts").textContent = "sem conexão com a Hyperliquid"; return; }
+  renderLive(await res.json());
+}
+loadLive().catch(() => {});
+setInterval(() => loadLive().catch(() => {}), 10000);
+
 async function load() {
   const res = await fetch("/api/paper/admin");
   if (res.status === 401) { location.href = "/login"; return; }

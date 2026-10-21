@@ -949,6 +949,16 @@ def admin():
                       "scenarios": scen, "confidence": conf, "advice": advice}}
 
 
+@router.get("/admin/live")
+def admin_live():
+    """Real account as Hyperliquid sees it right now (balance, positions, fills, prices), refreshed every ~10s."""
+    from src.solana import hl_live
+    try:
+        return hl_live.live_snapshot()
+    except Exception as e:
+        raise HTTPException(503, f"Hyperliquid indisponível: {str(e)[:120]}")
+
+
 @router.get("/account/confidence")
 def account_confidence(kind: str = "real"):
     return confidence(_account_engine(kind))
