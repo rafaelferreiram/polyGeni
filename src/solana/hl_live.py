@@ -505,6 +505,15 @@ def schedule():
     if sch.get_job("live_cycle") is None:   # first run right after a (re)start, not 5 min later
         sch.add_job(live_cycle, "interval", seconds=cfg.LIVE_CYCLE_SEC, id="live_cycle", max_instances=1, coalesce=True,
                     next_run_time=datetime.now() + timedelta(seconds=20))
+    if sch.get_job("training") is None:      # training center: one sample per coin per closed candle, outcomes later
+        from src.solana import trainer
+
+        def training_job():
+            if not trainer.stats()["samples"]:
+                trainer.backfill()
+            trainer.run_once()
+        sch.add_job(training_job, "interval", seconds=300, id="training", max_instances=1, coalesce=True,
+                    next_run_time=datetime.now() + timedelta(seconds=60))
     if sch.get_job("daily_report") is None:
         sch.add_job(write_daily_reports, "cron", hour=23, minute=55, id="daily_report", coalesce=True)
     if sch.get_job("shadow_cycle") is None:

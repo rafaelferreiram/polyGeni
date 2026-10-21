@@ -932,6 +932,27 @@ async function loadHistory() {
 safe(loadHistory);
 setInterval(() => safe(loadHistory), 30000);
 
+// ─── training center: virtual trades and what they teach ───
+async function loadTraining() {
+  const t = await api("/training");
+  document.getElementById("train-tag").textContent = `${t.samples} exemplos · ${t.resolved} com resultado`;
+  const L = t.lessons || [];
+  const best = [...L].sort((a, b) => b.long_win - a.long_win)[0], worst = [...L].sort((a, b) => a.long_win - b.long_win)[0];
+  const card = (k, v, s) => `<div class="goal"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`;
+  setHTML("train-kpis", [
+    card("Exemplos de treino", t.samples, "1 por moeda por vela de 1h"),
+    card("Com resultado", t.resolved, "já passaram 24h"),
+    best ? card("Melhor situação p/ comprar", `${pct(best.long_win)}`, `${esc(best.tag)} · ${best.n} casos`) : "",
+    worst ? card("Pior situação p/ comprar", `${pct(worst.long_win)}`, `${esc(worst.tag)} · ${worst.n} casos`) : "",
+  ].join(""));
+  table("train-table", ["Situação", "Casos", "Compra: alvo", "Compra: stop", "Short: alvo", "Retorno médio 24h"], L.map((x) => `<tr>
+    <td><b>${esc(x.tag)}</b></td><td>${x.n}</td><td class="${x.long_win >= 0.45 ? "green" : ""}">${pct(x.long_win)}</td>
+    <td class="${x.long_loss >= 0.55 ? "red" : ""}">${pct(x.long_loss)}</td><td>${pct(x.short_win)}</td>
+    <td>${x.avg_ret_24h >= 0 ? `<span class="green">+${x.avg_ret_24h}%</span>` : `<span class="red">${x.avg_ret_24h}%</span>`}</td></tr>`));
+}
+safe(loadTraining);
+setInterval(() => safe(loadTraining), 60000);
+
 // ─── confidence: is the real account proven enough to add money? ───
 async function loadConfidence() {
   const c = await api("/account/confidence?kind=real");

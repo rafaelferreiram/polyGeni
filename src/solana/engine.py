@@ -434,6 +434,8 @@ class PaperEngine:
         mt = _market_temp(ready)
         self.ledger.set_state("market_temp", mt)
         breadth = {k: mt.get(k) for k in ("n", "uptrend", "avg_rsi", "avg_ch24")}   # whole-market context for the AI
+        from src.solana import trainer
+        trainer.set_breadth(breadth)
         held = {x["mint"] for x in self.ledger.positions()}
         for c, candles, safety, profile in ready:
             if c.mint in held:          # already holding it: its stop/target and exit review handle it — no AI tokens

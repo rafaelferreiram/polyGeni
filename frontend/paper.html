@@ -411,7 +411,7 @@
     </div>
   </header>
   <div class="statusbar"><div class="sb-items" id="statusbar-items"></div>
-    <nav class="sb-nav" aria-label="Seções"><a href="#g-visao">Visão geral</a><a href="#posicoes">Posições</a><a href="#radar">Radar</a><a href="#grafico">Gráfico</a><a href="#baleias">Baleias</a><a href="#toptraders">Top traders</a><a href="#noticias">Notícias</a><a href="#team">Bots</a><a href="#logs">Logs</a><a href="#g-hist">Histórico</a><a href="#g-sist">Sistema</a></nav></div>
+    <nav class="sb-nav" aria-label="Seções"><a href="#g-visao">Visão geral</a><a href="#posicoes">Posições</a><a href="#radar">Radar</a><a href="#grafico">Gráfico</a><a href="#baleias">Baleias</a><a href="#toptraders">Top traders</a><a href="#noticias">Notícias</a><a href="#team">Bots</a><a href="#treino">Treino</a><a href="#logs">Logs</a><a href="#g-hist">Histórico</a><a href="#g-sist">Sistema</a></nav></div>
   <div class="alert" id="alert" hidden><span>🛑 <span id="alert-text"></span></span><button onclick="killReset(this)">Rearmar</button></div>
   <div class="scanbar" id="scanbar" hidden><span class="spin"></span><span id="scan-text">Analisando o mercado…</span></div>
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
@@ -542,6 +542,15 @@
       </div>
       <div class="legend"><span>🏆 Recompensa: 1 ponto = 1 centavo de lucro líquido (30 dias) → mais pontos = prioridade e posição cheia; prejuízo = posição mínima</span><span>🛡️ Na conta real: São Marcos e Endrick já operam; Gabriel Jesus, Evair, Veiga e Valdivia só depois de 10 trades com lucro no laboratório</span><span>👆 Passe o mouse num bot para ver detalhes</span></div>
     </section>
+    <section class="panel" id="treino">
+      <h2><span>🎓 Centro de treino <span class="tag" id="train-tag">–</span></span><span class="note">dados de treino dos bots — separados da prova do laboratório</span></h2>
+      <div class="goals" id="train-kpis"></div>
+      <div class="tbl" style="margin-top:12px"><table id="train-table"></table></div>
+      <div class="legend"><span>A cada vela de 1h, cada uma das 29 moedas vira um trade virtual com tudo o que os bots viam (indicadores, tendência, baleias, top traders, notícias, mercado)</span>
+        <span>24h depois anota-se: a compra bateria o alvo (3 ATR) antes do stop (2 ATR)? E uma venda (short)?</span>
+        <span>🧠 Valdivia lê estas lições dos casos parecidos antes de cada decisão</span></div>
+    </section>
+
     <section class="panel" id="logs">
       <h2><span>Logs ao vivo <span class="live-chip" id="log-live">ao vivo</span></span>
         <span class="ctrls">
@@ -636,6 +645,6 @@
 
   <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <script src="https://unpkg.com/qrcode-generator@1.4.4/qrcode.js"></script>
-  <script src="/static/paper.js?v=56"></script>
+  <script src="/static/paper.js?v=57"></script>
 </body>
 </html>

@@ -851,6 +851,13 @@ def news_feed(coin: str | None = None, hours: float = 24):
     return {"status": news.status(), "items": news.latest(coin, min(hours, 72), 60)}
 
 
+@router.get("/training")
+def training():
+    """Training center: how many virtual trades were recorded/resolved and what they teach, per situation."""
+    from src.solana import trainer
+    return {**trainer.stats(), "lessons": trainer.lessons()}
+
+
 @router.get("/news/trending")
 def news_trending(hours: float = 12):
     from src.solana import news

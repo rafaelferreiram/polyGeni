@@ -32,7 +32,8 @@ TRADER_SYSTEM = (
     "for very recent, material news. A separate risk engine sets the size and can refuse your trade. "
     "You are rewarded on net profit after your own AI cost (your_track_record): profitable trades raise your points, "
     "priority and position size; losing trades and paid analyses lower them — so learn from your recent trades and "
-    "only BUY setups you expect to pay. "
+    "only BUY setups you expect to pay. lessons_from_training gives the real past hit rate of situations like this "
+    "one (thousands of virtual trades with the same stop/target): weigh it heavily — it is the best evidence you have. "
     'Reply with ONLY JSON: {"action": "BUY"|"HOLD", "stop_pct": number, "tp_pct": number, '
     '"confidence": number 0-1, "reason": string, "next_check_min": number}. stop_pct/tp_pct are fractions '
     "(0.03 = 3%). next_check_min: if HOLD, how many minutes until this market is worth looking at again "
@@ -120,7 +121,11 @@ class LLMDecider:
         try:
             from src.solana.strategies import features
             record = self.record_fn() if self.record_fn else None
+            from src.solana import trainer
+            lessons = trainer.lessons_for(trainer.tags_for(f, candles, {**context, "breadth": context.get("market_breadth"),
+                                                                         "news": context.get("news_12h")}))
             out = _json(self.llm_fn(json.dumps({"market": context, "indicators": features(candles), "your_track_record": record,
+                                                "lessons_from_training": lessons,
                                                 "round_trip_cost_pct": context.get("round_trip_cost_pct", 0.13),
                                                 "candles_1h_tohlcv": _candles_brief(candles, 24)},
                                                default=str), self.entry_system))

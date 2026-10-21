@@ -95,6 +95,11 @@ the others must first show ≥ 10 profitable lab trades.
 - **AI turbo** (`POST /api/paper/arena/boost`, dashboard "🚀 Turbo da IA"): run the AI bot with Sonnet, Opus or
   Fable for N cycles (1 cycle = 5 min), then it returns to Haiku. It re-decides every market of the current candle with
   the stronger model; cost still counts against the bot's reward and the profit-linked AI allowance.
+- **Training center** (`src/solana/trainer.py`, `training.db`, `GET /api/paper/training`): one virtual trade per coin per
+  closed 1h candle with the full context the bots saw (indicators, setups, whales, top traders, news, breadth); 24h
+  later the outcome of a long and a short with the bots' stop (2 ATR) / target (3 ATR) is recorded. Seeded from the
+  candle history on first run (~4,800 samples). Lessons (hit rate per situation) are given to the AI bot. Separate from
+  the lab, which keeps proving each bot with its real rules.
 - **Lab → real money (green light)**: the lab runs every bot with $100 of paper capital, up to 8 positions and 48
   entries a day, but the real account's trade size, leverage and stops, so evidence piles up faster without changing what
   a trade is. A bot outside `REAL_TRUSTED_BOTS` reaches real money when it has 10 closed lab trades, net profit after its
