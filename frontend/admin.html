@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Kairos — admin</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg?v=2" />
+  <style>
+    :root {
+      --bg: #0b0e0d; --surface: #121715; --surface-2: #171d1a; --border: #222a26;
+      --text: #e8eeeb; --muted: #8a9690; --accent: #34d399; --green: #34d399; --red: #f87171; --yellow: #fbbf24;
+      --font: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 var(--font); -webkit-font-smoothing: antialiased; }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 24px;
+      border-bottom: 1px solid var(--border); position: sticky; top: 0; background: rgba(11,14,13,.95); backdrop-filter: blur(8px); z-index: 5; }
+    header b { font-size: 18px; letter-spacing: -.3px; } header small { color: var(--muted); margin-left: 8px; }
+    header a { color: var(--muted); text-decoration: none; font-size: 13px; border: 1px solid var(--border); padding: 6px 12px; border-radius: 8px; }
+    main { max-width: 1280px; margin: 0 auto; padding: 20px 24px 60px; display: grid; gap: 18px; }
+    h2 { font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 0 0 14px; }
+    .band { font-size: 13px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); margin: 10px 2px -6px; }
+    .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px; min-width: 0; }
+    .kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+    .kpi { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; }
+    .kpi .l { color: var(--muted); font-size: 12.5px; } .kpi .v { font-size: 26px; font-weight: 700; letter-spacing: -.5px; margin: 2px 0; }
+    .kpi .s { color: var(--muted); font-size: 12px; }
+    .two { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    .green { color: var(--green); } .red { color: var(--red); } .yellow { color: var(--yellow); } .muted { color: var(--muted); }
+    .tbl { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { text-align: left; color: var(--muted); font-weight: 500; font-size: 12px; padding: 6px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+    td { padding: 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+    td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
+    .bar { height: 6px; background: var(--surface-2); border-radius: 99px; overflow: hidden; min-width: 60px; }
+    .bar i { display: block; height: 100%; background: var(--accent); border-radius: 99px; }
+    .bar.warn i { background: var(--yellow); } .bar.bad i { background: var(--red); }
+    .days { display: flex; align-items: flex-end; gap: 4px; height: 110px; padding-top: 8px; }
+    .days div { flex: 1; max-width: 56px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; gap: 4px; min-width: 0; }
+    .days span { width: 100%; background: var(--accent); border-radius: 4px 4px 0 0; opacity: .85; min-height: 2px; }
+    .days small { font-size: 10px; color: var(--muted); }
+    .advice { margin: 0; padding-left: 18px; display: grid; gap: 8px; }
+    .checks { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; margin-top: 12px; }
+    .checks div { background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; font-size: 12.5px; }
+    .note { color: var(--muted); font-size: 12.5px; }
+    .empty { color: var(--muted); padding: 12px 0; }
+    #acc-real td, #acc-sim td { white-space: normal; }
+    @media (max-width: 900px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .two { grid-template-columns: 1fr; } }
+    @media (max-width: 600px) {
+      header { padding: 12px 16px; } header small { display: none; }
+      main { padding: 16px 16px 48px; } .kpi .v { font-size: 22px; } .panel { padding: 16px; }
+    }
+  </style>
+</head>
+<body>
+  <header><span><b>Kairos · Admin</b><small id="ts">carregando…</small></span><a href="/">← Painel</a></header>
+  <main>
+    <h3 class="band">Dinheiro</h3>
+    <section class="kpis" id="money"></section>
+
+    <h3 class="band">Onde escalar</h3>
+    <section class="panel">
+      <h2>Recomendações</h2>
+      <ul class="advice" id="advice"></ul>
+      <div class="checks" id="checks"></div>
+    </section>
+    <section class="panel">
+      <h2>Projeção por capital <span class="muted" style="text-transform:none;letter-spacing:0" id="scale-note"></span></h2>
+      <div class="tbl"><table id="scen"></table></div>
+      <p class="note">Estimativa linear: retorno médio por trade × tamanho da posição × trades por dia × 30, menos a IA do mês. Não é garantia — mais capital também aumenta a perda quando o retorno vira negativo.</p>
+    </section>
+
+    <h3 class="band">Custo de IA</h3>
+    <section class="kpis" id="ai-kpis"></section>
+    <div class="two">
+      <section class="panel"><h2>Por modelo</h2><div class="tbl"><table id="ai-model"></table></div></section>
+      <section class="panel"><h2>Por uso</h2><div class="tbl"><table id="ai-who"></table></div></section>
+    </div>
+    <section class="panel"><h2>Gasto por dia (14 dias)</h2><div class="days" id="ai-days"></div></section>
+
+    <h3 class="band">Lucro por trade</h3>
+    <div class="two">
+      <section class="panel"><h2>Conta real</h2><div class="tbl"><table id="acc-real"></table></div></section>
+      <section class="panel"><h2>Conta simulada</h2><div class="tbl"><table id="acc-sim"></table></div></section>
+    </div>
+    <section class="panel"><h2>Bots no laboratório</h2><div class="tbl"><table id="lab"></table></div></section>
+  </main>
+  <script src="/static/admin.js?v=1"></script>
+</body>
+</html>

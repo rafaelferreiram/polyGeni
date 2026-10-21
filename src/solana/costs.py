@@ -85,6 +85,19 @@ class CostBook:
             return self.conn.execute("SELECT COUNT(*) FROM costs WHERE ts >= ?", (since,)).fetchone()[0]
 
 
+    def breakdown(self, by: str, days: float | None = None) -> list[dict]:
+        """Spend grouped by 'model', 'who' or 'day' (UTC date), biggest first (days: newest first)."""
+        col = {"model": "model", "who": "who", "day": "substr(ts, 1, 10)"}[by]
+        sql, args = f"SELECT {col}, COUNT(*), SUM(usd), SUM(input_tokens), SUM(output_tokens) FROM costs", []
+        if days is not None:
+            sql += " WHERE ts >= ?"
+            args.append((datetime.now(timezone.utc) - timedelta(days=days)).isoformat(timespec="seconds"))
+        sql += f" GROUP BY {col} ORDER BY " + ("1 DESC" if by == "day" else "3 DESC")
+        with self._lock:
+            rows = self.conn.execute(sql, args).fetchall()
+        return [{"key": k, "calls": n, "usd": round(u or 0, 4), "in_tokens": i or 0, "out_tokens": o or 0} for k, n, u, i, o in rows]
+
+
 _book: CostBook | None = None
 
 

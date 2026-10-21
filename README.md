@@ -519,6 +519,14 @@ polyGeni/
 - Bitcoin markets tend to have the strongest signal from the log-normal model
 - Sports opportunities require an active H2H game scheduled (not season-long futures)
 
+## Admin page
+
+`/admin` (link "📊 Admin" in the dashboard's top bar; data from `GET /api/paper/admin`, read-only, works remotely after
+login): money (real equity, contributions, profit, net after AI), AI spend (today/7d/month vs the monthly allowance, by
+model, by use, per day, per call, tokens), profit per trade for the real and simulation accounts and for every lab bot
+(win rate, expectancy, return per trade, profit factor, trades/day, AI cost, progress to the green light), and where to
+scale: recommendations, the "ready to add money?" checklist and a linear projection of monthly profit at $40/$100/$250/$500.
+
 ## Remote access (phone, anywhere)
 
 - `scripts/kairos_tunnel.sh install` runs a Cloudflare quick tunnel to `127.0.0.1:8000` 24/7 (launchd `com.kairos.tunnel`);

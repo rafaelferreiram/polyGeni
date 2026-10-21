@@ -31,6 +31,10 @@ if os.path.isdir(frontend_path):
     def serve_ui():
         return FileResponse(os.path.join(frontend_path, "paper.html"))
 
+    @app.get("/admin")
+    def serve_admin():
+        return FileResponse(os.path.join(frontend_path, "admin.html"))
+
 
 @app.on_event("startup")
 def startup():
