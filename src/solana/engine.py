@@ -545,7 +545,11 @@ class PaperEngine:
         ready.sort(key=lambda r: (r[0].symbol.upper().removeprefix("K") not in cfg.FOCUS_COINS, _setup_rank(r[1])))   # focus coins first
         mt = _market_temp(ready)                 # the radar and the market thermometer still see every coin
         self.ledger.set_state("market_temp", mt)
-        if uni := universe(ready):               # the bots only scan the hour's most liquid and volatile coins
+        lab_reserve = bool(self.__dict__.get("lab_model"))
+        if lab_reserve:
+            from src.solana import arena as _arena
+            lab_reserve = not _arena.is_titular(self.__dict__["lab_model"])
+        if (uni := universe(ready)) and not lab_reserve:     # titulars and the real account scan the hour's most liquid and volatile coins; reserves scan all 30 to learn faster
             held_syms = {x["symbol"] for x in self.ledger.positions()}
             ready = [r for r in ready if r[0].symbol in uni or r[0].symbol in held_syms
                      or r[0].symbol.upper().removeprefix("K") in cfg.FOCUS_COINS]

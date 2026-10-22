@@ -657,3 +657,35 @@ def test_only_listed_fast_bots_get_real_access(monkeypatch):
     monkeypatch.setattr(cfg2, "LIVE_FAST_BOTS", {"whales_15m", "copy_15m"})
     assert st.is_fast("whales_15m") and st.is_fast("llm:copy_15m")
     assert not st.is_fast("trend4h_15m") and not st.is_fast("short_break_15m") and not st.is_fast("rules")      # fast but not listed / a short / not fast
+
+
+def test_lab_reserves_scan_every_coin_while_titulars_keep_the_hourly_universe(ledger, monkeypatch):
+    from src.solana import arena, config as cfg2, engine as eng_mod
+    monkeypatch.setattr(cfg2, "UNIVERSE_SIZE", 1)                                  # the hourly universe holds ONE coin
+    monkeypatch.setattr(eng_mod, "universe", lambda ready: [ready[0][0].symbol])
+
+    class Three:
+        def candidates(self):
+            return [candidate(mint=f"TokenMint{i}" + "1" * 30, symbol=f"C{i}") for i in range(3)]
+
+    class Fire:
+        capital_pct = 0.3
+        name = "momentum"
+
+        def signal(self, candles):
+            return Signal(self.name, 1.0, 0.05, 0.10, "fixture")
+
+    def run(lab_model, titular):
+        led = ledger.__class__(":memory:", 100.0)
+        broker = PaperBroker(led, quote_fn=Price(1.0).quote, sol_usd_fn=lambda: 100.0, slippage_bps=0, fee_lamports=0)
+        e = PaperEngine(led, Three(), FakeSafety(), [Fire()], DebateAgent(enabled=False), RiskAgent(), ExecutorAgent(broker),
+                        candles_fn=lambda pool: flat_candles(60), profiles={})
+        if lab_model:
+            e.lab_model = lab_model
+            monkeypatch.setattr(arena, "is_titular", lambda m: titular)
+        e.run_cycle()
+        return len(led.positions())
+
+    assert run(None, False) == 1                                                   # the real/plain engine: only the universe coin
+    assert run("whales2_g2_5", True) == 1                                          # a titular's lab twin: same
+    assert run("whales2_g2_5", False) == 3                                         # a reserve: all coins
