@@ -498,3 +498,22 @@ def test_account_waits_after_a_burst_of_buys(ledger, monkeypatch):
     assert ledger.positions() == [] and eng.run_cycle()["entries"] == 0     # one buy in the last 30 min already
     monkeypatch.setattr(cfg, "BURST_MAX_ENTRIES", 2)
     assert eng.run_cycle()["entries"] == 1
+
+
+def test_universe_filter_keeps_the_most_liquid_and_volatile_coins_plus_focus_and_held(ledger, monkeypatch):
+    from src.solana import config as cfg, engine as E
+    from tests.conftest import candidate
+    monkeypatch.setattr(cfg, "UNIVERSE_SIZE", 1)
+    monkeypatch.setattr(cfg, "FOCUS_COINS", ("FOC",))
+    monkeypatch.setattr(E, "_universe", {})
+    cands = [candidate(mint=f"M{s}", symbol=s, volume_h24=v) for s, v in (("SMALL", 1e6), ("BIG", 3e6), ("FOC", 1.0))]
+    ready = [(c, flat_candles(30)) for c in cands]
+    assert E.universe(ready) == ["BIG"] and E.current_universe()["scores"]["BIG"] > E.current_universe()["scores"]["SMALL"]
+
+    class Scout:
+        def candidates(self):
+            return cands
+    eng = build(ledger, Price(1.0))
+    eng.scouts = [Scout()]
+    assert eng.run_cycle()["entries"] == 2                               # BIG (universe) and FOC (focus coin), not SMALL
+    assert {p["symbol"] for p in ledger.positions()} == {"BIG", "FOC"}

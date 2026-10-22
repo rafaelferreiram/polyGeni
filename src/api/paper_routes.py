@@ -109,9 +109,9 @@ def live_flatten():
 
 @router.get("/arena")
 def arena_board():
-    from src.solana import arena, evolution
+    from src.solana import arena, engine, evolution
     return {"mode": "PAPER", "models": evolution.active_models(), "running": any(r["running"] for r in arena.leaderboard()),
-            "leaderboard": arena.leaderboard(), "live_model": "coordinator"}
+            "leaderboard": arena.leaderboard(), "live_model": "coordinator", "universe": engine.current_universe()}
 
 
 class Boost(BaseModel):

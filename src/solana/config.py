@@ -178,6 +178,9 @@ MEME_MAX_HOLD_H = _f("MEME_MAX_HOLD_H", 2)
 # buy-and-hold); the quick-win locks bank the fast moves before that. FOCUS_COINS are scanned first each cycle.
 MAX_HOLD_CAP_H = _f("MAX_HOLD_CAP_H", 2)
 FOCUS_COINS = tuple(c.strip().upper() for c in os.getenv("FOCUS_COINS", "ZEC,PUMP").split(",") if c.strip())
+# universe filter (passivbot forager / Freqtrade VolumePairList): each hour the rule bots scan only the UNIVERSE_SIZE
+# coins with the most 24h volume × 1h log-range volatility (plus FOCUS_COINS and any coin already held). 0 = all 30.
+UNIVERSE_SIZE = _i("UNIVERSE_SIZE", 12)
 # meme quick wins: memes spike and dump in minutes, so any sudden gain is banked — the stop locks a share of the peak gain
 # as soon as it clears the round trip's cost (0.5% fee per side + impact): +4% locks 50%, +8% locks 65%, +15% locks 75%,
 # +30% locks 80%. The lock never sits below entry + fees, so a locked exit is always a net gain.

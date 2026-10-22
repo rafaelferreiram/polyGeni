@@ -360,7 +360,12 @@ function renderRadar(a) {
   document.getElementById("radar-all").textContent = radarAll ? "Ver só as melhores" : `Ver todas (${w.length})`;
   const near = w.filter((r) => r.status === "pronto" || r.status === "perto").length;
   document.getElementById("radar-head").textContent = a.market_temp?.ts ? `${near} perto de compra · atualizado há ${ago(a.market_temp.ts)}` : "aguardando a primeira análise";
-  const rows = (radarAll ? w : w.slice(0, 8)).map((r) => `<tr>
+  const u = lastArena?.universe;
+  const inUni = (s) => !u?.coins?.length || u.coins.includes(s) || (u.focus || []).includes(s.toUpperCase().replace(/^K/, ""));
+  document.getElementById("radar-universe").textContent = u?.coins?.length
+    ? `🎯 Universo desta hora (as ${u.size} moedas com mais volume × volatilidade): ${u.coins.join(", ")} · os bots só entram nelas, nas moedas-foco (${(u.focus || []).join(", ")}) e nas que já têm posição`
+    : "";
+  const rows = (radarAll ? w : w.slice(0, 8)).map((r) => `<tr${inUni(r.symbol) ? "" : ' style="opacity:.55"'}>
     <td>${coin(r.symbol)}<br><span class="muted">${r.ch24 >= 0 ? "+" : ""}${r.ch24}% 24h</span></td>
     <td>${fmtPx(r.price)}</td>
     <td>${r.strong ? "⬆⬆ forte" : r.up ? "⬆ alta" : "⬇ baixa"}<br><span class="muted">RSI ${r.rsi}</span></td>
@@ -369,7 +374,7 @@ function renderRadar(a) {
     <td>${(() => { const s = lastWhales?.coins?.[r.symbol]; return s && s["1h"].n ? `${WHALE_PT[s.pressure]}<br><span class="muted">${kusd(s["1h"].net_usd)} líquido 1h</span>` : '<span class="muted">—</span>'; })()}</td>
     <td>${(() => { const c = lastTop?.consensus?.[r.symbol]; return c && (c.long || c.short) ? `${c.long ? `<span class="green">▲ ${c.long}</span>` : ""} ${c.short ? `<span class="red">▼ ${c.short}</span>` : ""}${c.new_longs_1h ? `<br><span class="muted">${c.new_longs_1h} entraram 1h</span>` : ""}` : '<span class="muted">—</span>'; })()}</td>
     <td>${radarVerdict(r)}</td>
-    <td><span class="st-chip ${r.status === "pronto" ? "pronto" : r.status === "perto" ? "perto" : ""}">${STATUS_PT[r.status] || esc(r.status)}</span>${r.ready_by ? `<br><span class="muted">sinal do bot ${esc(r.ready_by === "quedas" ? "São Marcos" : "Endrick")}</span>` : ""}</td></tr>`);
+    <td><span class="st-chip ${r.status === "pronto" ? "pronto" : r.status === "perto" ? "perto" : ""}">${STATUS_PT[r.status] || esc(r.status)}</span>${inUni(r.symbol) ? "" : '<br><span class="muted">fora do universo da hora</span>'}${r.ready_by ? `<br><span class="muted">sinal do bot ${esc(r.ready_by === "quedas" ? "São Marcos" : "Endrick")}</span>` : ""}</td></tr>`);
   table("radar-table", ["Moeda", "Preço", "Tendência", "📐 Compra na queda", "📈 Compra no rompimento", "🐋 Baleias 1h", "👑 Top 10", "Vai comprar?", "Status"], rows);
 }
 
