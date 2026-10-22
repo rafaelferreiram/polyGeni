@@ -325,13 +325,19 @@ def withdraw() -> str:
     return sig
 
 
+_bal: tuple[float, float | None, float | None] = (0.0, None, None)   # (read at, sol, sol_usd): the page polls every 30s
+
+
 def status() -> dict:
+    global _bal
     led = ledger()
-    try:
-        sol, px = sol_balance(), sol_usd()
-    except Exception as e:
-        sol, px = None, None
-        logger.warning(f"meme wallet balance: {e}")
+    if time.time() - _bal[0] > 25:
+        try:
+            _bal = (time.time(), sol_balance(), sol_usd())
+        except Exception as e:
+            _bal = (time.time(), None, None)
+            logger.warning(f"meme wallet balance: {e}")
+    _, sol, px = _bal
     trades = led.closed_trades()
     return {"address": address(), "owner": led.get_state("owner"), "mode": "ensaio" if dry() else "real",
             "halted": bool(led.get_state("halted")), "sol": sol, "sol_usd": px, "usd": round(sol * px, 2) if sol is not None and px else None,

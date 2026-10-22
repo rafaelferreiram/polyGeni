@@ -30,11 +30,12 @@ _lock = threading.Lock()
 def _throttle(url: str):
     host = urlparse(url).hostname or ""
     gap = _MIN_INTERVAL.get(host, 0.2)
-    with _lock:
-        wait = _last_call.get(host, 0) + gap - time.monotonic()
-        if wait > 0:
-            time.sleep(wait)
-        _last_call[host] = time.monotonic()
+    with _lock:                                   # reserve this host's next slot, then sleep outside the lock:
+        now = time.monotonic()                    # a slow host (GeckoTerminal backing off) must not stall the others
+        slot = max(now, _last_call.get(host, 0) + gap)
+        _last_call[host] = slot
+    if slot > now:
+        time.sleep(slot - now)
 
 
 def request_json(method: str, url: str, retries: int = 4, timeout: float = 10, **kw):
