@@ -181,6 +181,9 @@ FOCUS_COINS = tuple(c.strip().upper() for c in os.getenv("FOCUS_COINS", "ZEC,PUM
 # universe filter (passivbot forager / Freqtrade VolumePairList): each hour the rule bots scan only the UNIVERSE_SIZE
 # coins with the most 24h volume × 1h log-range volatility (plus FOCUS_COINS and any coin already held). 0 = all 30.
 UNIVERSE_SIZE = _i("UNIVERSE_SIZE", 12)
+# stop distance = ATR_STOP_MULT × ATR(14) of the signal's candles, bounded to [0.5×, 1.5×] the strategy's own stop
+# (strategies.atr_stop). 0 = the strategy's stop as is.
+ATR_STOP_MULT = _f("ATR_STOP_MULT", 1.5)
 # meme quick wins: memes spike and dump in minutes, so any sudden gain is banked — the stop locks a share of the peak gain
 # as soon as it clears the round trip's cost (0.5% fee per side + impact): +4% locks 50%, +8% locks 65%, +15% locks 75%,
 # +30% locks 80%. The lock never sits below entry + fees, so a locked exit is always a net gain.

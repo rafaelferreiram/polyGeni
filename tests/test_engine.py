@@ -150,7 +150,7 @@ def test_market_profile_caps_size_and_widens_stops(ledger):
     eng.run_cycle()
     fill = ledger.fills()[0]
     assert fill["usd_gross"] == pytest.approx(5.0)                 # 5% slice, not the default 10%
-    assert fill["stop_price"] == pytest.approx(0.90)               # 5% stop widened x2
+    assert fill["stop_price"] == pytest.approx(0.95)               # flat candles: ATR stop at its 2.5% floor, widened x2
     assert fill["tp_price"] == pytest.approx(1.20)
 
 
@@ -517,3 +517,11 @@ def test_universe_filter_keeps_the_most_liquid_and_volatile_coins_plus_focus_and
     eng.scouts = [Scout()]
     assert eng.run_cycle()["entries"] == 2                               # BIG (universe) and FOC (focus coin), not SMALL
     assert {p["symbol"] for p in ledger.positions()} == {"BIG", "FOC"}
+
+
+def test_entry_stop_is_atr_sized_and_size_stays_the_minimum_order(ledger):
+    eng = build(ledger, Price(1.0))
+    eng.run_cycle()
+    [pos] = ledger.positions()
+    assert pos["stop_price"] == pytest.approx(0.975)      # flat candles: 1.5 ATR ≈ 0.3% -> floor of half the 5% stop
+    assert pos["tp_price"] == pytest.approx(1.10)         # the target is the strategy's

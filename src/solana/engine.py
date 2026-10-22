@@ -581,6 +581,9 @@ class PaperEngine:
                     self._agent("llm", last_reason=f"{strat.name} → {msg}"[:200], approved=int(sig is not None))
                 else:
                     sig = strat.signal(candles)
+                if sig is not None:                      # stop sized by this coin's ATR, within the strategy's bounds
+                    from src.solana.strategies import atr_stop
+                    sig.stop_pct = atr_stop(candles, sig.stop_pct)
                 if sig is not None and profile.get("stop_mult", 1) != 1:
                     sig.stop_pct = min(sig.stop_pct * profile["stop_mult"], 0.5)
                     sig.tp_pct *= profile["stop_mult"]

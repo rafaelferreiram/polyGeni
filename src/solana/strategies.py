@@ -140,6 +140,17 @@ def _atr_stops(candles, stop_atr, tp_atr) -> tuple[float, float, float]:
     return stop, tp, a
 
 
+def atr_stop(candles: list[dict], stop_pct: float) -> float:
+    """Stop distance from the coin's own volatility: ATR_STOP_MULT × ATR(14) of the signal's candles (1h for the
+    accounts, 15m for the 15m twins), bounded to [0.5×, 1.5×] the strategy's stop so it adapts but never runs away.
+    Sizing stays $10: a risk budget of $0.60 / stop distance would allow ≥ $10 for any stop ≤ 6%, and Hyperliquid's
+    minimum order is $10 anyway — so only the stop adapts and the risk per trade is $10 × stop."""
+    from src.solana import config as cfg
+    if not cfg.ATR_STOP_MULT or len(candles) < 15 or not candles[-1]["close"]:
+        return stop_pct
+    return min(max(cfg.ATR_STOP_MULT * atr(candles) / candles[-1]["close"], stop_pct * 0.5), stop_pct * 1.5)
+
+
 def _crowded(candles, max_funding) -> bool:
     """Skip longs when hourly funding says the long side is crowded (unknown funding = not crowded)."""
     f = candles[-1].get("funding")
