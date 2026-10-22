@@ -807,21 +807,21 @@ setInterval(() => safe(loadChat), 6000);
 // ─── 🐸 Trincheira: meme-coin lab bots ───
 // ─── real meme account (Solana): the bot wallet signs its own trades; the user's Phantom deposits and receives withdrawals ───
 // the Phantom browser extension injects window.phantom.solana (older builds: window.solana), sometimes a moment after load
-const phantom = () => (window.phantom?.solana?.isPhantom ? window.phantom.solana : window.solana?.isPhantom ? window.solana : null);
+const phantomProvider = () => (window.phantom?.solana?.isPhantom ? window.phantom.solana : window.solana?.isPhantom ? window.solana : null);
 async function phantomKey() {
-  let p = phantom();
-  for (let i = 0; !p && i < 10; i++) { await new Promise((r) => setTimeout(r, 200)); p = phantom(); }
+  let p = phantomProvider();
+  for (let i = 0; !p && i < 10; i++) { await new Promise((r) => setTimeout(r, 200)); p = phantomProvider(); }
   if (!p) throw new Error("Phantom não encontrada neste navegador. Abra http://127.0.0.1:8000 no Chrome/Brave/Firefox com a extensão Phantom instalada e desbloqueada.");
   return (await p.connect()).publicKey.toString();
 }
-const phantomLine = () => (phantom() ? '<span class="green">👻 extensão Phantom detectada</span>'
+const phantomLine = () => (phantomProvider() ? '<span class="green">👻 extensão Phantom detectada</span>'
   : REMOTE ? '<span class="muted">Conectar a Phantom só funciona no Mac, em http://127.0.0.1:8000</span>'
   : '<span class="red">extensão Phantom não detectada neste navegador</span> — <a href="https://phantom.app/download" target="_blank" rel="noopener">instalar</a> e recarregar');
 async function connectPhantom(btn) {
   run(btn, "Conectando…", async () => {
     const addr = await phantomKey();
     const { message } = await api(`/meme/wallet/owner-message?address=${encodeURIComponent(addr)}`);
-    const { signature } = await phantom().signMessage(new TextEncoder().encode(message), "utf8");
+    const { signature } = await phantomProvider().signMessage(new TextEncoder().encode(message), "utf8");
     return api("/meme/wallet/owner", "POST", { address: addr, signature: btoa(String.fromCharCode(...signature)) });
   }, (r) => `👻 Phantom conectada: ${short(r.owner)}. Saques só vão para ela.`).then(() => safe(loadMemeReal));
 }
@@ -840,7 +840,7 @@ async function depositPhantom(btn) {
     const { blockhash, to } = await api("/meme/wallet/blockhash");
     const tx = new W.Transaction({ feePayer: new W.PublicKey(from), recentBlockhash: blockhash })
       .add(W.SystemProgram.transfer({ fromPubkey: new W.PublicKey(from), toPubkey: new W.PublicKey(to), lamports: Math.round(sol * 1e9) }));
-    const { signature } = await phantom().signAndSendTransaction(tx);
+    const { signature } = await phantomProvider().signAndSendTransaction(tx);
     for (let i = 0; i < 20; i++) {                // wait for Solana to confirm, then the server checks it on-chain
       await new Promise((r) => setTimeout(r, 3000));
       try { return await api("/meme/wallet/deposit", "POST", { signature }); } catch (e) { if (i === 19) throw e; }
