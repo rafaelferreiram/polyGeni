@@ -26,9 +26,14 @@ PATH = os.getenv("LINEAGE_PATH", "lineage.json")
 def load() -> dict:
     try:
         with open(PATH) as f:
-            return json.load(f)
+            data = json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
-        return {"active": list(cfg.ARENA_MODELS), "bots": {}, "retired": []}
+        data = {"active": list(cfg.ARENA_MODELS), "bots": {}, "retired": []}
+    gone = {r["model"] for r in data["retired"]} | {b.get("base") for b in data["bots"].values()}
+    for m in cfg.ARENA_MODELS:                    # a founder added to ARENA_MODELS after the roster was saved joins the team
+        if m not in data["active"] and m not in gone:
+            data["active"].append(m)
+    return data
 
 
 def save(data: dict):
