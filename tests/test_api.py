@@ -100,3 +100,13 @@ def test_admin_metrics_page_data(client, monkeypatch, tmp_path):
     assert d["ai"]["by_who"][0]["key"] == "debate" and d["ai"]["calls_30d"] == 1
     assert {"real", "sim", "lab", "scale"} <= set(d) and len(d["scale"]["scenarios"]) == 4
     assert client.get("/admin").status_code == 200
+
+
+def test_dashboard_script_does_not_redeclare_globals_that_wallet_extensions_define():
+    """Phantom/MetaMask inject window.phantom, window.solana, window.ethereum...: a top-level const/let/class of the
+    same name is a SyntaxError for the whole script (blank dashboard in any browser with the extension)."""
+    import re
+    src = open("frontend/savoia.js").read()
+    taken = {"phantom", "solana", "ethereum", "solflare", "backpack", "coinbaseSolana", "okxwallet", "trustwallet", "web3", "keplr"}
+    declared = set(re.findall(r"^(?:const|let|var|class|function)\s+([A-Za-z_$][\w$]*)", src, re.M))
+    assert not declared & taken, f"global name collides with a wallet extension: {declared & taken}"
