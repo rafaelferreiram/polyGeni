@@ -1015,10 +1015,11 @@ function paintMemeModal() {
         ${hero("Em aberto agora", pnl(d.positions.reduce((a, p) => a + p.now - p.cost, 0)), plural(d.positions.length, "posição", "posições"))}${hero("Patrimônio", usd(s.equity))}</div>
       <div class="bm-two" style="margin-top:12px">
         <div class="bm-card"><div class="t">📊 Como ele sai <span class="muted">por tipo de saída</span></div>${rows([
-          exitRow("ganho rápido", "💨 Ganho rápido"), exitRow("alvo", "🎯 Alvo"), exitRow("stop", "🛑 Stop"), exitRow("tempo", "⏱ Tempo máximo"), exitRow("rug", "🚨 Rug"),
+          exitRow("ganho rápido", "💨 Ganho rápido"), exitRow("alvo", "🎯 Alvo"), exitRow("stop", "🛑 Stop"), exitRow("sem tração", "🧊 Sem tração"), exitRow("tempo", "⏱ Tempo máximo"), exitRow("rug", "🚨 Rug"),
           ["Ganho médio / perda média", `${pnl(s.avg_win)} / ${pnl(s.avg_loss)}`], ["Fator de lucro", s.profit_factor ?? "–"]])}</div>
         <div class="bm-card"><div class="t">⚙️ Regras dele <span class="muted">saídas desta geração</span></div>${rows([
           ["Stop", `−${(P.stop_pct * 100).toFixed(0)}%`], ["Alvo", `+${(P.tp_pct * 100).toFixed(0)}%`], ["Tempo máximo", `${P.max_hold_h}h`],
+          ["Sem tração", `${P.traction_min} min sem +${(P.traction_pct * 100).toFixed(0)}%`],
           ["Liquidez mínima", `$${Number(P.min_liq).toLocaleString("pt-BR")}`],
           ["Ganhos rápidos", P.quick_wins.map(([a, k]) => `+${(a * 100).toFixed(0)}% → guarda ${(k * 100).toFixed(0)}%`).join(" · ")]])}
           <p class="note" style="margin:10px 0 0">Meme sobe e cai em minutos: qualquer alta repentina já vira ganho garantido, sempre acima das taxas (0,5% por lado + impacto).</p></div></div>

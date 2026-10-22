@@ -1,4 +1,6 @@
 """Full pipeline with fakes (no network): entries, exits, vetoes, kill switch, reconciliation."""
+from datetime import datetime, timedelta, timezone
+
 import pytest
 
 from src.solana.agents import DebateAgent, ExecutorAgent, RiskAgent, Vote
@@ -525,3 +527,27 @@ def test_entry_stop_is_atr_sized_and_size_stays_the_minimum_order(ledger):
     [pos] = ledger.positions()
     assert pos["stop_price"] == pytest.approx(0.975)      # flat candles: 1.5 ATR ≈ 0.3% -> floor of half the 5% stop
     assert pos["tp_price"] == pytest.approx(1.10)         # the target is the strategy's
+
+
+def test_a_position_that_goes_nowhere_is_closed_after_an_hour_but_a_winner_keeps_running(ledger):
+    """Data: 149 time exits lost $9.15. After STALE_EXIT_H without +STALE_EXIT_PCT the position leaves early."""
+    price = Price(1.0)
+    eng = build(ledger, price)
+    eng.run_cycle()
+    eng.strategies[0].fire = False
+    old = (datetime.now(timezone.utc) - timedelta(hours=1.5)).isoformat(timespec="seconds")
+    with ledger._lock:
+        ledger.conn.execute("UPDATE positions SET opened_at=?", (old,))
+    price.p = 1.0                                   # flat after 1.5h: no traction
+    eng.mark_and_exit()
+    assert ledger.positions() == [] and "sem tração" in ledger.closed_trades()[0]["reason"]
+    price.p = 1.0
+    eng.strategies[0].fire = True
+    eng.__dict__.pop("_entered", None)               # one trade per signal candle: let it enter again
+    eng.run_cycle()                                  # a new position, again held 1.5h but this time it is up 1%
+    with ledger._lock:
+        ledger.conn.execute("UPDATE positions SET opened_at=?", (old,))
+    eng.strategies[0].fire = False
+    price.p = 1.01
+    eng.mark_and_exit()
+    assert len(ledger.positions()) == 1              # in profit: not stale, it keeps going to its stop/target/cap

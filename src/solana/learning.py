@@ -15,15 +15,23 @@ CACHE_S = 120
 _cache: dict = {}
 
 
-def situation(candles: list[dict], symbol: str) -> list[str]:
-    """Plain-language labels of the moment (the same ones the training center uses) plus the coin."""
+def window_tag(at=None) -> str:
+    """The 4-hour UTC window of an entry ('janela 16-20h UTC'): the data showed whole windows losing together (35 entries
+    at 18h UTC, none won), so the bots learn which windows they lose in — like any other situation."""
+    d = at if isinstance(at, datetime) else datetime.fromisoformat(at) if at else datetime.now(timezone.utc)
+    h = d.astimezone(timezone.utc).hour // 4 * 4
+    return f"janela {h:02d}-{h + 4:02d}h UTC"
+
+
+def situation(candles: list[dict], symbol: str, at=None) -> list[str]:
+    """Plain-language labels of the moment (the same ones the training center uses), the coin and the time window."""
     from src.solana.strategies import features
     from src.solana.trainer import tags_for
     try:
         tags = tags_for(features(candles), candles, {})
     except Exception:
         tags = []
-    return tags + [f"moeda {symbol}"]
+    return tags + [f"moeda {symbol}", window_tag(at)]
 
 
 def record(ledger, strategy: str | None = None) -> dict[str, dict]:
@@ -40,7 +48,8 @@ def record(ledger, strategy: str | None = None) -> dict[str, dict]:
     for t in ledger.closed_trades():
         if t["exit_ts"] < since or (strategy and t["strategy"] != strategy):
             continue
-        for tag in tags_of.get((t.get("order_id") or "").removeprefix("exit-")) or []:
+        saved = tags_of.get((t.get("order_id") or "").removeprefix("exit-")) or []
+        for tag in dict.fromkeys(saved + [window_tag(t["entry_ts"])]):          # older trades get their window from entry_ts
             r = out.setdefault(tag, {"n": 0, "wins": 0, "pnl": 0.0})
             r["n"] += 1
             r["wins"] += t["pnl_usd"] > 0
@@ -87,7 +96,7 @@ def backfill(ledger, interval: str = "1h") -> int:
         at = datetime.fromisoformat(t["entry_ts"]).timestamp()
         past = [c for c in candles if c["t"] + step <= at]
         if len(past) >= 210:
-            out[oid] = situation(past, t["symbol"])
+            out[oid] = situation(past, t["symbol"], datetime.fromisoformat(t["entry_ts"]))
     if len(out) != len(ledger.get_state("tags_backfill") or {}):
         ledger.set_state("tags_backfill", out)
         _cache.clear()

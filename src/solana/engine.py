@@ -251,6 +251,8 @@ class PaperEngine:
                 reason = f"stop-loss hit ({price:.6g} <= {pos['stop_price']:.6g})"
             elif pos["tp_price"] and price >= pos["tp_price"]:
                 reason = f"take-profit hit ({price:.6g} >= {pos['tp_price']:.6g})"
+            elif held_h >= cfg.STALE_EXIT_H and price < pos["cost_usd"] / pos["qty"] * (1 + cfg.STALE_EXIT_PCT):
+                reason = f"sem tração: {held_h:.1f}h sem passar de +{cfg.STALE_EXIT_PCT:.1%} — fecha antes do tempo máximo"
             elif held_h >= (limit := _max_hold(pos["strategy"], self.max_hold_h)):
                 reason = f"max holding time {limit:.0f}h reached"
             elif self.decision_mode() == "llm" and self.team and pos.get("pool_address"):

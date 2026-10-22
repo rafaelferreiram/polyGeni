@@ -54,3 +54,15 @@ def _no_btc_filter(monkeypatch):
     """The BTC filter reads live BTC candles; tests turn it off (its own test turns it back on with fake candles)."""
     from src.solana import config as cfg
     monkeypatch.setattr(cfg, "BTC_FILTER", False)
+
+
+@pytest.fixture(autouse=True)
+def _isolated_lineage(tmp_path, monkeypatch):
+    """The live evolved roster (lineage.json, meme_lineage.json) must never leak into tests: after the first 12h cut the real
+    files list successors (g2 bots) and made tests that expect the founding team fail."""
+    from src.solana import evolution, meme
+    monkeypatch.setattr(evolution, "PATH", str(tmp_path / "lineage.json"))
+    monkeypatch.setattr(meme.cfg, "MEME_LINEAGE_PATH", str(tmp_path / "meme_lineage.json"))
+    fresh = {"active": {m: {**v, "base": m, "gen": 1, "params": {}} for m, v in meme.FOUNDERS.items()}, "retired": []}
+    monkeypatch.setattr(meme, "ROSTER", fresh)
+    monkeypatch.setattr(meme, "BOTS", fresh["active"])
