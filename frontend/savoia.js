@@ -894,48 +894,67 @@ function setWalletView(v) {
 }
 function copyText(t) { navigator.clipboard.writeText(t).then(() => toast("Endereço copiado")); }
 const walletRows = (pairs) => `<div class="rows">${pairs.map(([l, v]) => `<span>${l} <b>${v}</b></span>`).join("")}</div>`;
-const fakeTag = '<span class="mode fake">🧪 FAKE · dinheiro de mentira</span>';
+const fakeTag = '<span class="mode fake">🧪 FAKE</span>';
+// official icons come from the extensions themselves (EIP-6963 for MetaMask, Wallet Standard for Phantom) and are kept
+// for the next visit; without the extension the emoji stands in
+const walletIcons = (() => { try { return JSON.parse(localStorage.getItem("walletIcons") || "{}"); } catch (e) { return {}; } })();
+function keepIcon(label, icon) {
+  const k = /phantom/i.test(label) ? "phantom" : /metamask/i.test(label) ? "metamask" : null;
+  if (!k || typeof icon !== "string" || !icon.startsWith("data:image/") || walletIcons[k] === icon) return;
+  walletIcons[k] = icon;
+  try { localStorage.setItem("walletIcons", JSON.stringify(walletIcons)); } catch (e) { /* ignore */ }
+  renderWallets();
+}
+const walletIco = (k, emoji) => (walletIcons[k] ? `<span class="ico img"><img src="${esc(walletIcons[k])}" alt="${k}"></span>` : `<span class="ico">${emoji}</span>`);
 function renderWallets() {
   const seg = document.getElementById("wallet-seg");
   if (seg) seg.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.v === walletView));
   const fake = walletView === "fake";
-  // left: MetaMask / Hyperliquid (real account, or the simulation account)
-  const A = walletAcct(fake ? "sim" : "real"), c = (acc?.config || A?.config || {});
-  const mm = `<div class="wallet mm"><div class="wh"><span class="ico">🦊</span><div><b>MetaMask · Hyperliquid ${fake ? fakeTag : '<span class="mode real">💵 REAL</span>'}</b>
-      <small>cripto · ${fake ? "simulação: preços e order books reais da Hyperliquid" : `rede Arbitrum One · ${esc(c.network || "mainnet")}`}</small></div></div>
-    <div class="big">${A ? usd(fake ? A.equity : A.exchange_balance ?? A.equity) : "–"}<small>${fake ? "saldo simulado" : "saldo na Hyperliquid"}</small></div>
-    ${walletRows([["Disponível", A ? usd(A.available) : "–"], ["Em margem", A ? usd(A.margin_used) : "–"],
-      ["Posições abertas", A ? A.positions?.length ?? "–" : "–"], ["Resultado fechado", A ? pnl(A.pnl_usd) : "–"]])}
-    <div class="addr">${fake ? '<span class="muted">Conta simulada: não tem endereço nem dinheiro de verdade.</span>'
+  // left: MetaMask / Hyperliquid — the real account, or the sum of every crypto bot in training (paper money)
+  const A = fake ? null : walletAcct("real"), c = acc?.config || A?.config || {};
+  const labBots = lastArena?.leaderboard || [];
+  const labC = { equity: 0, n: 0, net: 0, trades: 0 };
+  labBots.forEach((r) => { labC.equity += r.equity || 0; labC.n += (r.open || []).length; labC.net += r.net_usd ?? r.pnl_usd ?? 0; labC.trades += r.trades || 0; });
+  const mm = `<div class="wallet mm"><div class="wh">${walletIco("metamask", "🦊")}<div><b>MetaMask · Hyperliquid ${fake ? fakeTag : '<span class="mode real">💵 REAL</span>'}</b>
+      <small>cripto · ${fake ? `laboratório: ${labBots.length} bots em treino` : `rede Arbitrum One · ${esc(c.network || "mainnet")}`}</small></div></div>
+    <div class="big">${fake ? usd(labC.equity) : A ? usd(A.exchange_balance ?? A.equity) : "–"}<small>${fake ? "saldo simulado dos bots em treino" : "saldo na Hyperliquid"}</small></div>
+    ${walletRows(fake ? [["Bots em treino", labBots.length], ["Trades fechados", labC.trades], ["Posições abertas", labC.n], ["Resultado líquido", pnl(labC.net)]]
+      : [["Disponível", A ? usd(A.available) : "–"], ["Em margem", A ? usd(A.margin_used) : "–"],
+         ["Posições abertas", A ? A.positions?.length ?? "–" : "–"], ["Resultado fechado", A ? pnl(A.pnl_usd) : "–"]])}
+    <div class="addr">${fake ? '<span class="muted">Soma das contas simuladas dos bots (titulares e reservas): dinheiro de mentira.</span>'
       : `Endereço: ${c.account ? `<code title="${esc(c.account)}">${esc(short(c.account))}</code><button class="link" onclick="copyText('${esc(c.account)}')">copiar</button>` : '<span class="muted">conta real não configurada</span>'}`}</div>
-    <div class="acts">${fake ? `<button onclick="setKind('sim'); openAnchor('#posicoes')">Ver posições simuladas</button>`
+    <div class="acts">${fake ? `<button onclick="showTab('bots')">⚽ Ver o time</button>`
       : `<a class="btn" href="#fundos" onclick="openAnchor('#fundos'); return false;"><button class="primary">➕ Depositar USDC</button></a>
       <a class="btn" href="https://app.hyperliquid.xyz/portfolio" target="_blank" rel="noopener"><button>Hyperliquid ↗</button></a>
       ${c.account ? `<a class="btn" href="https://arbiscan.io/address/${esc(c.account)}" target="_blank" rel="noopener"><button>Arbiscan ↗</button></a>` : ""}`}</div></div>`;
-  // right: Phantom / Solana (the bot wallet, or the paper meme team of the lab)
+  // right: Phantom / Solana — your Phantom's real balance (the bot trades from its own wallet), or the paper meme team
   const w = memeWallet, bots = Object.values(memeBots);
   const lab = { equity: 0, open: 0, n: 0, pnl: 0 };
   bots.forEach((b) => { lab.equity += b.equity; lab.pnl += b.pnl; lab.n += b.positions.length; lab.open += b.positions.reduce((t, p) => t + p.now, 0); });
-  const dry = w && w.mode !== "real";
-  const open = w ? w.positions.reduce((t, p) => t + p.now, 0) : 0;
-  const realView = { bal: w?.usd, avail: w?.usd, open: dry ? 0 : open, n: dry ? 0 : w?.positions.length, pnl: dry ? 0 : w?.pnl };
-  const mode = w ? (w.mode === "real" ? '<span class="mode real">💵 REAL</span>' : '<span class="mode fake">🧪 ENSAIO · nada é enviado</span>') : "";
-  const ph = `<div class="wallet ph"><div class="wh"><span class="ico">👻</span><div><b>Phantom · meme coins ${fake ? fakeTag : mode}</b>
-      <small>${fake ? `Solana · laboratório: ${bots.length} bots de meme com $100 de mentira cada` : "Solana · carteira do bot separada; a Phantom deposita e recebe os saques"}</small></div></div>
-    <div class="big">${fake ? usd(lab.equity) : w && w.usd != null ? usd(w.usd) : "–"}<small>${fake ? "saldo simulado do time de memes" : w && w.sol != null ? `${w.sol.toFixed(4)} SOL na carteira do bot` : "saldo da carteira do bot"}</small></div>
-    ${walletRows(fake ? [["Disponível", usd(lab.equity - lab.open)], ["Em posições", usd(lab.open)], ["Posições abertas", lab.n], ["Resultado fechado", pnl(lab.pnl)]]
-      : [["Disponível", w ? usd(realView.avail) : "–"], ["Em posições", w ? usd(realView.open) : "–"], ["Posições abertas", w ? realView.n : "–"], ["Resultado fechado", w ? pnl(realView.pnl) : "–"]])}
-    <div class="addr">${fake ? '<span class="muted">Conta simulada: os bots de meme treinam aqui antes de ganhar a vaga de titular.</span>'
-      : `Carteira do bot: ${w ? `<code title="${esc(w.address)}">${esc(short(w.address))}</code><button class="link" onclick="copyText('${esc(w.address)}')">copiar</button>` : "–"}`}</div>
-    ${fake ? "" : `<div class="addr">Dona: ${w?.owner ? `<b>👻 ${esc(short(w.owner))}</b>` : '<span class="muted">nenhuma Phantom conectada</span>'} · ${phantomLine()}</div>
-    ${dry && w ? `<div class="addr muted">🧪 Ensaio em andamento: ${w.positions.length} posição(ões) simulada(s), resultado ${pnl(w.pnl)} — no modo Fake ou na seção Memes.</div>` : ""}`}
+  const dry = w && w.mode !== "real";                       // dry run: nothing is sent, so the real wallet has no positions
+  const open = dry || !w ? 0 : w.positions.reduce((t, p) => t + p.now, 0);
+  const mode = w ? (w.mode === "real" ? '<span class="mode real">💵 REAL</span>' : '<span class="mode fake" title="O bot simula as ordens; nada é enviado">🧪 ENSAIO</span>') : "";
+  const phantomOk = phantomProvider() ? '<span class="green">● extensão ok</span>' : REMOTE ? "" : '<span class="red">● sem extensão</span>';
+  const ph = `<div class="wallet ph"><div class="wh">${walletIco("phantom", "👻")}<div><b>Phantom · meme coins ${fake ? fakeTag : mode}</b>
+      <small>Solana · ${fake ? `laboratório: ${bots.length} bots de meme em treino` : `bot opera da carteira ${w ? esc(short(w.address)) : "–"}`}</small></div></div>
+    <div class="big">${fake ? usd(lab.equity) : w?.owner_usd != null ? usd(w.owner_usd) : "–"}<small>${fake ? "saldo simulado dos bots em treino" : w?.owner ? (w.owner_sol != null ? `${w.owner_sol.toFixed(4)} SOL na sua Phantom` : "saldo da sua Phantom") : "conecte a Phantom para ver o saldo"}</small></div>
+    ${walletRows(fake ? [["Bots em treino", bots.length], ["Disponível", usd(lab.equity - lab.open)], ["Posições abertas", lab.n], ["Resultado líquido", pnl(lab.pnl)]]
+      : [["Na carteira do bot", w?.usd != null ? usd(w.usd) : "–"], ["Em posições", w ? usd(open) : "–"],
+         ["Posições abertas", w ? (dry ? 0 : w.positions.length) : "–"], ["Resultado fechado", w ? pnl(dry ? 0 : w.pnl) : "–"]])}
+    <div class="addr">${fake ? '<span class="muted">Os bots de meme treinam aqui com $100 de mentira cada, antes de ganhar a vaga de titular.</span>'
+      : `Endereço: ${w?.owner ? `<code title="${esc(w.owner)}">${esc(short(w.owner))}</code><button class="link" onclick="copyText('${esc(w.owner)}')">copiar</button>` : '<span class="muted">nenhuma Phantom conectada</span>'} ${phantomOk}`}</div>
     <div class="acts">${fake ? `<button onclick="showTab('meme')">🐸 Ver o time de memes</button>`
-      : REMOTE ? "" : `<button class="primary" onclick="connectPhantom(this)">👻 ${w?.owner ? "Trocar Phantom" : "Conectar Phantom"}</button>
+      : REMOTE ? "" : `<button class="primary" onclick="connectPhantom(this)">👻 ${w?.owner ? "Trocar" : "Conectar"}</button>
       <button onclick="depositPhantom(this)" ${w?.owner ? "" : "disabled title='Conecte a Phantom primeiro'"}>⬇️ Depositar SOL</button>
       <button onclick="withdrawMeme(this)" ${w?.owner ? "" : "disabled title='Conecte a Phantom primeiro'"}>⬆️ Sacar tudo</button>
-      ${w?.address ? `<a class="btn" href="https://solscan.io/account/${esc(w.address)}" target="_blank" rel="noopener"><button>Solscan ↗</button></a>` : ""}`}</div></div>`;
+      ${w?.owner ? `<a class="btn" href="https://solscan.io/account/${esc(w.owner)}" target="_blank" rel="noopener"><button>Solscan ↗</button></a>` : ""}`}</div></div>`;
   setHTML("wallets", mm + ph);
 }
+window.addEventListener("eip6963:announceProvider", (e) => keepIcon(`${e.detail?.info?.rdns || ""} ${e.detail?.info?.name || ""}`, e.detail?.info?.icon));
+window.dispatchEvent(new Event("eip6963:requestProvider"));
+const walletStandard = { register: (...ws) => { ws.forEach((x) => keepIcon(x.name || "", x.icon)); return () => {}; } };
+window.addEventListener("wallet-standard:register-wallet", (e) => { try { e.detail(walletStandard); } catch (x) { /* ignore */ } });
+window.dispatchEvent(new CustomEvent("wallet-standard:app-ready", { detail: walletStandard }));
 
 async function loadMemeReal() {
   const w = await api("/meme/wallet"), L = w.limits;

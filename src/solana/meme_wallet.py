@@ -325,7 +325,7 @@ def withdraw() -> str:
     return sig
 
 
-_bal: tuple[float, float | None, float | None] = (0.0, None, None)   # (read at, sol, sol_usd): the page polls every 30s
+_bal: tuple[float, float | None, float | None, float | None] = (0.0, None, None, None)   # (read at, bot sol, sol_usd, owner sol)
 
 
 def status() -> dict:
@@ -333,13 +333,15 @@ def status() -> dict:
     led = ledger()
     if time.time() - _bal[0] > 25:
         try:
-            _bal = (time.time(), sol_balance(), sol_usd())
+            owner = led.get_state("owner")
+            _bal = (time.time(), sol_balance(), sol_usd(), sol_balance(owner) if owner else None)
         except Exception as e:
-            _bal = (time.time(), None, None)
+            _bal = (time.time(), None, None, None)
             logger.warning(f"meme wallet balance: {e}")
-    _, sol, px = _bal
+    _, sol, px, owner_sol = _bal
     trades = led.closed_trades()
     return {"address": address(), "owner": led.get_state("owner"), "mode": "ensaio" if dry() else "real",
+            "owner_sol": owner_sol, "owner_usd": round(owner_sol * px, 2) if owner_sol is not None and px else None,
             "halted": bool(led.get_state("halted")), "sol": sol, "sol_usd": px, "usd": round(sol * px, 2) if sol is not None and px else None,
             "equity": round(equity(led), 2), "deposited": round(led.contributed(), 2), "pnl": round(sum(t["pnl_usd"] for t in trades), 4),
             "trades": len(trades), "wins": sum(t["pnl_usd"] > 0 for t in trades), "buys_today": len(_today_buys(led)),
