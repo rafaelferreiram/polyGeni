@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Kairos — bots de trading</title>
+  <title>Savoia — bots de trading</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg?v=2" />
   <link rel="stylesheet" href="/static/style.css" />
   <style>
@@ -383,6 +383,46 @@
     .tb { cursor: pointer; }
     .mode { font-size: 10.5px; font-weight: 700; padding: 2px 6px; border-radius: 6px; margin-left: 4px; white-space: nowrap; }
     .mode.fake { background: rgba(251,191,36,.14); color: #fbbf24; } .mode.real { background: rgba(52,211,153,.16); color: var(--green); }
+    /* ─── below the fold: one tab at a time instead of one endless scroll ─── */
+    .tabs { position: sticky; top: 0; z-index: 7; display: flex; gap: 6px; margin: 14px 0 4px; padding: 10px 0; background: var(--bg); overflow-x: auto; scrollbar-width: none; border-bottom: 1px solid var(--border); }
+    .tabs button { flex: none; border-radius: 999px; padding: 8px 16px; font-weight: 600; font-size: 13.5px; }
+    .tabs button.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+    .tabpane { display: none; } .tabpane.on { display: grid; gap: 14px; align-content: start; }
+    body.lite .tabs [data-tab="mercado"], body.lite .tabs [data-tab="sist"] { display: none; }
+    /* ─── wallets: the two real accounts side by side ─── */
+    .wallets { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .wallet { background: var(--surface-2); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; min-width: 0; }
+    .wallet .wh { display: flex; align-items: center; gap: 12px; } .wallet .wh .ico { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; font-size: 24px; flex: none; }
+    .wallet.mm .wh .ico { background: rgba(246,133,27,.16); } .wallet.ph .wh .ico { background: rgba(171,159,242,.18); }
+    .wallet .wh b { font-size: 15px; display: block; } .wallet .wh small { color: var(--muted); font-size: 12px; }
+    .wallet .big { font-size: 26px; font-weight: 700; margin: 10px 0 2px; font-variant-numeric: tabular-nums; } .wallet .big small { font-size: 12px; color: var(--muted); font-weight: 500; margin-left: 6px; }
+    .wallet .rows { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; font-size: 12.5px; color: var(--muted); margin-top: 8px; } .wallet .rows b { color: var(--text); font-variant-numeric: tabular-nums; }
+    .wallet .addr { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 12px; color: var(--muted); flex-wrap: wrap; } .wallet .addr code { color: var(--text); }
+    .wallet .acts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; } .wallet .acts button, .wallet .acts a.btn { font-size: 12.5px; padding: 6px 11px; text-decoration: none; display: inline-block; }
+    .wallet .acts button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+    @media (max-width: 760px) { .wallets { grid-template-columns: 1fr; } .wallet .rows { grid-template-columns: 1fr; } }
+    /* ─── the team as a lineup graphic: titulares on the pitch, reserves on the bench, details in the modal ─── */
+    .team { display: block !important; }
+    .formation { border-radius: 16px; padding: 12px; margin-top: 10px; border: 1px solid #1f7a45;
+      background: repeating-linear-gradient(0deg, #0a5a2e 0 56px, #0c6434 56px 112px); box-shadow: inset 0 0 0 2px rgba(255,255,255,.08), inset 0 0 60px rgba(0,0,0,.25); position: relative; overflow: hidden; }
+    .formation::before { content: ""; position: absolute; inset: 14px; border: 2px solid rgba(255,255,255,.14); border-radius: 6px; pointer-events: none; }
+    .formation::after { content: ""; position: absolute; left: 50%; top: 50%; width: 120px; height: 120px; margin: -60px 0 0 -60px; border: 2px solid rgba(255,255,255,.12); border-radius: 50%; pointer-events: none; }
+    .formation.bench { background: var(--surface-2); border: 1px dashed var(--border); box-shadow: none; } .formation.bench::before, .formation.bench::after { display: none; }
+    .formation .squad { margin: 0; background: transparent; border: 0; box-shadow: none; padding: 4px 6px 8px; }
+    .plates { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; position: relative; z-index: 1; }
+    .formation.bench .plates { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+    @media (max-width: 1100px) { .formation.bench .plates { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+    @media (max-width: 760px) { .plates, .formation.bench .plates { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; } }
+    @media (max-width: 420px) { .plates, .formation.bench .plates { grid-template-columns: 1fr; } }
+    .team .tb { padding: 26px 12px 12px !important; border-radius: 14px; background: rgba(11,14,13,.82); backdrop-filter: blur(2px); }
+    .team .tb .now, .team .tb .gl:not(.ok) { display: none; }          /* the plate stays short; everything is in the modal */
+    .team .tb .gl.ok { font-size: 11px; }
+    .team .tb .head { gap: 10px; } .team .tb .bot2 { width: 44px; height: 44px; } .team .tb .nm { font-size: 14px; } .team .tb .rl { font-size: 11.5px; -webkit-line-clamp: 1; }
+    .team .tb .chip { font-size: 11px; margin-top: 8px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .team .tb .stats { margin-top: 10px; font-size: 11px; } .team .tb .stats b { font-size: 14px; }
+    .team .tb .shirt { top: 8px; }
+    .formation.bench .tb { background: var(--surface); }
+    .formation.bench .tb .rl { display: none; }
     .meme-real { margin-bottom: 12px; border-color: rgba(52,211,153,.35); } .meme-real .t { display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; align-items: center; }
     .meme-real .note { margin: 10px 0 0; } .meme-real code { font-size: 12px; } .meme-real details { margin-top: 8px; font-size: 12px; }
     .meme-bots { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
@@ -516,7 +556,7 @@
 <body>
   <div class="strip sim" id="strip">SIMULAÇÃO — dinheiro falso, preços e order books reais da Hyperliquid</div>
   <header>
-    <div class="logo"><img src="/static/favicon.svg?v=2" alt="" width="28" height="28"><span>Kairos<small>o momento certo de operar</small></span></div>
+    <div class="logo"><img src="/static/favicon.svg?v=2" alt="" width="28" height="28"><span>Savoia<small>o time de bots · Cruz de Savoia</small></span></div>
     <div class="ctrls">
       <div class="seg" id="acct-seg" role="group" aria-label="Conta">
         <button data-k="sim" onclick="setKind('sim')">🧪 Simulação</button>
@@ -550,6 +590,10 @@
       <div class="kpi"><div class="l">Lucro líquido <span class="muted">(depois de IA e custos)</span></div><div class="v" id="k-pnl">–</div><div class="s" id="k-pnl-s">–</div></div>
       <div class="kpi"><div class="l">Posições abertas</div><div class="v" id="k-pos">–</div><div class="s" id="k-pos-s">–</div></div>
       <div class="kpi"><div class="l">Trades · acerto</div><div class="v" id="k-tr">–</div><div class="s" id="k-tr-s">–</div></div>
+    </section>
+    <section class="panel" id="carteiras">
+      <h2><span>👛 Carteiras <span class="tag">as duas contas reais · cripto na Hyperliquid, memes na Solana</span></span></h2>
+      <div class="wallets" id="wallets"></div>
     </section>
     <div class="two">
     <section class="panel" id="posicoes">
@@ -601,7 +645,12 @@
       <h2><span>🛡️ Pronto para recarregar? <span class="tag" id="conf-tag">–</span></span><span class="note">critérios objetivos sobre a conta real — quando todos ficarem ✅, vale pôr mais $20</span></h2>
       <div class="conf" id="conf"></div>
     </section>
-    <h3 class="band" id="g-bots">Bots</h3>
+    <nav class="tabs" id="tabs" role="tablist" aria-label="Seções">
+      <button data-tab="bots" class="on" onclick="showTab('bots')">⚽ Time</button><button data-tab="meme" onclick="showTab('meme')">🐸 Memes</button>
+      <button data-tab="mercado" onclick="showTab('mercado')">📡 Mercado</button><button data-tab="hist" onclick="showTab('hist')">📒 Histórico</button>
+      <button data-tab="sist" onclick="showTab('sist')">⚙️ Sistema</button>
+    </nav>
+    <div class="tabpane on" data-tab="bots" id="g-bots">
     <section class="panel" id="team">
       <h2><span>Equipe de bots <span class="seg" id="team-filter" role="group" aria-label="Filtrar bots">
           <button data-f="" class="on" onclick="teamFilter(this)">Todos</button><button data-f="titular" onclick="teamFilter(this)">⚽ Titulares</button><button data-f="reserva" onclick="teamFilter(this)">🪑 Reserva</button></span></span>
@@ -657,17 +706,20 @@
         </span></h2>
       <div class="term" id="term" role="log" aria-live="off"></div>
     </section>
-    <h3 class="band" id="g-meme">Meme coins</h3>
+    </div>
+    <div class="tabpane" data-tab="meme" id="g-meme">
     <section class="panel" id="trincheira">
       <h2><span>🐸 Trincheira — bots de meme coins <span class="tag">time separado do de cripto · reservas no laboratório ($100 de mentira) · titulares na conta real de memes</span></span><span class="note" id="meme-head"></span></h2>
       <div class="meme-bot meme-real" id="meme-real"></div>
+      <h4 class="meme-h">Time de memes <span class="muted">clique num bot para ver tudo</span></h4>
       <div class="meme-bots" id="meme-bots"></div>
       <h4 class="meme-h">No radar agora <span class="muted" id="meme-radar-note"></span></h4>
       <p class="note" id="meme-whales" style="margin:0 0 8px"></p>
       <div class="tbl"><table id="meme-radar"></table></div>
       <p class="note" style="margin:10px 0 0">Tokens da Solana em alta (Jupiter) e novos perfis da DexScreener. Só compra se passar em todas as checagens de segurança: mint/freeze revogados, dev ≤ 5%, top holders ≤ 30%, 300+ holders, liquidez ≥ $30k e volume orgânico. Rony 🦈 segue as baleias (compra grande líquida de 2+ carteiras na última hora). Cada bot aprende com seus trades: evita situações em que vive perdendo. Saída: stop −18%, alvo +40%, stop sobe com o ganho, máximo 4h, sai na hora se a liquidez desabar.</p>
     </section>
-    <h3 class="band" id="g-oport">Mercado</h3>
+    </div>
+    <div class="tabpane" data-tab="mercado" id="g-oport">
     <section class="panel" id="radar">
       <h2><span>Radar de oportunidades <span class="tag">o que os bots estão vigiando</span></span>
         <span class="ctrls"><span class="note" id="radar-head"></span><button id="radar-all" onclick="radarAll = !radarAll; renderRadar(acc)">Ver todas</button></span></h2>
@@ -692,7 +744,8 @@
       <div class="tbl" style="max-height:260px"><table id="top-moves"></table></div>
       <div class="legend"><span>Os 10 mais lucrativos e consistentes do ranking público · o Veiga copia quando ≥ 2 deles compram</span></div>
     </section>
-    <h3 class="band" id="g-hist">Histórico</h3>
+    </div>
+    <div class="tabpane" data-tab="hist" id="g-hist">
     <section class="panel" id="analise">
       <h2><span>📊 Análise do histórico <span class="tag" id="stats-tag">–</span></span></h2>
       <div class="goals" id="stats-kpis"></div>
@@ -709,7 +762,8 @@
       <h2><span>Relatório diário <span class="tag" id="rep-tag">–</span></span><span class="note">salvo também em reports/daily/ às 23:55</span></h2>
       <div class="tbl"><table id="daily"></table></div>
     </section>
-    <h3 class="band" id="g-sist">Sistema</h3>
+    </div>
+    <div class="tabpane" data-tab="sist" id="g-sist">
     <section class="panel" id="fundos">
       <h2><span>💵 Adicionar fundos <span class="tag">USDC · rede Arbitrum One</span></span></h2>
       <div class="funds">
@@ -721,7 +775,7 @@
           <ol class="steps">
             <li>Na Binance (ou outra exchange): <b>Sacar USDC</b> → rede <b>Arbitrum One</b> → cole este endereço (ou leia o QR).</li>
             <li>Na MetaMask, abra <a href="https://app.hyperliquid.xyz/portfolio" target="_blank" rel="noopener">app.hyperliquid.xyz</a> → <b>Deposit</b> → USDC (mínimo 5 USDC). Deixe um pouco de ETH na Arbitrum para a taxa.</li>
-            <li>Pronto: o Kairos deteta o depósito sozinho, conta-o como aporte (não como lucro) e os bots passam a usá-lo, até ao limite de capital (hoje $20).</li>
+            <li>Pronto: o Savoia deteta o depósito sozinho, conta-o como aporte (não como lucro) e os bots passam a usá-lo, até ao limite de capital (hoje $20).</li>
           </ol>
           <div class="note red">⚠️ Só USDC na rede Arbitrum One. Outra moeda ou outra rede pode perder-se. Nunca envie direto da exchange para o contrato da Hyperliquid — envie para este endereço e deposite pela MetaMask.</div>
         </div>
@@ -738,10 +792,11 @@
       </div>
       <p class="note" id="limits"></p>
     </details>
+    </div>
   </main>
 
   <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <script src="https://unpkg.com/qrcode-generator@1.4.4/qrcode.js"></script>
-  <script src="/static/paper.js?v=115"></script>
+  <script src="/static/paper.js?v=116"></script>
 </body>
 </html>

@@ -173,7 +173,11 @@ MEME_TRADE_USD = _f("MEME_TRADE_USD", 10.0)
 MEME_MAX_POSITIONS = _i("MEME_MAX_POSITIONS", 4)
 MEME_STOP_PCT = _f("MEME_STOP_PCT", 0.18)
 MEME_TP_PCT = _f("MEME_TP_PCT", 0.40)
-MEME_MAX_HOLD_H = _f("MEME_MAX_HOLD_H", 4)
+MEME_MAX_HOLD_H = _f("MEME_MAX_HOLD_H", 2)
+# every trade, crypto or meme, is short: at most MAX_HOLD_CAP_H (the owner's rule — trades can last 30s or 2h, never a
+# buy-and-hold); the quick-win locks bank the fast moves before that. FOCUS_COINS are scanned first each cycle.
+MAX_HOLD_CAP_H = _f("MAX_HOLD_CAP_H", 2)
+FOCUS_COINS = tuple(c.strip().upper() for c in os.getenv("FOCUS_COINS", "ZEC,PUMP").split(",") if c.strip())
 # meme quick wins: memes spike and dump in minutes, so any sudden gain is banked — the stop locks a share of the peak gain
 # as soon as it clears the round trip's cost (0.5% fee per side + impact): +4% locks 50%, +8% locks 65%, +15% locks 75%,
 # +30% locks 80%. The lock never sits below entry + fees, so a locked exit is always a net gain.

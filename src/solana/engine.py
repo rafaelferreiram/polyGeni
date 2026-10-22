@@ -530,7 +530,7 @@ class PaperEngine:
                 continue
             ready.append((c, candles, safety, profile))
         # best opportunity first: with one slot, the deepest dip inside an uptrend gets it, not the first coin listed
-        ready.sort(key=lambda r: _setup_rank(r[1]))
+        ready.sort(key=lambda r: (r[0].symbol.upper().removeprefix("K") not in cfg.FOCUS_COINS, _setup_rank(r[1])))   # focus coins first
         mt = _market_temp(ready)
         self.ledger.set_state("market_temp", mt)
         breadth = {k: mt.get(k) for k in ("n", "uptrend", "avg_rsi", "avg_ch24")}   # whole-market context for the AI
@@ -700,7 +700,7 @@ def _max_hold(strategy: str, default: float) -> float:
     """Day-trade bots close their positions sooner (e.g. trend: 24h); others use the engine default."""
     from src.solana import arena
     from src.solana.strategies import RULE_BOTS
-    hold = getattr(RULE_BOTS.get(strategy), "max_hold_h", None) or default
+    hold = min(getattr(RULE_BOTS.get(strategy), "max_hold_h", None) or default, cfg.MAX_HOLD_CAP_H)   # no buy-and-hold: 2h cap
     fast = arena.fast_exit_hold(strategy)
     return min(hold, fast) if fast else hold
 

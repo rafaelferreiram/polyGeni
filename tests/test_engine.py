@@ -304,7 +304,7 @@ def test_bots_rest_after_the_daily_goal(ledger, monkeypatch):
 
 def test_trend_positions_are_day_trades():
     from src.solana.engine import _max_hold
-    assert _max_hold("trend", 72) == 24 and _max_hold("rules", 72) == 72 and _max_hold("llm:claude-haiku-5-5", 72) == 72
+    assert _max_hold("trend", 72) == 2 and _max_hold("rules", 72) == 2 and _max_hold("llm:claude-haiku-5-5", 72) == 2   # 2h cap for all
 
 
 def test_manual_buy_goes_through_risk_with_stop_and_target(ledger):

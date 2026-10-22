@@ -1,6 +1,6 @@
-# Kairos
+# Savoia
 
-*Kairos* is Greek for "the right moment": a team of trading bots that watches the whole crypto market 24/7 and acts
+*Savoia* (after the Cruz de Savoia in Palmeiras' history; formerly Kairos): a team of trading bots that watches the whole crypto market 24/7 and acts
 only when the moment is right. (Repository and package name: `polyGeni`.)
 
 > ⚠️ **No real trading by default.** The Hyperliquid bot trades real money only with `LIVE_TRADING=1`, an API wallet key for that network **and** a click on Start in

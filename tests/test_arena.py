@@ -222,7 +222,7 @@ def test_fifteen_minute_twins_can_earn_real_money_and_are_named_for_their_exits(
     from src.solana.strategies import FAST_BOTS, RULE_BOTS
     for m in FAST_BOTS:
         s = RULE_BOTS[m]()
-        assert s.name == m and s.max_hold_h == 6 and _max_hold(m, 72) == 6
+        assert s.name == m and s.max_hold_h == 6 and _max_hold(m, 72) == 2   # the 2h cap (MAX_HOLD_CAP_H) applies to every bot
         g = arena.green_light(m)
         assert "versão de 15 min: só laboratório" not in g.get("missing", [])     # same green light as everyone
     assert {"whales_15m", "copy_15m"} <= {t.model for t in hl_live.team()}
@@ -241,7 +241,7 @@ def test_turbo_runs_the_bot_every_minute_until_midnight(tmp_path, monkeypatch):
     assert eng.ledger.get_state("train_boost_until") >= r["until"][:13]
     assert r["until"].endswith(":00:00+00:00")      # Lisbon midnight
     from src.solana.engine import _max_hold
-    assert _max_hold("claude-haiku-5-5", 48) == 48 and arena.fast_exit_hold("claude-haiku-5-5") is None   # no forced 2h exit
+    assert _max_hold("claude-haiku-5-5", 48) == 2 and arena.fast_exit_hold("claude-haiku-5-5") is None   # no turbo exit; only the 2h cap
 
 
 def test_titular_rule_bot_gets_its_reviews_by_the_chosen_model_and_reserves_one_coffee_a_day(tmp_path, monkeypatch):

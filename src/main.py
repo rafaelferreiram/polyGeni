@@ -10,7 +10,7 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 
-app = FastAPI(title="Kairos", version="1.0.0")
+app = FastAPI(title="Savoia", version="1.0.0")
 
 from src.api import auth  # noqa: E402
 app.middleware("http")(auth.middleware)   # remote access: login + read-only; this Mac is unaffected
@@ -48,7 +48,7 @@ def shutdown():
 
 @app.on_event("startup")
 def startup():
-    logging.getLogger("main").info("Kairos started.")
+    logging.getLogger("main").info("Savoia started.")
     from src.solana import logbuf
     logbuf.install()     # live log console on the dashboard
     from src.solana import hl_live
