@@ -218,7 +218,7 @@ MEME_REAL_MODE = os.getenv("MEME_REAL_MODE", "ensaio")
 MEME_WALLET_PATH = os.getenv("MEME_WALLET_PATH", os.path.expanduser("~/.kairos/meme_wallet.json"))
 MEME_REAL_DB_PATH = os.getenv("MEME_REAL_DB_PATH", "meme_real.db")
 MEME_REAL_DRY_CAPITAL_USD = _f("MEME_REAL_DRY_CAPITAL_USD", 25.0)
-MEME_REAL_TRADE_USD = _f("MEME_REAL_TRADE_USD", 5.0)
+MEME_REAL_TRADE_USD = _f("MEME_REAL_TRADE_USD", 3.0)
 MEME_REAL_MAX_POSITIONS = _i("MEME_REAL_MAX_POSITIONS", 3)       # shared by the meme and Solana crypto teams: ≤ $15 exposed
 MEME_REAL_MAX_BUYS_DAY = _i("MEME_REAL_MAX_BUYS_DAY", 12)
 MEME_REAL_DAILY_LOSS_USD = _f("MEME_REAL_DAILY_LOSS_USD", 5.0)
@@ -249,7 +249,7 @@ LIVE_SHORT_MAX_PER_DAY = _i("LIVE_SHORT_MAX_PER_DAY", 3)
 LIVE_SHORT_DAILY_LOSS_USD = _f("LIVE_SHORT_DAILY_LOSS_USD", 1.0)
 LIVE_SHORT_MAX_STOP_PCT = _f("LIVE_SHORT_MAX_STOP_PCT", 0.03)
 MEME_REAL_KILL_PCT = _f("MEME_REAL_KILL_PCT", 0.6)                 # equity below 60% of deposits: sell all and halt
-MEME_REAL_MAX_PRIORITY_LAMPORTS = _i("MEME_REAL_MAX_PRIORITY_LAMPORTS", 200_000)   # ≤ 0.0002 SOL priority fee
+MEME_REAL_MAX_PRIORITY_LAMPORTS = _i("MEME_REAL_MAX_PRIORITY_LAMPORTS", 60_000)   # ≤ 0.00006 SOL (~$0.006) priority fee: 0.2% of a $3 trade
 # margin of error before a buy (edge.py): skip only when confident (this much evidence) that even the optimistic odds lose
 EDGE_CHECK = os.getenv("EDGE_CHECK", "1") == "1"
 EDGE_MIN_EVIDENCE = _i("EDGE_MIN_EVIDENCE", 30)
