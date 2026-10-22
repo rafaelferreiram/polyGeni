@@ -1041,8 +1041,12 @@ function promoteCard(d, r) {
   const c = r.can_promote;
   if (d.titular || !c) return "";
   const why = `${c.wins} de ${c.need_wins} vitórias · acerto ${pct0(c.win_rate)} (mínimo ${pct0(c.need_win_rate)})`;
+  const sg = c.significance;
+  const luck = sg?.p != null
+    ? `🎲 Teste de sorte: p = ${sg.p.toFixed(2)} ${sg.p < c.p_max ? "✅ não é sorte" : `❌ pode ser sorte (precisa < ${c.p_max.toFixed(2)})`} · média real ${sg.real_pct >= 0 ? "+" : ""}${sg.real_pct.toFixed(2)}% por trade vs ${sg.random_pct >= 0 ? "+" : ""}${sg.random_pct.toFixed(2)}% em ${sg.samples} livros de entradas aleatórias com as mesmas saídas`
+    : `🎲 Teste de sorte: ${sg?.error ? "sem dados agora" : "a partir de 10 trades fechados"} (precisa p < 0,05)`;
   return `<h4>⬆️ Subir para titular</h4><div class="bm-card"><div class="t"><span>${c.ok ? "✅ Pode subir para o time titular" : "Ainda não pode subir"}</span></div>
-    <span class="muted">${why}. Titular opera dinheiro real (posição de $10, mesmos limites).</span>
+    <span class="muted">${why}. Titular opera dinheiro real (posição de $10, mesmos limites).</span><br><span class="muted">${luck}</span>
     ${c.ok && (d.stats?.pnl_usd ?? 0) < 0 ? `<div class="bm-card" style="margin-top:10px;border-color:rgba(251,191,36,.45)">⚠️ <b>Atenção:</b> no laboratório ele está no prejuízo
       (${pnl(d.stats.pnl_usd)}, fator de lucro ${d.stats.profit_factor ?? "–"}): perde mais nas derrotas do que ganha nas vitórias. Promovido, deve perder dinheiro real.</div>` : ""}
     ${c.ok && !REMOTE ? `<div class="bm-actions"><button class="promote" onclick="promoteBot('${esc(d.model)}', this)">⬆️ Promover ${esc(look(d.model).label)} a titular</button></div>` : ""}</div>`;
