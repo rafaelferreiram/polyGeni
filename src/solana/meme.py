@@ -367,7 +367,11 @@ def board() -> dict:
         pos = led.positions()
         eq = led.cash() + sum((p["mark_value"] if p["mark_value"] is not None else p["cost_usd"]) for p in pos)
         wins = sum(t["pnl_usd"] > 0 for t in trades)
-        bots.append({"model": b, **meta, "learned": learning.summary(learning.record(led, b)), "equity": round(eq, 2), "pnl": round(eq - led.contributed(), 4),
+        wr = wins / len(trades) if trades else 0.0
+        # meme bots only trade in the lab: a real meme account needs a funded Solana wallet (Jupiter swaps), not built yet
+        mode = {"real": False, "titular": False, "wins": wins, "need_wins": cfg.PROMOTE_MIN_WINS, "win_rate": round(wr, 3),
+                "need_win_rate": cfg.PROMOTE_MIN_WIN_RATE, "ready": wins >= cfg.PROMOTE_MIN_WINS and wr >= cfg.PROMOTE_MIN_WIN_RATE}
+        bots.append({"model": b, **meta, "mode": mode, "learned": learning.summary(learning.record(led, b)), "equity": round(eq, 2), "pnl": round(eq - led.contributed(), 4),
                      "trades": len(trades), "wins": wins, "win_rate": round(wins / len(trades), 3) if trades else None,
                      "positions": [{"symbol": p["symbol"], "mint": p["mint"], "cost": round(p["cost_usd"], 2),
                                     "now": round(p["mark_value"] or p["cost_usd"], 2), "opened_at": p["opened_at"]} for p in pos],

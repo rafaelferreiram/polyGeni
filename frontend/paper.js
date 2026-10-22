@@ -800,10 +800,14 @@ async function loadMeme() {
   document.getElementById("meme-head").textContent = st.at ? `última varredura ${hhmm(st.at)} · ${st.candidates} tokens analisados${st.error ? " · erro: " + st.error : ""}` : "aguardando a primeira varredura…";
   setHTML("meme-bots", d.bots.map((b) => {
     const L = look(b.model);
-    return `<div class="meme-bot" style="--c:${L.color}"><div class="top">${botFace(L.color, L.ico)}<div><b>${esc(L.label)}</b><div class="muted" style="font-size:12px">${esc(b.role)}</div></div></div>
+    const m = b.mode || {};
+    const badge = m.real ? '<span class="mode real">💵 REAL · titular</span>' : '<span class="mode fake">🧪 FAKE · reserva</span>';
+    const prog = `Titular: ${m.wins}/${m.need_wins} vitórias · acerto ${b.trades ? pct0(m.win_rate) : "–"} (mín. ${pct0(m.need_win_rate)})`;
+    return `<div class="meme-bot" style="--c:${L.color}"><div class="top">${botFace(L.color, L.ico)}<div><b>${esc(L.label)}</b> ${badge}<div class="muted" style="font-size:12px">${esc(b.role)}</div></div></div>
       <div class="nums"><span><b>${pnl(b.pnl)}</b>resultado</span><span><b>${b.trades}</b>trades</span><span><b>${b.win_rate == null ? "–" : pct0(b.win_rate)}</b>acerto</span><span><b>${b.positions.length}</b>abertas</span></div>
       <div class="chips">${b.positions.map((p) => `<span>${esc(p.symbol)} ${pnl(p.now - p.cost)}</span>`).join("") || '<span class="muted">sem posições</span>'}
-        ${b.recent.slice(0, 4).map((t) => `<span title="${esc(t.reason)}">${esc(t.symbol)} ${t.pct > 0 ? "+" : ""}${t.pct}%</span>`).join("")}</div>${learnedLine(b.learned)}</div>`;
+        ${b.recent.slice(0, 4).map((t) => `<span title="${esc(t.reason)}">${esc(t.symbol)} ${t.pct > 0 ? "+" : ""}${t.pct}%</span>`).join("")}</div>${learnedLine(b.learned)}
+      <div class="gl${m.ready ? " ok" : ""}" title="${m.ready ? "Já cumpre a regra de titular. Meme coin com dinheiro real ainda não existe: precisa de uma carteira Solana com saldo." : "Treinando no laboratório com $" + "100 de mentira."}">🎓 ${prog}${m.ready ? " · ✅ pronto" : ""}</div></div>`;
   }).join(""));
   const r = d.radar || [];
   document.getElementById("meme-radar-note").textContent = r.length ? `· ${r.filter((x) => x.safe).length} de ${r.length} passam na segurança` : "";
