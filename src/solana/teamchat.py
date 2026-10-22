@@ -58,7 +58,7 @@ def meta(k: str, v: str | None = None) -> str | None:
 
 
 # ─── personalities: each bot talks like its player ───
-NAMES = {"meme_grad": "Breno Lopes", "meme_momo": "Deyverson", "short": "Gustavo Gómez", "rules": "São Marcos", "trend": "Endrick", "trend4h": "Gabriel Jesus", "whales": "Evair", "whales2": "Dudu",
+NAMES = {"meme_grad": "Breno Lopes", "meme_momo": "Deyverson", "meme_whale": "Rony", "short": "Gustavo Gómez", "rules": "São Marcos", "trend": "Endrick", "trend4h": "Gabriel Jesus", "whales": "Evair", "whales2": "Dudu",
          "copy": "Veiga", "whales_15m": "Evair 15m", "copy_15m": "Veiga 15m", "trend4h_15m": "Gabriel Jesus 15m"}
 VOICE = {   # family -> (buy, win, loss, tip, cheer, calm)
     "rules": ("Calma, pessoal. Esperei a queda certa e entrei em {s}.", "Paciência paga. {s} fechado no verde.",
@@ -80,6 +80,9 @@ VOICE["whales2"] = VOICE["whales"]
 VOICE["meme_grad"] = ("Saiu do forno da pump.fun e passou na revista: entrei em {s} 🎓", "Gol saindo do banco! {s} no verde.",
                       "{s} não segurou depois da formatura. Saí rápido.", "@{to}, {s} acabou de se formar: {d}",
                       "Boa, @{to}! 🎓", "Meme é assim, @{to}. Próxima.")
+VOICE["meme_whale"] = ("As baleias da Solana entraram pesado: fui junto em {s} 🦈", "Velocidade e faro: {s} no verde 🦈",
+                       "As baleias saíram de {s} antes de mim. Stop feito.", "@{to}, baleia rondando {s}: {d}",
+                       "Isso, @{to}! 🦈", "Bola pra frente, @{to}.")
 VOICE["meme_momo"] = ("Tá subindo com comprador de verdade: entrei em {s} 🐸", "Hahaha, {s} voou! 🐸",
                       "{s} virou pó, mas saí no stop.", "@{to}, olha a {s} pegando tração: {d}",
                       "Vai, @{to}! 🐸", "Faz parte da trincheira, @{to}.")

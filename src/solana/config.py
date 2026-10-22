@@ -167,6 +167,8 @@ MEME_MAX_POSITIONS = _i("MEME_MAX_POSITIONS", 4)
 MEME_STOP_PCT = _f("MEME_STOP_PCT", 0.18)
 MEME_TP_PCT = _f("MEME_TP_PCT", 0.40)
 MEME_MAX_HOLD_H = _f("MEME_MAX_HOLD_H", 4)
+MEME_WHALE_TOKENS = _i("MEME_WHALE_TOKENS", 12)       # tokens whose big trades are watched (GeckoTerminal)
+MEME_WHALE_PER_ROUND = _i("MEME_WHALE_PER_ROUND", 4)  # of those, how many are re-read each round (rate limit)
 # margin of error before a buy (edge.py): skip only when confident (this much evidence) that even the optimistic odds lose
 EDGE_CHECK = os.getenv("EDGE_CHECK", "1") == "1"
 EDGE_MIN_EVIDENCE = _i("EDGE_MIN_EVIDENCE", 30)

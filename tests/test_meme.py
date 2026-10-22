@@ -45,3 +45,33 @@ def test_trench_target_and_rising_stop(tmp_path, monkeypatch):
     meme.manage("meme_momo", {"MINT1": {"price": 1.15, "liq": 1_000_000}})       # back below the raised stop (+21%)
     t = led.closed_trades()[0]
     assert "stop" in t["reason"] and t["pnl_usd"] > 0
+
+
+def test_whale_flow_rony_and_learning(tmp_path, monkeypatch):
+    now = datetime.now(timezone.utc)
+    trade = lambda kind, usd, who, mins: {"attributes": {"kind": kind, "volume_in_usd": str(usd), "tx_from_address": who,
+                                                          "block_timestamp": (now - timedelta(minutes=mins)).isoformat()}}
+    rows = [trade("buy", 5000, "W1", 10), trade("buy", 4000, "W2", 20), trade("sell", 1500, "W3", 5),
+            trade("buy", 900_000, "OLD", 90), trade("buy", 500, "SMALL", 1)]               # too old / too small: ignored
+    monkeypatch.setattr(meme, "request_json", lambda *a, **k: {"data": rows})
+    monkeypatch.setattr(meme, "_hot", {})
+    w = meme.whale_flow("MINT1", "FROG", "POOL", 80_000)
+    assert (w["buy_1h"], w["sell_1h"], w["net_1h"], w["buyers"]) == (9000, 1500, 7500, 2)
+    meme.whale_flow("MINT9", "DOG", "POOL9", 80_000)
+    assert {x["wallet"] for x in meme.hot_wallets()} == {"W1", "W2"}                       # whales seen in 2 tokens
+    t = _token(whale=w)
+    assert meme.signal("meme_whale", t) and "baleias comprando" in meme.situation(t)
+    assert not meme.signal("meme_whale", _token(whale={"net_1h": -500, "buyers": 3}))
+
+    # learning: each exit is linked to its buy, so a losing situation is skipped next time
+    monkeypatch.setattr(meme, "_ledgers", {b: Ledger(str(tmp_path / f"arena_{b}.db"), 1000.0) for b in meme.BOTS})
+    monkeypatch.setattr(meme.cfg, "LEARN_MIN_TRADES", 2)
+    led = meme.ledger("meme_whale")
+    for i in range(3):
+        led.set_state(f"pos:M{i}", None)
+        meme.enter("meme_whale", [_token(id=f"M{i}", symbol=f"T{i}", whale=w)], {f"M{i}": {"price": 1.0, "liq": 1_000_000}})
+        meme.manage("meme_whale", {f"M{i}": {"price": 0.7, "liq": 1_000_000}})            # stopped out
+    from src.solana import learning
+    learning._cache.clear()
+    rec = learning.record(led, "meme_whale")
+    assert rec["baleias comprando"]["n"] == 3 and rec["baleias comprando"]["wins"] == 0
