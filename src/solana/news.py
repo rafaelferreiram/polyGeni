@@ -22,7 +22,7 @@ NAMES = {"BTC": ["bitcoin", "btc"], "ETH": ["ethereum", "ether", "eth"], "SOL": 
          "SUI": ["sui"], "NEAR": ["near protocol"], "AAVE": ["aave"], "UNI": ["uniswap", "uni token"],
          "ARB": ["arbitrum", "arb"], "TAO": ["bittensor", "tao"], "ZEC": ["zcash", "zec"], "XMR": ["monero", "xmr"],
          "WLD": ["worldcoin", "world network", "wld"], "ENA": ["ethena", "ena"], "ZRO": ["layerzero", "zro"],
-         "ONDO": ["ondo"], "kPEPE": ["pepe"]}
+         "ONDO": ["ondo"], "kPEPE": ["pepe"], "PUMP": ["pump.fun", "pumpfun", "pump token", "PUMP token"]}
 _PATTERNS = {c: re.compile(r"\b(" + "|".join(re.escape(n) for n in ns) + r")\b", re.I) for c, ns in NAMES.items()}
 
 _items: list[dict] = []

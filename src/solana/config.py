@@ -83,7 +83,7 @@ _METALS = ["xyz:GOLD", "xyz:SILVER"] if HL_INCLUDE_METALS else []
 # traded perps, each listed on Hyperliquid with ≥ 208 days of history and ≥ $1M daily volume (checked 2026-10-21).
 # The bots scan all of it every cycle and take the best setup; risk limits are per position, not per coin.
 HL_BROAD = ("BTC,ETH,SOL,HYPE,XRP,BNB,DOGE,ADA,TRX,AVAX,LINK,LTC,BCH,XLM,HBAR,DOT,SUI,NEAR,AAVE,UNI,ARB,TAO,ZEC,XMR,"
-            "WLD,ENA,ZRO,ONDO,kPEPE")
+            "WLD,ENA,ZRO,ONDO,kPEPE,PUMP")
 HL_MARKETS = [m for m in os.getenv("HL_MARKETS", HL_BROAD).split(",") if m] + _METALS
 
 # Per-venue risk profile: Solana tokens get a small slice, majors/metals a bigger one with wider stops.

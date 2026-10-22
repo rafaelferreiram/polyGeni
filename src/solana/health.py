@@ -61,9 +61,9 @@ def _whales():
 
 # (name, what it is used for, check). None as ok = not used / optional, shown grey.
 CHECKS = [
-    ("Hyperliquid (dados)", "preços, candles e order books dos 29 mercados", _hyperliquid),
+    ("Hyperliquid (dados)", "preços, candles e order books dos 30 mercados", _hyperliquid),
     ("Hyperliquid (conta real)", "ordens reais com stop e alvo", _hl_account),
-    ("Hyperliquid (baleias)", "feed ao vivo de ordens grandes nas 29 moedas", _whales),
+    ("Hyperliquid (baleias)", "feed ao vivo de ordens grandes nas 30 moedas", _whales),
     ("Notícias cripto", "CoinDesk, Cointelegraph, Decrypt, The Block → bots e painel",
      lambda: (lambda st: (st["ok"], ", ".join(f"{k} {v}" for k, v in st["sources"].items()) or "a carregar…"))(
          __import__("src.solana.news", fromlist=["status"]).status())),

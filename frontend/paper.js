@@ -301,7 +301,7 @@ function renderGoals(a) {
     card(g.trades.done >= g.trades.target, "🔁 Trades abertos hoje", `${g.trades.done} <small>de ${g.trades.target}</small>`,
          pctOf(g.trades.done, g.trades.target), `${g.trades.closed} fechados · ${g.trades.wins} com lucro · sem limite diário de trades: compra sempre que houver sinal e vaga`),
     card(g.analyses.done >= g.analyses.target_so_far, "🔍 Análises (ciclos) hoje", `${g.analyses.done} <small>de ${g.analyses.target_so_far} até agora</small>`,
-         pctOf(g.analyses.done, g.analyses.target_so_far), "1 ciclo a cada 5 min, 29 moedas por ciclo"),
+         pctOf(g.analyses.done, g.analyses.target_so_far), "1 ciclo a cada 5 min, 30 moedas por ciclo"),
   ].join(""));
 }
 
@@ -851,7 +851,7 @@ function learnedLine(l, h) {
 function trainButton(model, r) {
   if (!r?.green_light || r.green_light.ok) return "";
   const until = r.train_boost_until && new Date(r.train_boost_until) > new Date() ? r.train_boost_until : null;
-  const scan = r.ai_full_scan_until && new Date(r.ai_full_scan_until) > new Date() ? `<div class="gl ok">🧠 analisa as 29 moedas a cada hora até ${hhmm(r.ai_full_scan_until)}</div>` : "";
+  const scan = r.ai_full_scan_until && new Date(r.ai_full_scan_until) > new Date() ? `<div class="gl ok">🧠 analisa as 30 moedas a cada hora até ${hhmm(r.ai_full_scan_until)}</div>` : "";
   const turbo = r.turbo_until && new Date(r.turbo_until) > new Date() ? r.turbo_until : null;
   return scan + (turbo ? `<button class="tboost on" disabled title="analisa sem parar até a meia-noite">⚡ turbo até 00:00</button>`
     : `<button class="tboost" onclick="event.stopPropagation(); trainBoost('${esc(model)}', this)">⚡ Turbo hoje</button>`);
