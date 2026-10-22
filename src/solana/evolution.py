@@ -17,7 +17,7 @@ from datetime import datetime, timedelta, timezone
 from src.solana import config as cfg
 
 logger = logging.getLogger("solana.evolution")
-CHAMPIONS = ["Weverton", "Gustavo Gómez", "Rony", "Zé Rafael", "Danilo", "Marcos Rocha", "Luan", "Breno Lopes", "Alex",
+CHAMPIONS = ["Weverton", "Rony", "Zé Rafael", "Danilo", "Marcos Rocha", "Luan", "Breno Lopes", "Alex",
              "Arce", "Zinho", "Paulo Nunes", "Oséas", "Júnior Baiano", "Roque Júnior", "César Sampaio", "Felipe Melo",
              "Gabriel Menino", "Patrick de Paula", "Deyverson", "Scarpa", "Piquerez", "Mayke", "Viña", "Willian"]
 PATH = os.getenv("LINEAGE_PATH", "lineage.json")
@@ -56,6 +56,8 @@ def register(data: dict | None = None):
         st.RULE_BOTS[model] = evolved(parent_cls, model, b["params"])
         if b["base"] in st.FAST_BOTS:
             st.FAST_BOTS.add(model)
+        if b["base"] in st.SHORT_BOTS:               # a short successor stays a lab-only short (same set as LAB_ONLY_BOTS)
+            st.SHORT_BOTS.add(model)
 
 
 def evolved(cls, name: str, params: dict):
