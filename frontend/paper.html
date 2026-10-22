@@ -67,24 +67,7 @@
     .setup { border: 1px solid #4a1d21; border-radius: 14px; padding: 16px 18px; background: #1a1012; }
     .setup ol { padding-left: 20px; line-height: 1.8; font-size: 13.5px; }
 
-    /* ── animated bot room ── */
-    .room { background:
-              radial-gradient(ellipse at 50% -20%, rgba(52,211,153,.10), transparent 60%),
-              repeating-linear-gradient(0deg, transparent 0 31px, rgba(255,255,255,.035) 31px 32px),
-              repeating-linear-gradient(90deg, transparent 0 31px, rgba(255,255,255,.035) 31px 32px), var(--floor);
-            border: 1px solid var(--border); border-radius: 14px; padding: 26px 18px 20px; }
-    .line { display: flex; align-items: stretch; gap: 0; }
-    .st { flex: 1 1 0; min-width: 0; background: rgba(18,23,21,.96); border: 1px solid var(--border); border-radius: 14px;
-          padding: 14px 12px 12px; transition: border-color .3s, box-shadow .3s, transform .3s; position: relative; }
-    .wire { flex: 0 0 34px; align-self: center; height: 4px; border-radius: 2px; background: var(--border); position: relative; overflow: hidden; }
-    .wire.on { background: repeating-linear-gradient(90deg, var(--green) 0 8px, transparent 8px 14px); background-size: 28px 4px;
-               animation: flow .6s linear infinite; }
-    @keyframes flow { to { background-position: 28px 0; } }
     .head { display: flex; gap: 10px; align-items: center; }
-
-
-
-
 
     .badge-ico { position: absolute; bottom: -8px; right: -10px; font-size: 16px; filter: drop-shadow(0 1px 2px #000); }
 
@@ -101,22 +84,6 @@
     .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
     .zz { position: absolute; top: 6px; right: 10px; color: var(--muted); font-size: 11px; font-weight: 700; animation: zz 2.4s ease-in-out infinite; }
     /* working: scanning eyes, blinking antenna, glow, typing */
-    .st.working { border-color: var(--green); box-shadow: 0 0 0 1px var(--green), 0 0 28px var(--glow); transform: translateY(-4px); }
-
-
-
-
-    .st.working .dot { background: var(--green); animation: pulse .5s infinite alternate; }
-    .st.working .bubble::after { content: " ▍"; color: var(--green); animation: pulse .5s infinite alternate; }
-    .st.ok .dot { background: var(--green); }
-
-    .st.blocked .dot { background: var(--yellow); }
-
-
-    .st.blocked .bubble { box-shadow: inset 3px 0 0 var(--yellow); }
-
-    .st.idle { opacity: .8; }
-    .st.off { opacity: .45; filter: grayscale(.6); }
 
     /* ── cute bots (inline SVG from botFace()): colour per bot via --c, mood via the card's state class ── */
     .bot2 { width: 58px; height: 58px; flex: none; position: relative; --c: #9fe8c7; }
@@ -148,7 +115,7 @@
     .off .bot2 .eye { animation: none; }
 
     /* ── hover / focus cards: a few facts about the agent and what it is doing now ── */
-    .st, .tb { outline-offset: 3px; }
+    .tb { outline-offset: 3px; }
     .tip { position: absolute; left: 6px; top: 6px; width: max(calc(100% - 12px), 230px); max-width: calc(100vw - 40px); z-index: 5;
            background: rgba(10,14,12,.97); border: 1px solid color-mix(in srgb, var(--c, var(--accent)) 45%, var(--border)); border-radius: 12px;
            padding: 10px 12px; font-size: 12px; line-height: 1.5; color: var(--text); box-shadow: 0 10px 30px rgba(0,0,0,.5);
@@ -158,11 +125,11 @@
     .tip dt { color: var(--muted); } .tip dd { margin: 0; overflow-wrap: anywhere; }
     .tip .wip { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
     /* bot cards: details on hovering the bot itself, so the buttons below stay clickable */
-    .st:hover .tip, .st:focus-within .tip, .tb .head:hover ~ .tip, .tb:focus-visible .tip { opacity: 1; transform: none; pointer-events: auto; }
+    .tb .head:hover ~ .tip, .tb:focus-visible .tip { opacity: 1; transform: none; pointer-events: auto; }
     .tb .head { cursor: help; }
-    .st:hover, .st:focus-within, .tb:hover, .tb:focus-within { z-index: 6; }
-    .st:last-child .tip, .tb:last-child .tip { left: auto; right: 6px; }
-    @media (hover: none) { .st, .tb { cursor: pointer; } }
+    .tb:hover, .tb:focus-within { z-index: 6; }
+    .tb:last-child .tip { left: auto; right: 6px; }
+    @media (hover: none) { .tb { cursor: pointer; } }
     @keyframes blink { 0%, 92%, 100% { transform: scaleY(1); } 95% { transform: scaleY(.1); } }
     @keyframes scan { 0%, 100% { transform: translateX(-3px); } 50% { transform: translateX(3px); } }
     @keyframes hop { 50% { transform: translateY(-4px); } }
@@ -172,7 +139,7 @@
     .cup::before { content: "∿"; position: absolute; left: 5px; top: -11px; font-size: 12px; color: var(--muted); animation: steam 1.6s ease-out infinite; }
     #btn-coffee.on { border-color: #d6a26b; color: #f1c999; }
     @keyframes zz { 0% { opacity: 0; transform: translate(0, 4px); } 50% { opacity: 1; } 100% { opacity: 0; transform: translate(6px, -8px); } }
-    @media (prefers-reduced-motion: reduce) { .room *, .wire, .cup::before { animation: none !important; transition: none !important; } }
+    @media (prefers-reduced-motion: reduce) { .cup::before { animation: none !important; transition: none !important; } }
     .flow { display: flex; align-items: stretch; gap: 10px; flex-wrap: wrap; }
     .flow > div:not(.op) { flex: 1 1 140px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
     .flow .op { align-self: center; color: var(--muted); font-size: 20px; font-weight: 300; }
@@ -220,8 +187,6 @@
     .tb .meta b { color: var(--text); font-variant-numeric: tabular-nums; }
     .tb .bubble { min-height: 44px; }
     .tb.working { border-color: var(--green); box-shadow: 0 0 0 1px var(--green), 0 0 24px var(--glow); transform: translateY(-3px); }
-
-
 
     .tb.holding { border-color: rgba(52,211,153,.5); }
 
@@ -296,10 +261,7 @@
     @media (max-width: 600px) { .panel { position: relative; } .panel h2 { padding-right: 28px; }
       .panel h2 .fold { position: absolute; top: 14px; right: 10px; margin: 0; } }
     .chartbox { height: 360px; width: 100%; } .chartbox.small { height: 170px; margin-top: 6px; }
-    .news { display: grid; gap: 2px; max-height: 420px; overflow-y: auto; }
-    .ni { display: grid; grid-template-columns: 70px 1fr; gap: 10px; padding: 8px 4px; border-bottom: 1px solid var(--border); font-size: 13px; }
-    .ni .w { color: var(--muted); font-size: 12px; } .ni a { color: var(--text); text-decoration: none; } .ni a:hover { color: var(--accent); }
-    .ni .src { color: var(--muted); font-size: 11.5px; } .coin-tag { display: inline-block; font-size: 11px; padding: 0 6px; margin-left: 4px; border-radius: 999px; border: 1px solid var(--border); color: var(--accent); }
+    .coin-tag { display: inline-block; font-size: 11px; padding: 0 6px; margin-left: 4px; border-radius: 999px; border: 1px solid var(--border); color: var(--accent); }
     #radar-table tbody tr { cursor: pointer; } #radar-table tbody tr:hover { background: var(--surface-2); }
     #team-filter { margin-left: 10px; text-transform: none; letter-spacing: 0; vertical-align: middle; }
     #team-filter button { padding: 4px 10px; font-size: 12px; }
@@ -375,8 +337,6 @@
     .th-facts .wide { grid-column: 1 / -1; overflow-wrap: anywhere; }
     .pill { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); white-space: nowrap; }
     .pill.on { color: var(--green); border-color: rgba(52,211,153,.5); }
-    .room-foot { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 14px; font-size: 12.5px; color: var(--muted); }
-    .room-foot b { color: var(--text); }
 
     .two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
     .feed { max-height: 320px; overflow-y: auto; }
@@ -401,9 +361,6 @@
     .k-entry { color: var(--green); } .k-exit { color: #7dd3fc; } .k-veto { color: var(--yellow); } .k-error, .k-kill_switch { color: var(--red); }
     main a { color: var(--accent); }
     @media (max-width: 1100px) {
-      .line { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
-      .wire { display: none; }
-      .st.working { transform: none; }
     }
     @media (max-width: 960px) { .two { grid-template-columns: 1fr; } }
     @media (max-width: 600px) {
@@ -416,8 +373,7 @@
       .kpi .v { font-size: 24px; }
       .flow .op { display: none; } .flow > div:not(.op) { flex-basis: calc(50% - 5px); }
       .flow b { font-size: 18px; }
-      .room { padding: 16px 12px; }
-      .team, .line { grid-template-columns: 1fr; }
+      .team { grid-template-columns: 1fr; }
       .fi { flex-wrap: wrap; gap: 2px 10px; }
     }
 
@@ -433,10 +389,10 @@
     .msg .bub { background: var(--surface-2); border: 1px solid var(--border); border-radius: 14px 14px 14px 4px; padding: 8px 12px; font-size: 13px; line-height: 1.45; }
     .msg .who { font-size: 12px; font-weight: 700; color: var(--c, var(--accent)); margin-bottom: 2px; display: flex; gap: 8px; align-items: baseline; }
     .msg .who small { color: var(--muted); font-weight: 500; font-size: 11px; }
-    .msg.k-exit.win .bub { border-color: rgba(52,211,153,.45); } .msg.k-exit.loss .bub { border-color: rgba(248,113,113,.4); }
-    .msg.k-handoff .bub, .msg.k-tip .bub { border-color: rgba(125,211,252,.5); background: rgba(125,211,252,.06); }
-    .msg.k-network { align-self: center; max-width: 100%; } .msg.k-network .bub { border-radius: 12px; background: rgba(0,100,55,.18); border-color: #1f7a45; text-align: center; }
-    .msg.k-evolution .bub { border-color: rgba(251,191,36,.5); background: rgba(251,191,36,.06); }
+    .msg.c-exit.win .bub { border-color: rgba(52,211,153,.45); } .msg.c-exit.loss .bub { border-color: rgba(248,113,113,.4); }
+    .msg.c-handoff .bub, .msg.c-tip .bub { border-color: rgba(125,211,252,.5); background: rgba(125,211,252,.06); }
+    .msg.c-network { align-self: center; max-width: 100%; } .msg.c-network .bub { border-radius: 12px; background: rgba(0,100,55,.18); border-color: #1f7a45; text-align: center; }
+    .msg.c-evolution .bub { border-color: rgba(251,191,36,.5); background: rgba(251,191,36,.06); }
     @media (max-width: 600px) { .chat { height: 320px; padding: 8px; } .msg { max-width: 100%; } }
     /* Palmeiras atmosphere: titulares on the pitch, reserves on the bench */
     .squad { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 12px; font-size: 14px; margin-top: 4px; }
@@ -526,7 +482,7 @@
     .tcoffee { margin-top: 6px; width: 100%; } .tcoffee.on { color: var(--yellow); }
     body.ro .tcoffee:not(.on) { display: none !important; } body.ro .tb.boostable { cursor: default; }
     #view-seg button { min-width: 52px; } .logout { color: var(--muted); font-size: 13px; padding: 4px 10px; }
-    body.lite :is(#termometro, #metas, #lucro, #confianca, #logs, #treino, #room, #g-oport, #radar, #baleias,
+    body.lite :is(#termometro, #metas, #lucro, #confianca, #logs, #g-oport, #radar, #baleias,
       #toptraders, #g-hist, #analise, #transacoes, #relatorio, #g-sist, #fundos, #conexoes, #avancado,
       #mode-seg, .boost, .legend, .panel h2 .note, .kpi .s, .sb-nav, .logo small) { display: none !important; }
     body.lite .kpi .v { font-size: 30px; }
@@ -687,20 +643,6 @@
         </span></h2>
       <div class="term" id="term" role="log" aria-live="off"></div>
     </section>
-    <section class="panel" id="treino">
-      <h2><span>🎓 Centro de treino <span class="tag" id="train-tag">–</span></span><span class="note">dados de treino dos bots — separados da prova do laboratório</span></h2>
-      <div class="goals" id="train-kpis"></div>
-      <div class="tbl" style="margin-top:12px"><table id="train-table"></table></div>
-      <div class="legend"><span>1 trade virtual por moeda por hora → lições que o Valdivia lê antes de decidir</span></div>
-    </section>
-    <section class="panel" id="room">
-      <h2><span>Como uma decisão é feita <span class="tag" id="room-tag">–</span></span><span class="note" id="room-head"></span></h2>
-      
-      <div class="room">
-        <div class="line" id="line"></div>
-        <div class="room-foot"><span id="room-left"></span><span id="room-right"></span></div>
-      </div>
-    </section>
     <h3 class="band" id="g-oport">Mercado</h3>
     <section class="panel" id="radar">
       <h2><span>Radar de oportunidades <span class="tag">o que os bots estão vigiando</span></span>
@@ -776,6 +718,6 @@
 
   <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <script src="https://unpkg.com/qrcode-generator@1.4.4/qrcode.js"></script>
-  <script src="/static/paper.js?v=105"></script>
+  <script src="/static/paper.js?v=107"></script>
 </body>
 </html>

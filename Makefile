@@ -14,10 +14,6 @@ service:        ## run Kairos 24/7 on this Mac (launchd: starts at login, restar
 service-stop:   ## remove the launchd service
 	scripts/kairos_service.sh uninstall
 
-demo:           ## dummy account: real quotes, forced trades on both venues, then dashboard on :8001
-	rm -f demo.db && $(PY) -m src.solana.demo --db demo.db --cycles 4
-	PAPER_DB_PATH=./demo.db $(UV) src.main:app --host 127.0.0.1 --port 8001
-
 test:
 	$(PY) -m pytest -q
 
@@ -26,4 +22,4 @@ backtest:
 	$(PY) -m src.solana.backtest --venue hyperliquid --interval 1h
 	$(PY) -m src.solana.backtest --venue hyperliquid --interval 15m
 
-.PHONY: install run demo test backtest
+.PHONY: install run test backtest

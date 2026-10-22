@@ -16,7 +16,6 @@ def _i(name: str, default: int) -> int:
 PAPER_DB_PATH = os.getenv("PAPER_DB_PATH", "./paper.db")
 PAPER_START_USDC = _f("PAPER_START_USDC", 100.0)
 PAPER_CYCLE_SEC = _i("PAPER_CYCLE_SEC", 300)
-PAPER_AUTOSTART = os.getenv("PAPER_AUTOSTART", "0") == "1"
 
 # Simulated execution costs on top of the real Jupiter quote
 PAPER_SLIPPAGE_BPS = _i("PAPER_SLIPPAGE_BPS", 30)        # extra adverse slippage (latency/MEV)
@@ -86,7 +85,6 @@ _METALS = ["xyz:GOLD", "xyz:SILVER"] if HL_INCLUDE_METALS else []
 HL_BROAD = ("BTC,ETH,SOL,HYPE,XRP,BNB,DOGE,ADA,TRX,AVAX,LINK,LTC,BCH,XLM,HBAR,DOT,SUI,NEAR,AAVE,UNI,ARB,TAO,ZEC,XMR,"
             "WLD,ENA,ZRO,ONDO,kPEPE")
 HL_MARKETS = [m for m in os.getenv("HL_MARKETS", HL_BROAD).split(",") if m] + _METALS
-HL_ALLOW_SHORT = False  # long-only in phase 1
 
 # Per-venue risk profile: Solana tokens get a small slice, majors/metals a bigger one with wider stops.
 # Override with JSON, e.g. MARKET_PROFILES='{"hyperliquid": {"max_pos_pct": 0.2, "stop_mult": 2}}'
@@ -100,7 +98,6 @@ MARKET_PROFILES = {
 # Watch-only EVM wallets (public reads only)
 ARBITRUM_RPC_URL = os.getenv("ARBITRUM_RPC_URL", "https://arb1.arbitrum.io/rpc")
 ARBITRUM_USDC = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"   # native USDC on Arbitrum One
-HYPERLIQUID_TESTNET_INFO_URL = "https://api.hyperliquid-testnet.xyz/info"
 
 # ─── Hyperliquid LIVE (real orders). Testnet by default; mainnet needs LIVE_TRADING=1 as well. ───
 HL_NETWORK = os.getenv("HL_NETWORK", "testnet")                 # testnet | mainnet
@@ -192,6 +189,10 @@ QUICK_WIN2_KEEP = _f("QUICK_WIN2_KEEP", 0.8)
 BTC_FILTER = os.getenv("BTC_FILTER", "1") == "1"
 # on the real/simulation accounts, one titular may hold at most this many positions (room for the others)
 MAX_POSITIONS_PER_BOT = _i("MAX_POSITIONS_PER_BOT", 3)
+# no burst of buys into one move: at most this many new buys per BURST_WINDOW_MIN on an account (2026-10-21 19h Lisbon:
+# 35 lab buys in one hour, 0 wins, −$3.63 — everyone bought the same top)
+BURST_MAX_ENTRIES = _i("BURST_MAX_ENTRIES", 2)
+BURST_WINDOW_MIN = _i("BURST_WINDOW_MIN", 30)
 BOT_SELF_PAUSE = os.getenv("BOT_SELF_PAUSE", "0") == "1"
 BOT_MAX_SLEEP_MIN = _i("BOT_MAX_SLEEP_MIN", 120)
 # an AI bot may act on the REAL wallet only after this many lab trades with positive expectancy
