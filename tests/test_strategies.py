@@ -107,3 +107,20 @@ def test_short_break_sells_a_breakdown_in_a_downtrend_and_ignores_uptrends_and_f
     assert sig and sig.indicators["side"] == "short" and sig.stop_price < sig.ref_price < sig.tp_price      # mirror convention, like ShortFade
     up = [dict(c, close=200 - c["close"], low=200 - c["high"], high=200 - c["low"], open=200 - c["open"]) for c in down]
     assert ShortBreak().signal(up) is None and ShortBreak().signal(flat_candles(80)) is None
+
+
+def test_rebound_buys_the_first_green_bar_after_an_oversold_flush_and_nothing_else():
+    from src.solana.strategies import Rebound, RULE_BOTS, FAST_BOTS
+    from src.solana import config as cfg
+    assert "rebound_15m" in RULE_BOTS and "rebound_15m" in FAST_BOTS and "rebound_15m" not in cfg.LIVE_FAST_BOTS      # lab only: no real money by default
+    px = 100.0
+    c = []
+    for i in range(50):                                                      # a slide that accelerates into a flush: every bar red
+        step = 0.996 if i < 46 else 0.985
+        px *= step
+        c.append(dict(t=i, open=px / step, high=px / step + 0.05, low=px - 0.05, close=px, volume=100))
+    c.append(dict(t=51, open=px, high=px * 1.004, low=px * 0.9985, close=px * 1.003, volume=200))      # the first green bar
+    sig = Rebound().signal(c)
+    assert sig and sig.indicators["rsi"] <= 30 and sig.stop_price < c[-1]["close"] < sig.tp_price
+    red = c[:-1] + [dict(c[-1], close=c[-1]["open"] * 0.998)]                # still falling: no entry
+    assert Rebound().signal(red) is None and Rebound().signal(flat_candles(60)) is None
