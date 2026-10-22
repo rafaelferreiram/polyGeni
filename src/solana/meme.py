@@ -286,14 +286,16 @@ def manage(bot: str, prices: dict[str, dict]):
         peak, liq0 = max(meta.get("peak", entry), px), meta.get("liq0", q["liq"])
         stop = entry * (1 - param(bot, "stop_pct", cfg.MEME_STOP_PCT))
         gain = peak / entry - 1
-        if gain >= 0.30:
-            stop = max(stop, entry * (1 + 0.6 * gain))
-        elif gain >= 0.20:
-            stop = max(stop, entry * 1.08)
+        locked = None                                     # quick win: bank a share of the peak gain, net of fees
+        for at, keep in cfg.MEME_QUICK_WINS:
+            if gain >= at:
+                locked = max(entry * (1 + keep * gain), entry * (1 + 2 * FEE + 0.005))
+        if locked is not None:
+            stop = max(stop, locked)
         held_h = (datetime.now(timezone.utc) - datetime.fromisoformat(p["opened_at"])).total_seconds() / 3600
         reason = ("🚨 liquidez desabou (possível rug)" if q["liq"] < 0.6 * liq0 else
                   "🎯 alvo" if px >= entry * (1 + param(bot, "tp_pct", cfg.MEME_TP_PCT)) else
-                  "🛑 stop" if px <= stop else
+                  (f"💨 ganho rápido (pico {gain:+.0%}, garantiu {px / entry - 1:+.1%})" if locked is not None and px > entry else "🛑 stop") if px <= stop else
                   "⏱ tempo máximo" if held_h >= param(bot, "max_hold_h", cfg.MEME_MAX_HOLD_H) else None)
         led.set_state(f"pos:{p['mint']}", {"peak": peak, "liq0": liq0})
         if not reason:
@@ -428,6 +430,45 @@ def board() -> dict:
         radar = list(_radar)
     return {"status": dict(_status), "bots": bots, "radar": radar, "hot_wallets": hot_wallets(),
             "retired": ROSTER["retired"][-6:][::-1]}
+
+
+def bot_detail(bot: str) -> dict:
+    """Everything the bot's modal shows: record, positions, trades, decisions, lessons, lineage, path to titular."""
+    if bot not in BOTS:
+        raise KeyError(bot)
+    led, meta = ledger(bot), BOTS[bot]
+    trades = led.closed_trades()
+    wins = [t for t in trades if t["pnl_usd"] > 0]
+    gross_w, gross_l = sum(t["pnl_usd"] for t in wins), -sum(t["pnl_usd"] for t in trades if t["pnl_usd"] <= 0)
+    exits: dict[str, dict] = {}
+    for t in trades:
+        k = ("ganho rápido" if "ganho rápido" in t["reason"] else "alvo" if "alvo" in t["reason"] else "rug" if "rug" in t["reason"]
+             else "stop" if "stop" in t["reason"] else "tempo" if "tempo" in t["reason"] else "outro")
+        e = exits.setdefault(k, {"n": 0, "pnl": 0.0})
+        e["n"] += 1
+        e["pnl"] = round(e["pnl"] + t["pnl_usd"], 4)
+    tit = is_titular(bot)
+    return {"model": bot, "name": meta["name"], "role": meta["role"], "base": meta["base"], "gen": meta.get("gen", 1),
+            "parent": meta.get("parent_name"), "why": meta.get("why", []), "inherited_avoid": meta.get("inherited_avoid", []),
+            "params": {"stop_pct": param(bot, "stop_pct", cfg.MEME_STOP_PCT), "tp_pct": param(bot, "tp_pct", cfg.MEME_TP_PCT),
+                       "max_hold_h": param(bot, "max_hold_h", cfg.MEME_MAX_HOLD_H), "min_liq": param(bot, "min_liq", 30_000),
+                       "quick_wins": cfg.MEME_QUICK_WINS},
+            "titular": tit, "can_promote": can_promote(bot), "need_wins": cfg.PROMOTE_MIN_WINS, "need_win_rate": cfg.PROMOTE_MIN_WIN_RATE,
+            "born_at": _born(led).isoformat(timespec="seconds"), "next_cut": None if tit else _next_cut(led),
+            "last_verdict": led.get_state("last_verdict"),
+            "stats": {"trades": len(trades), "wins": len(wins), "win_rate": round(len(wins) / len(trades), 3) if trades else None,
+                      "pnl_usd": round(sum(t["pnl_usd"] for t in trades), 4), "avg_win": round(gross_w / len(wins), 4) if wins else None,
+                      "avg_loss": round(gross_l / (len(trades) - len(wins)), 4) if len(trades) > len(wins) else None,
+                      "profit_factor": round(gross_w / gross_l, 2) if gross_l else None, "exits": exits,
+                      "equity": round(led.cash() + sum((p["mark_value"] if p["mark_value"] is not None else p["cost_usd"]) for p in led.positions()), 2)},
+            "positions": [{"symbol": p["symbol"], "mint": p["mint"], "cost": round(p["cost_usd"], 2),
+                           "now": round(p["mark_value"] if p["mark_value"] is not None else p["cost_usd"], 2), "opened_at": p["opened_at"],
+                           "peak_pct": round(((led.get_state(f"pos:{p['mint']}") or {}).get("peak", 0) / (p["cost_usd"] / p["qty"]) - 1) * 100, 1)
+                           if led.get_state(f"pos:{p['mint']}") else None} for p in led.positions()],
+            "trades": [{"symbol": t["symbol"], "entry_ts": t["entry_ts"], "exit_ts": t["exit_ts"], "pnl": round(t["pnl_usd"], 4),
+                        "pct": round(t["pnl_pct"] * 100, 1), "reason": t["reason"]} for t in trades[:30]],
+            "decisions": [{"ts": d["ts"], "kind": d["kind"], "symbol": d.get("symbol"), "reason": d["reason"]} for d in led.decisions(40)],
+            "learned": learning.summary(learning.record(led, bot))}
 
 
 # ─── the meme team: titulars and natural selection ───

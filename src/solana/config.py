@@ -167,6 +167,10 @@ MEME_MAX_POSITIONS = _i("MEME_MAX_POSITIONS", 4)
 MEME_STOP_PCT = _f("MEME_STOP_PCT", 0.18)
 MEME_TP_PCT = _f("MEME_TP_PCT", 0.40)
 MEME_MAX_HOLD_H = _f("MEME_MAX_HOLD_H", 4)
+# meme quick wins: memes spike and dump in minutes, so any sudden gain is banked — the stop locks a share of the peak gain
+# as soon as it clears the round trip's cost (0.5% fee per side + impact): +4% locks 50%, +8% locks 65%, +15% locks 75%,
+# +30% locks 80%. The lock never sits below entry + fees, so a locked exit is always a net gain.
+MEME_QUICK_WINS = [(0.04, 0.5), (0.08, 0.65), (0.15, 0.75), (0.30, 0.8)]
 MEME_WHALE_TOKENS = _i("MEME_WHALE_TOKENS", 12)       # tokens whose big trades are watched (GeckoTerminal)
 MEME_WHALE_PER_ROUND = _i("MEME_WHALE_PER_ROUND", 4)  # of those, how many are re-read each round (rate limit)
 # reserves (lab, fake money) train aggressively to learn faster: crypto reserves use the loosest entry level (the one a
