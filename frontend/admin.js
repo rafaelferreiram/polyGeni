@@ -1,4 +1,4 @@
-// Kairos admin: read-only metrics from GET /api/paper/admin (works from the Mac and, after login, from anywhere)
+// Savoia admin: read-only metrics from GET /api/paper/admin (works from the Mac and, after login, from anywhere)
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const usd = (v, d = 2) => (v === null || v === undefined ? "–" : `$${Number(v).toFixed(d)}`);
 const pnl = (v, d = 2) => {

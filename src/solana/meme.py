@@ -300,7 +300,7 @@ def manage(bot: str, prices: dict[str, dict]):
         reason = ("🚨 liquidez desabou (possível rug)" if q["liq"] < 0.6 * liq0 else
                   "🎯 alvo" if px >= entry * (1 + param(bot, "tp_pct", cfg.MEME_TP_PCT)) else
                   (f"💨 ganho rápido (pico {gain:+.0%}, garantiu {px / entry - 1:+.1%})" if locked is not None and px > entry else "🛑 stop") if px <= stop else
-                  "⏱ tempo máximo" if held_h >= param(bot, "max_hold_h", cfg.MEME_MAX_HOLD_H) else None)
+                  "⏱ tempo máximo" if held_h >= min(param(bot, "max_hold_h", cfg.MEME_MAX_HOLD_H), cfg.MAX_HOLD_CAP_H) else None)
         led.set_state(f"pos:{p['mint']}", {"peak": peak, "liq0": liq0})
         if not reason:
             continue

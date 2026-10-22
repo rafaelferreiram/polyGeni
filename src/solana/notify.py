@@ -76,7 +76,7 @@ def _html(title: str, color: str, rows: list[tuple[str, str]], note: str) -> str
 <div style="background:{color};color:#fff;padding:16px 20px;font-size:18px;font-weight:700">{escape(title)}</div>
 <table style="border-collapse:collapse;width:100%;font-size:14px;margin:8px 0">{tr}</table>
 <div style="padding:12px 20px 18px;font-size:12px;color:#6b7280">{escape(note)}<br>
-<a href="http://127.0.0.1:8000" style="color:#059669">Painel do Kairos</a> · Kairos envia um e-mail por operação.</div>
+<a href="http://127.0.0.1:8000" style="color:#059669">Painel do Savoia</a> · Savoia envia um e-mail por operação.</div>
 </div></body></html>"""
 
 
@@ -99,12 +99,12 @@ def trade_event(account: str, kind: str, symbol: str, strategy: str | None, reas
             ("Valor", _money(value)), ("Quantidade", _qty(qty)), ("Preço", "–" if price is None else f"${price:,.6g}"),
             ("Taxas", _money(f.get("fee_usd")) if f.get("fee_usd") is not None else "–"), ("Bot", bot), ("Conta", where)]
     if kind == "entry":
-        subject = f"Kairos · 🟢 COMPRA {symbol} {_money(value)} · {where.split(' · ')[0]}"
+        subject = f"Savoia · 🟢 COMPRA {symbol} {_money(value)} · {where.split(' · ')[0]}"
         title, color = f"🟢 Compra de {symbol}", "#059669"
     else:
         pnl = (trade or {}).get("pnl_usd")
         tag = "" if pnl is None else (f" +${pnl:.2f}" if pnl >= 0 else f" −${abs(pnl):.2f}")
-        subject = f"Kairos · {'✅' if (pnl or 0) >= 0 else '🔻'} VENDA {symbol}{tag} · {where.split(' · ')[0]}"
+        subject = f"Savoia · {'✅' if (pnl or 0) >= 0 else '🔻'} VENDA {symbol}{tag} · {where.split(' · ')[0]}"
         title, color = f"{'✅' if (pnl or 0) >= 0 else '🔻'} Venda de {symbol}", "#059669" if (pnl or 0) >= 0 else "#dc2626"
         if trade:
             rows += [("Entrada → saída", f"${trade['entry_price']:,.6g} → ${trade['exit_price']:,.6g}  (aberta em {_when(trade['entry_ts'])})"),

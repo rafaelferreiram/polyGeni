@@ -203,6 +203,7 @@ async function refresh() {
   }
   // status bar + kill switch banner (always visible)
   renderStatusBar(a);
+  renderWallets();
   // KPIs
   document.getElementById("k-eq-l").textContent = KIND === "sim" ? "Saldo simulado" : "Saldo real na Hyperliquid";
   document.getElementById("k-eq").textContent = usd(KIND === "real" && a.exchange_balance !== undefined ? a.exchange_balance : a.equity);
@@ -587,8 +588,8 @@ function renderTeam() {
   const tit = shown.filter(isTitular).sort(byRank), res = shown.filter((m) => !isTitular(m)).sort(byRank);
   const head = (cls, ico, title, sub) => `<div class="squad ${cls}"><span class="ico">${ico}</span><b>${title}</b><span>${sub}</span></div>`;
   setHTML("team-grid",
-    (tit.length ? head("pitch", "⚽", `Em campo · ${tit.length} titular${tit.length === 1 ? "" : "es"}`, "operam dinheiro real") + tit.map(card).join("") : "") +
-    (res.length ? head("bench", "🪑", `Banco de reservas · ${res.length}`, "treinam no laboratório até ganhar a vaga") + res.map(card).join("") : ""));
+    (tit.length ? `<div class="formation">${head("pitch", "⚽", `Em campo · ${tit.length} titular${tit.length === 1 ? "" : "es"}`, "operam dinheiro real")}<div class="plates">${tit.map(card).join("")}</div></div>` : "") +
+    (res.length ? `<div class="formation bench">${head("bench", "🪑", `Banco de reservas · ${res.length}`, "treinam no laboratório até ganhar a vaga")}<div class="plates">${res.map(card).join("")}</div></div>` : ""));
 }
 
 // ─── AI turbo: a stronger model for N cycles, then back to Haiku ───
@@ -849,20 +850,64 @@ function promoteMeme(bot, btn) {
   if (!confirm(`Promover ${look(bot).label} a TITULAR do time de memes?\n\nEle passa a operar a conta real de meme coins (Solana), com os limites pequenos.`)) return;
   run(btn, "Promovendo…", () => api("/meme/promote", "POST", { bot }), `⚽ ${look(bot).label} é titular do time de memes`).then(() => safe(loadMeme));
 }
+// ─── tabs below the fold: one band at a time; anchors (#g-bots, #ecg, …) open the right tab ───
+function showTab(name, el = null) {
+  document.querySelectorAll(".tabpane").forEach((p) => p.classList.toggle("on", p.dataset.tab === name));
+  document.querySelectorAll("#tabs button").forEach((b) => b.classList.toggle("on", b.dataset.tab === name));
+  try { localStorage.setItem("tab", name); } catch (e) { /* private mode */ }
+  if (el) el.scrollIntoView({ block: "start" });
+  else if (window.scrollY > document.getElementById("tabs").offsetTop) document.getElementById("tabs").scrollIntoView({ block: "start" });
+}
+function openAnchor(hash) {
+  const el = hash && document.querySelector(hash);
+  if (!el) return false;
+  const pane = el.closest(".tabpane");
+  if (pane) { showTab(pane.dataset.tab, el); return true; }
+  return false;
+}
+window.addEventListener("hashchange", () => openAnchor(location.hash));
+(() => { let t = null; try { t = localStorage.getItem("tab"); } catch (e) { /* private mode */ }
+  if (!openAnchor(location.hash) && t && document.querySelector(`.tabpane[data-tab="${t}"]`)) showTab(t); })();
+
+// ─── wallets: the two real accounts, side by side ───
+let memeWallet = null;
+function copyText(t) { navigator.clipboard.writeText(t).then(() => toast("Endereço copiado")); }
+function renderWallets() {
+  const a = acc, c = a?.config || {}, w = memeWallet;
+  const real = a && a.kind === "real";
+  const mm = `<div class="wallet mm"><div class="wh"><span class="ico">🦊</span><div><b>MetaMask · Hyperliquid</b><small>cripto · rede Arbitrum One · ${esc(c.network || "mainnet")}</small></div></div>
+    <div class="big">${a ? usd(real ? a.exchange_balance : a.equity) : "–"}<small>${real ? "saldo na Hyperliquid" : "saldo (simulação)"}</small></div>
+    <div class="rows"><span>Disponível <b>${a ? usd(a.available) : "–"}</b></span><span>Em margem <b>${a ? usd(a.margin_used) : "–"}</b></span>
+      <span>Posições abertas <b>${a?.positions?.length ?? a?.open_positions ?? "–"}</b></span><span>Resultado fechado <b>${a ? pnl(a.pnl_usd) : "–"}</b></span></div>
+    <div class="addr">Endereço: ${c.account ? `<code title="${esc(c.account)}">${esc(short(c.account))}</code><button class="link" onclick="copyText('${esc(c.account)}')">copiar</button>` : '<span class="muted">conta real não configurada</span>'}</div>
+    <div class="acts"><a class="btn" href="#fundos" onclick="openAnchor('#fundos'); return false;"><button class="primary">➕ Depositar USDC</button></a>
+      <a class="btn" href="https://app.hyperliquid.xyz/portfolio" target="_blank" rel="noopener"><button>Hyperliquid ↗</button></a>
+      ${c.account ? `<a class="btn" href="https://arbiscan.io/address/${esc(c.account)}" target="_blank" rel="noopener"><button>Arbiscan ↗</button></a>` : ""}</div></div>`;
+  const mode = w ? (w.mode === "real" ? '<span class="mode real">💵 REAL</span>' : '<span class="mode fake">🧪 ENSAIO</span>') : "";
+  const ph = `<div class="wallet ph"><div class="wh"><span class="ico">👻</span><div><b>Phantom · meme coins ${mode}</b><small>Solana · carteira do bot separada; a Phantom deposita e recebe os saques</small></div></div>
+    <div class="big">${w && w.usd != null ? usd(w.usd) : "–"}<small>${w && w.sol != null ? `${w.sol.toFixed(4)} SOL na carteira do bot` : "saldo da carteira do bot"}</small></div>
+    <div class="rows"><span>Dona (Phantom) <b>${w?.owner ? "👻 " + esc(short(w.owner)) : "não conectada"}</b></span><span>Resultado ${w?.mode === "real" ? "" : "do ensaio "}<b>${w ? pnl(w.pnl) : "–"}</b></span>
+      <span>Posições abertas <b>${w ? w.positions.length : "–"}</b></span><span>Compras hoje <b>${w ? `${w.buys_today}/${w.limits.max_buys_day}` : "–"}</b></span></div>
+    <div class="addr">Carteira do bot: ${w ? `<code title="${esc(w.address)}">${esc(short(w.address))}</code><button class="link" onclick="copyText('${esc(w.address)}')">copiar</button>` : "–"}</div>
+    <div class="addr">${phantomLine()}</div>
+    ${REMOTE ? "" : `<div class="acts"><button class="primary" onclick="connectPhantom(this)">👻 ${w?.owner ? "Trocar Phantom" : "Conectar Phantom"}</button>
+      <button onclick="depositPhantom(this)" ${w?.owner ? "" : "disabled title='Conecte a Phantom primeiro'"}>⬇️ Depositar SOL</button>
+      <button onclick="withdrawMeme(this)" ${w?.owner ? "" : "disabled title='Conecte a Phantom primeiro'"}>⬆️ Sacar tudo</button>
+      ${w?.address ? `<a class="btn" href="https://solscan.io/account/${esc(w.address)}" target="_blank" rel="noopener"><button>Solscan ↗</button></a>` : ""}</div>`}</div>`;
+  setHTML("wallets", mm + ph);
+}
+
 async function loadMemeReal() {
   const w = await api("/meme/wallet"), L = w.limits;
+  memeWallet = w;
+  renderWallets();
   const real = w.mode === "real";
   setHTML("meme-real", `<div class="t"><b>💵 Conta real de meme coins <span class="muted">(Solana · separada da conta de cripto)</span></b>
       <span class="mode ${real ? "real" : "fake"}">${real ? "💵 REAL" : "🧪 ENSAIO · nada é enviado"}</span>${w.halted ? ' <span class="mode real" style="color:var(--red)">🛑 parada (kill switch)</span>' : ""}</div>
     <div class="nums"><span><b>${w.usd == null ? "–" : usd(w.usd)}</b>na carteira${w.sol != null ? ` (${w.sol.toFixed(4)} SOL)` : ""}</span>
       <span><b>${pnl(w.pnl)}</b>${real ? "resultado" : "resultado do ensaio"}</span><span><b>${w.trades}</b>trades (${w.wins} ganhos)</span>
       <span><b>${w.buys_today}/${L.max_buys_day}</b>compras hoje</span></div>
-    <div class="note">Carteira do bot: <code title="${esc(w.address)}">${esc(short(w.address))}</code>
-      <button class="link" onclick="navigator.clipboard.writeText('${esc(w.address)}'); toast('Endereço copiado')">copiar</button>
-      · Dona: ${w.owner ? `<b>👻 ${esc(short(w.owner))}</b>` : '<span class="muted">nenhuma Phantom conectada</span>'} · ${phantomLine()}</div>
-    ${REMOTE ? "" : `<div class="bm-actions"><button onclick="connectPhantom(this)">👻 ${w.owner ? "Trocar Phantom" : "Conectar Phantom"}</button>
-      <button onclick="depositPhantom(this)" ${w.owner ? "" : "disabled title='Conecte a Phantom primeiro'"}>⬇️ Depositar</button>
-      <button onclick="withdrawMeme(this)" ${w.owner ? "" : "disabled title='Conecte a Phantom primeiro'"}>⬆️ Sacar tudo</button></div>`}
+    <div class="note">👛 Carteira do bot, Phantom, depósito e saque: na seção <a href="#carteiras">Carteiras</a>, no topo.</div>
     <div class="chips">${w.positions.map((p) => `<span>${esc(p.symbol)} · ${esc(look(p.bot).label)} ${pnl(p.now - p.cost)}</span>`).join("") || '<span class="muted">sem posições</span>'}</div>
     <p class="note">Limites: $${L.trade_usd} por trade · ${L.max_positions} posições · ${L.max_buys_day} compras/dia · para no dia com −$${L.daily_loss_usd} ·
       impacto ≤ ${L.max_impact_pct}% · slippage ≤ ${L.slippage_pct}% · abaixo de ${pct0(L.kill_pct)} do depositado vende tudo e para.
