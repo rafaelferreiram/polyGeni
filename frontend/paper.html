@@ -426,6 +426,8 @@
     .formation.bench .tb .rl { display: none; }
     .meme-real { margin-bottom: 12px; border-color: rgba(52,211,153,.35); } .meme-real .t { display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; align-items: center; }
     .meme-real .note { margin: 10px 0 0; } .meme-real code { font-size: 12px; } .meme-real details { margin-top: 8px; font-size: 12px; }
+    .xlist { display: grid; gap: 8px; } .xp { background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; font-size: 13px; }
+    .xp .m { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 4px; font-size: 12px; color: var(--muted); } .xp .m span.c { border: 1px solid var(--border); border-radius: 99px; padding: 1px 8px; color: var(--text); }
     .meme-bots { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
     .meme-bot { background: var(--surface-2); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; min-width: 0; }
     .meme-bot.click { cursor: pointer; transition: border-color .15s, transform .15s; } .meme-bot.click:hover { border-color: var(--c, var(--accent)); transform: translateY(-1px); }
@@ -768,6 +770,11 @@
       <div class="tbl" style="max-height:260px"><table id="top-moves"></table></div>
       <div class="legend"><span>Os 10 mais lucrativos e consistentes do ranking público · o Veiga copia quando ≥ 2 deles compram</span></div>
     </section>
+    <section class="panel" id="xposts">
+      <h2><span>𝕏 Posts <span class="tag" id="x-tag">–</span></span><span class="note" id="x-head"></span></h2>
+      <div class="xlist" id="x-list"></div>
+      <p class="note" style="margin:10px 0 0">Posts sobre cripto e meme coins lidos do X (só leitura). A API cobra US$ 0,005 por post: a leitura é feita no máximo de tempos em tempos e para sozinha ao atingir o teto do dia. Os bots com IA recebem os posts da moeda que estão analisando.</p>
+    </section>
     </div>
     <div class="tabpane" data-tab="hist" id="g-hist">
     <section class="panel" id="analise">
@@ -821,6 +828,6 @@
 
   <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <script src="https://unpkg.com/qrcode-generator@1.4.4/qrcode.js"></script>
-  <script src="/static/savoia.js?v=128"></script>
+  <script src="/static/savoia.js?v=129"></script>
 </body>
 </html>

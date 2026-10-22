@@ -746,6 +746,13 @@ def meme_bot(model: str):
         raise HTTPException(404, "bot de meme desconhecido")
 
 
+@router.get("/xfeed")
+def xfeed_board(limit: int = 12):
+    """X.com posts the bots can read: spend against the daily cap, and the latest posts tagged by coin."""
+    from src.solana import xfeed
+    return {"status": xfeed.status(), "posts": xfeed.recent(limit)}
+
+
 @router.post("/meme/promote", dependencies=LOCAL)
 def meme_promote(req: Promote):
     """A meme bot joins the meme team's titulars (12+ lab wins, ≥ 35%): it trades the real meme account."""

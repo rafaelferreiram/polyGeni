@@ -1,7 +1,7 @@
 """
 Crypto news for the bots: free RSS feeds of the main crypto outlets, fetched every few minutes and tagged with the
 coins they mention. Shown on the dashboard and handed to the AI bot (headlines of the last hours for the coin it is
-deciding on). X.com is not used: its API has no free read access.
+deciding on). X.com posts come from xfeed.py (pay-per-use, hard daily cap) and join these headlines when configured.
 """
 import logging
 import re
@@ -101,7 +101,13 @@ def trending(hours: float = 12, top: int = 5) -> dict:
 
 def for_llm(coin: str) -> list[str]:
     """Headlines of the last 12h that mention the coin (what the AI bot reads before deciding)."""
-    return [f"{i['source']}: {i['title']}" for i in latest(coin, hours=12, limit=5)]
+    out = [f"{i['source']}: {i['title']}" for i in latest(coin, hours=12, limit=5)]
+    try:                                                   # X posts, when the owner configured a token (budgeted, read-only)
+        from src.solana import xfeed
+        out += xfeed.for_llm(coin)
+    except Exception:
+        pass
+    return out
 
 
 def status() -> dict:
