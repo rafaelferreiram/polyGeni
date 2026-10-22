@@ -649,3 +649,11 @@ def test_fast_15m_bots_trade_the_real_engine_through_a_weak_btc_one_at_a_time_wh
     assert [m.model for m in arena.eligible_for_real(members)] == ["whales_15m"]       # not the short, not an unproven AI/rule bot
     monkeypatch.setattr(cfg2, "LIVE_FAST_ALLOW", False)
     assert arena.eligible_for_real(members) == []                                      # switch off: back to the strict rule
+
+
+def test_only_listed_fast_bots_get_real_access(monkeypatch):
+    from src.solana import config as cfg2, strategies as st
+    st._fast_cache.clear()
+    monkeypatch.setattr(cfg2, "LIVE_FAST_BOTS", {"whales_15m", "copy_15m"})
+    assert st.is_fast("whales_15m") and st.is_fast("llm:copy_15m")
+    assert not st.is_fast("trend4h_15m") and not st.is_fast("short_break_15m") and not st.is_fast("rules")      # fast but not listed / a short / not fast
