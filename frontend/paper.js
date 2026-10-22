@@ -800,12 +800,17 @@ setInterval(() => safe(loadChat), 6000);
 
 // ─── 🐸 Trincheira: meme-coin lab bots ───
 // ─── real meme account (Solana): the bot wallet signs its own trades; the user's Phantom deposits and receives withdrawals ───
-const phantom = () => (window.phantom?.solana?.isPhantom ? window.phantom.solana : null);
+// the Phantom browser extension injects window.phantom.solana (older builds: window.solana), sometimes a moment after load
+const phantom = () => (window.phantom?.solana?.isPhantom ? window.phantom.solana : window.solana?.isPhantom ? window.solana : null);
 async function phantomKey() {
-  const p = phantom();
-  if (!p) { window.open("https://phantom.app/download", "_blank", "noopener"); throw new Error("Phantom não encontrada neste navegador — instale e recarregue"); }
+  let p = phantom();
+  for (let i = 0; !p && i < 10; i++) { await new Promise((r) => setTimeout(r, 200)); p = phantom(); }
+  if (!p) throw new Error("Phantom não encontrada neste navegador. Abra http://127.0.0.1:8000 no Chrome/Brave/Firefox com a extensão Phantom instalada e desbloqueada.");
   return (await p.connect()).publicKey.toString();
 }
+const phantomLine = () => (phantom() ? '<span class="green">👻 extensão Phantom detectada</span>'
+  : REMOTE ? '<span class="muted">Conectar a Phantom só funciona no Mac, em http://127.0.0.1:8000</span>'
+  : '<span class="red">extensão Phantom não detectada neste navegador</span> — <a href="https://phantom.app/download" target="_blank" rel="noopener">instalar</a> e recarregar');
 async function connectPhantom(btn) {
   run(btn, "Conectando…", async () => {
     const addr = await phantomKey();
@@ -854,7 +859,7 @@ async function loadMemeReal() {
       <span><b>${w.buys_today}/${L.max_buys_day}</b>compras hoje</span></div>
     <div class="note">Carteira do bot: <code title="${esc(w.address)}">${esc(short(w.address))}</code>
       <button class="link" onclick="navigator.clipboard.writeText('${esc(w.address)}'); toast('Endereço copiado')">copiar</button>
-      · Dona: ${w.owner ? `<b>👻 ${esc(short(w.owner))}</b>` : '<span class="muted">nenhuma Phantom conectada</span>'}</div>
+      · Dona: ${w.owner ? `<b>👻 ${esc(short(w.owner))}</b>` : '<span class="muted">nenhuma Phantom conectada</span>'} · ${phantomLine()}</div>
     ${REMOTE ? "" : `<div class="bm-actions"><button onclick="connectPhantom(this)">👻 ${w.owner ? "Trocar Phantom" : "Conectar Phantom"}</button>
       <button onclick="depositPhantom(this)" ${w.owner ? "" : "disabled title='Conecte a Phantom primeiro'"}>⬇️ Depositar</button>
       <button onclick="withdrawMeme(this)" ${w.owner ? "" : "disabled title='Conecte a Phantom primeiro'"}>⬆️ Sacar tudo</button></div>`}

@@ -546,6 +546,8 @@ class PaperEngine:
                 ready = []                         # enough new buys in this window: wait, don't chase one move
         for x in self.ledger.positions():
             per_bot[x["strategy"]] = per_bot.get(x["strategy"], 0) + 1
+        from src.solana import meme
+        guards = {s.name: meme.stop_guard(self.ledger, s.name, s.name) for s in self._deciders()}   # 3 stops in 4h: pause 6h
         for c, candles, safety, profile in ready:
             if self.__dict__.get("_yield"):
                 break
@@ -553,6 +555,9 @@ class PaperEngine:
                 continue
             for strat in self._ordered(c):
                 if not btc_ok and not c.mint.endswith("~short"):
+                    continue
+                if guards.get(strat.name):
+                    self._agent(strat.name, last_reason=f"🛡 guarda de stops: {guards[strat.name]}")
                     continue
                 if not self.__dict__.get("lab_model") and per_bot.get(strat.name, 0) >= cfg.MAX_POSITIONS_PER_BOT:
                     self._agent(strat.name, last_reason=f"{c.symbol}: já tem {cfg.MAX_POSITIONS_PER_BOT} posições abertas")
