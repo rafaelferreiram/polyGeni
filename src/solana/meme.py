@@ -8,17 +8,25 @@ The trench: lab bots dedicated to Solana meme coins (paper money, real prices). 
   bots:
       Breno Lopes (meme_grad)  — tokens that graduated from pump.fun in the last hours and stay healthy.
       Deyverson   (meme_momo)  — momentum: rising price with more buyers than sellers and real volume.
+      Rony        (meme_whale) — follows the whales: big net buying in the last hour by several large wallets.
+  whales (GeckoTerminal trades ≥ $1k on each token's deepest pool, for open positions and safe candidates): net whale
+      buying in 1h, how many whale wallets, and "hot wallets" — whales seen buying several of our tokens.
+  learning: every buy keeps its situation (graduation age, 1h move, organic score, liquidity, whales); a situation a
+      bot keeps losing in is skipped, and the margin of error (edge.py) skips situations clearly worse than its usual.
   exits: stop −18%, target +40%, the stop rises with the gain (+20% locks +8%, +30% locks 60% of the gain), out after
       MEME_MAX_HOLD_H, and out at once if liquidity collapses (rug alarm).
 Fills: $10 per trade at the DexScreener price, plus 0.5% fees per side and price impact against the pool's liquidity.
 Never real money: there is no wallet and no swap here.
 """
 import logging
+
+from src.solana import teamchat
 import threading
 import time
 from datetime import datetime, timedelta, timezone
 
 from src.solana import config as cfg
+from src.solana import edge, learning
 from src.solana.ledger import Ledger, now_iso
 from src.solana.market_data import request_json
 
@@ -31,7 +39,12 @@ SKIP = {"SOL", "USDC", "USDT", "WSOL", "JUP", "PUMP"}          # majors and PUMP
 BOTS = {
     "meme_grad": {"name": "Breno Lopes", "role": "formatura: tokens que acabaram de se formar na pump.fun"},
     "meme_momo": {"name": "Deyverson", "role": "momentum de meme: sobe com mais compradores e volume real"},
+    "meme_whale": {"name": "Rony", "role": "segue as baleias das meme coins: compra pesada de várias carteiras grandes"},
 }
+GECKO = "https://api.geckoterminal.com/api/v2/networks/solana/pools"
+WHALE_MIN_USD = 1000
+_flows: dict[str, dict] = {}
+_hot: dict[str, dict] = {}            # wallet -> {"tokens": {symbol: ts}, "usd": total whale buys seen}
 _ledgers: dict[str, Ledger] = {}
 _radar: list[dict] = []
 _status = {"at": None, "error": None, "candidates": 0}
@@ -113,9 +126,14 @@ def signal(bot: str, t: dict) -> str | None:
         grad = _age_h(t.get("graduatedAt"))
         if grad is not None and grad <= 6 and -15 <= ch1 <= 120 and ch5 > -5 and buyers:
             return f"formou na pump.fun há {grad:.1f}h, {ch1:+.0f}% em 1h, mais compradores que vendedores"
+    w = t.get("whale") or {}
     if bot == "meme_momo":
-        if 5 <= ch1 <= 150 and 0 < ch5 <= 25 and buyers and organic:
+        if 5 <= ch1 <= 150 and 0 < ch5 <= 25 and buyers and organic and w.get("net_1h", 0) >= 0:
             return f"{ch1:+.0f}% em 1h e {ch5:+.1f}% em 5 min, compra orgânica ${s1.get('buyOrganicVolume', 0):,.0f}/h"
+    if bot == "meme_whale":
+        need = max(3000, 0.03 * (t.get("liquidity") or 0))
+        if w.get("net_1h", 0) >= need and w.get("buyers", 0) >= 2 and -10 <= ch1 <= 150 and ch5 > -5:
+            return f"baleias compraram ${w['net_1h']:,.0f} líquidos em 1h ({w['buyers']} carteiras grandes)"
     return None
 
 
@@ -128,22 +146,80 @@ def pair_prices(mints: list[str]) -> dict[str, dict]:
                 m = (p.get("baseToken") or {}).get("address")
                 liq = (p.get("liquidity") or {}).get("usd") or 0
                 if m and p.get("priceUsd") and liq >= (out.get(m) or {}).get("liq", -1):
-                    out[m] = {"price": float(p["priceUsd"]), "liq": float(liq)}
+                    out[m] = {"price": float(p["priceUsd"]), "liq": float(liq), "pool": p.get("pairAddress"),
+                              "boosts": (p.get("boosts") or {}).get("active", 0)}
         except Exception as e:
             logger.warning(f"meme prices: {e}")
     return out
 
 
+def whale_flow(mint: str, symbol: str, pool: str, liq: float) -> dict:
+    """Big trades of the last hour on the token's deepest pool: whale = at least max($1k, 1% of liquidity)."""
+    big = max(WHALE_MIN_USD, 0.01 * (liq or 0))
+    rows = (request_json("GET", f"{GECKO}/{pool}/trades", retries=1,      # rate-limited: skip, the next round retries
+                         params={"trade_volume_in_usd_greater_than": WHALE_MIN_USD}) or {}).get("data") or []
+    since = datetime.now(timezone.utc) - timedelta(hours=1)
+    buy = sell = 0.0
+    buyers, sellers = set(), set()
+    for r in rows:
+        a = r.get("attributes") or {}
+        usd = float(a.get("volume_in_usd") or 0)
+        ts = datetime.fromisoformat((a.get("block_timestamp") or "1970-01-01T00:00:00Z").replace("Z", "+00:00"))
+        if usd < big or ts < since:
+            continue
+        who = a.get("tx_from_address") or "?"
+        if a.get("kind") == "buy":
+            buy += usd
+            buyers.add(who)
+            h = _hot.setdefault(who, {"tokens": {}, "usd": 0.0})
+            h["tokens"][symbol] = ts.isoformat()
+            h["usd"] += usd
+        else:
+            sell += usd
+            sellers.add(who)
+    flow = {"buy_1h": round(buy), "sell_1h": round(sell), "net_1h": round(buy - sell), "buyers": len(buyers),
+            "sellers": len(sellers), "min_usd": round(big), "at": time.time()}
+    _flows[mint] = flow
+    return flow
+
+
+def hot_wallets(limit: int = 8) -> list[dict]:
+    """Whale wallets seen buying two or more of the tokens we watch in the last 24h (possible smart money)."""
+    cut = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+    out = []
+    for w, h in list(_hot.items()):
+        toks = {s: t for s, t in h["tokens"].items() if t >= cut}
+        if not toks:
+            _hot.pop(w, None)
+            continue
+        if len(toks) >= 2:
+            out.append({"wallet": w, "tokens": sorted(toks), "usd": round(h["usd"])})
+    return sorted(out, key=lambda x: (-len(x["tokens"]), -x["usd"]))[:limit]
+
+
+def situation(t: dict) -> list[str]:
+    """Plain labels of a meme token's moment (what the bots learn by)."""
+    s1, w = t.get("stats1h") or {}, t.get("whale") or {}
+    ch, grad = s1.get("priceChange") or 0, _age_h(t.get("graduatedAt"))
+    tags = ["formatura < 6h" if grad is not None and grad <= 6 else "formado há mais tempo" if grad is not None else "sem formatura",
+            "1h acima de +50%" if ch > 50 else "1h subindo" if ch > 0 else "1h caindo",
+            "orgânico alto" if (t.get("organicScore") or 0) >= 60 else "orgânico médio",
+            "liquidez < $100k" if (t.get("liquidity") or 0) < 100_000 else "liquidez ≥ $100k",
+            "baleias comprando" if w.get("net_1h", 0) > 0 else "baleias vendendo" if w.get("net_1h", 0) < 0 else "sem baleias",
+            f"launchpad {t.get('launchpad') or 'outro'}", f"moeda {t.get('symbol', '?')}"]
+    return tags
+
+
 # ─── paper trading ───
 def _fill(led: Ledger, bot: str, side: str, mint: str, symbol: str, price: float, liq: float, usd: float = 0.0,
-          qty: float = 0.0, reason: str = "", stop: float | None = None, tp: float | None = None) -> dict:
+          qty: float = 0.0, reason: str = "", stop: float | None = None, tp: float | None = None, oid: str | None = None) -> dict:
     impact = min(0.25, (usd or qty * price) / max(liq / 2, 1))       # constant-product estimate against the pool
     px = price * (1 + impact) if side == "buy" else price * (1 - impact)
     if side == "buy":
         qty = usd * (1 - FEE) / px
     gross = qty * px                                  # buy: what the money bought (usd minus fee); sell: before fee
     fill, _ = led.append_fill(dict(
-        order_id=f"meme-{bot}-{side}-{mint[:8]}-{int(time.time() * 1000)}", ts=now_iso(), venue="meme", side=side,
+        order_id=oid or f"meme-{bot}-{side}-{mint[:8]}-{int(time.time() * 1000)}", ts=now_iso(), venue="meme", side=side,
         mint=mint, symbol=symbol, strategy=bot, qty=qty, decimals=0, usd_gross=gross,
         fee_usd=(usd if side == "buy" else gross) * FEE, price=px, quote_price=price, price_impact_pct=impact * 100,
         slippage_bps=round(impact * 1e4), route="paper · DexScreener price + impact", stop_price=stop, tp_price=tp,
@@ -186,7 +262,8 @@ def manage(bot: str, prices: dict[str, dict]):
         led.set_state(f"pos:{p['mint']}", {"peak": peak, "liq0": liq0})
         if not reason:
             continue
-        fill = _fill(led, bot, "sell", p["mint"], p["symbol"], px, q["liq"], qty=p["qty"], reason=reason)
+        fill = _fill(led, bot, "sell", p["mint"], p["symbol"], px, q["liq"], qty=p["qty"], reason=reason,
+                     oid=f"exit-{p['entry_order_id']}")
         pnl = fill["usd_gross"] - fill["fee_usd"] - p["cost_usd"]
         led.log_decision("exit", mint=p["mint"], symbol=p["symbol"], strategy=bot, reason=reason,
                          signals={"pnl_usd": round(pnl, 4), "price": px})
@@ -208,13 +285,25 @@ def enter(bot: str, cands: list[dict], prices: dict[str, dict]):
         why = signal(bot, t)
         if not why or not all(ok for ok, _ in safety(t).values()):
             continue
+        tags = situation(t)
+        rec = learning.record(led, bot)
+        if avoided := learning.avoid(rec, tags):
+            led.log_decision("veto", mint=mint, symbol=t.get("symbol"), strategy=bot, signals={"tags": tags},
+                             reason="aprendizado: evita " + ", ".join(f"'{x}' ({rec[x]['wins']}/{rec[x]['n']} ganhos)" for x in avoided))
+            continue
+        done = led.closed_trades()
+        est = edge.estimate(tags, rec, {}, *edge.payoff(done), baseline=sum(x["pnl_usd"] > 0 for x in done) / len(done) if len(done) >= 10 else None)
+        if est["skip"]:
+            led.log_decision("veto", mint=mint, symbol=t.get("symbol"), strategy=bot, signals={"tags": tags, "edge": est},
+                             reason=f"margem de erro: {edge.describe(est)}")
+            continue
         q = prices[mint]
-        _fill(led, bot, "buy", mint, t.get("symbol", "?"), q["price"], q["liq"], usd=cfg.MEME_TRADE_USD, reason=why,
+        buy = _fill(led, bot, "buy", mint, t.get("symbol", "?"), q["price"], q["liq"], usd=cfg.MEME_TRADE_USD, reason=why,
               stop=q["price"] * (1 - cfg.MEME_STOP_PCT), tp=q["price"] * (1 + cfg.MEME_TP_PCT))
         led.set_state(f"pos:{mint}", {"peak": q["price"], "liq0": q["liq"]})
         _sync_positions(led)
-        led.log_decision("entry", mint=mint, symbol=t.get("symbol"), strategy=bot,
-                         reason=f"{why}; seguro: mint/freeze revogados, dev {(t.get('audit') or {}).get('devBalancePercentage', 0):.1f}%, "
+        led.log_decision("entry", mint=mint, symbol=t.get("symbol"), strategy=bot, signals={"tags": tags, "edge": est},
+                         order_id=buy["order_id"], reason=f"{why} · {edge.describe(est)}; seguro: mint/freeze revogados, dev {(t.get('audit') or {}).get('devBalancePercentage', 0):.1f}%, "
                                 f"{t.get('holderCount')} holders, liquidez ${q['liq']:,.0f}")
         held.add(mint)
 
@@ -225,6 +314,25 @@ def run_round() -> dict:
         cands = discover()
         open_mints = [p["mint"] for b in BOTS for p in ledger(b).positions()]
         prices = pair_prices(list(dict.fromkeys(open_mints + [t["id"] for t in cands])))
+        watch = list(dict.fromkeys(open_mints + [t["id"] for t in cands if all(ok for ok, _ in safety(t).values())]))
+        sym = {t["id"]: t.get("symbol", "?") for t in cands}
+        for p in (p for b in BOTS for p in ledger(b).positions()):
+            sym.setdefault(p["mint"], p["symbol"])
+        # GeckoTerminal's free API 429s fast: a few pools per round, the stalest first (each refreshes every few minutes)
+        stale = sorted(watch[:cfg.MEME_WHALE_TOKENS], key=lambda m: (m not in open_mints, (_flows.get(m) or {}).get("at", 0)))
+        for mint in stale[:cfg.MEME_WHALE_PER_ROUND]:
+            q = prices.get(mint) or {}
+            if q.get("pool"):
+                try:
+                    whale_flow(mint, sym.get(mint, "?"), q["pool"], q.get("liq", 0))
+                except Exception as e:
+                    logger.warning(f"meme whales {sym.get(mint)}: {e}")
+        for t in cands:
+            f = _flows.get(t["id"]) or {}
+            t["whale"] = f if time.time() - f.get("at", 0) < 900 else {}      # older than 15 min: not current
+            if t["whale"].get("net_1h", 0) >= max(3000, 0.03 * (t.get("liquidity") or 0)) and t["whale"].get("buyers", 0) >= 2:
+                teamchat.post("meme_whale", "tip", f"🐋 Baleias compraram ${t['whale']['net_1h']:,.0f} líquidos de {t.get('symbol')} "
+                                                   f"na última hora ({t['whale']['buyers']} carteiras grandes)", t.get("symbol"))
         for b in BOTS:
             manage(b, prices)
             enter(b, cands, prices)
@@ -235,7 +343,8 @@ def run_round() -> dict:
                          "price": (prices.get(t["id"]) or {}).get("price"), "liq": t.get("liquidity"),
                          "holders": t.get("holderCount"), "organic": t.get("organicScore"),
                          "ch1h": (t.get("stats1h") or {}).get("priceChange"), "launchpad": t.get("launchpad"),
-                         "graduated_h": _age_h(t.get("graduatedAt")),
+                         "graduated_h": _age_h(t.get("graduatedAt")), "whale": t.get("whale") or None,
+                         "boosts": (prices.get(t["id"]) or {}).get("boosts", 0),
                          "checks": {k: {"ok": ok, "txt": txt} for k, (ok, txt) in checks.items()},
                          "safe": all(ok for ok, _ in checks.values()),
                          "signals": {b: signal(b, t) for b in BOTS}})
@@ -258,7 +367,7 @@ def board() -> dict:
         pos = led.positions()
         eq = led.cash() + sum((p["mark_value"] if p["mark_value"] is not None else p["cost_usd"]) for p in pos)
         wins = sum(t["pnl_usd"] > 0 for t in trades)
-        bots.append({"model": b, **meta, "equity": round(eq, 2), "pnl": round(eq - led.contributed(), 4),
+        bots.append({"model": b, **meta, "learned": learning.summary(learning.record(led, b)), "equity": round(eq, 2), "pnl": round(eq - led.contributed(), 4),
                      "trades": len(trades), "wins": wins, "win_rate": round(wins / len(trades), 3) if trades else None,
                      "positions": [{"symbol": p["symbol"], "mint": p["mint"], "cost": round(p["cost_usd"], 2),
                                     "now": round(p["mark_value"] or p["cost_usd"], 2), "opened_at": p["opened_at"]} for p in pos],
@@ -266,7 +375,7 @@ def board() -> dict:
                                  "exit_ts": t["exit_ts"], "reason": t["reason"]} for t in trades[:8]]})
     with _lock:
         radar = list(_radar)
-    return {"status": dict(_status), "bots": bots, "radar": radar}
+    return {"status": dict(_status), "bots": bots, "radar": radar, "hot_wallets": hot_wallets()}
 
 
 def start():
