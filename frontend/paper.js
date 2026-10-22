@@ -653,9 +653,10 @@ let modalBot = null;
 function closeBot() { modalBot = null; document.getElementById("bot-modal").hidden = true; document.body.style.overflow = ""; }
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && modalBot) closeBot(); });
 const dt = (iso) => new Date(iso).toLocaleString("pt-BR", { timeZone: "Europe/Lisbon", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
-let modalTab = "resumo", modalData = null;
+let modalTab = "resumo", modalData = null, modalKind = "crypto";
 async function openBot(model) {
   modalBot = model;
+  modalKind = "crypto";
   modalTab = "resumo";
   modalData = null;
   document.getElementById("bot-modal").hidden = false;
@@ -663,9 +664,10 @@ async function openBot(model) {
   document.getElementById("bm-body").innerHTML = '<div class="bm-body"><div class="empty">Carregando…</div></div>';
   await renderBotModal();
 }
-function botTab(t) { modalTab = t; paintBotModal(); }
+function botTab(t) { modalTab = t; modalKind === "meme" ? paintMemeModal() : paintBotModal(); }
 async function renderBotModal() {
   if (!modalBot) return;
+  if (modalKind === "meme") return renderMemeModal();
   const d = await api(`/arena/bot/${encodeURIComponent(modalBot)}`);
   if (d.model !== modalBot) return;
   modalData = d;
@@ -865,6 +867,80 @@ async function loadMemeReal() {
 safe(loadMemeReal);
 setInterval(() => safe(loadMemeReal), 30000);
 
+// ─── meme bot modal: the same dialog as the crypto bots, with the trench's own facts ───
+let memeModalData = null;
+async function openMemeBot(model) {
+  modalBot = model;
+  modalKind = "meme";
+  modalTab = "resumo";
+  memeModalData = null;
+  document.getElementById("bot-modal").hidden = false;
+  document.body.style.overflow = "hidden";
+  document.getElementById("bm-body").innerHTML = '<div class="bm-body"><div class="empty">Carregando…</div></div>';
+  await renderMemeModal();
+}
+async function renderMemeModal() {
+  if (!modalBot || modalKind !== "meme") return;
+  const d = await api(`/meme/bot/${encodeURIComponent(modalBot)}`);
+  if (d.model !== modalBot) return;
+  memeModalData = d;
+  paintMemeModal();
+}
+function paintMemeModal() {
+  const d = memeModalData;
+  if (!d) return;
+  const L = look(d.model), s = d.stats, P = d.params;
+  const scrollTop = document.querySelector(".bm-body")?.scrollTop || 0;
+  const chips = [d.titular ? "⚽ Titular do time de memes · conta real de memes" : "🪑 Reserva · laboratório ($100 de mentira)",
+    d.gen > 1 ? `🧬 Geração ${d.gen} · filho de ${esc(d.parent || "")}` : "", d.can_promote && !d.titular ? "✅ Pronto para subir" : ""]
+    .filter(Boolean).map((t) => `<span>${t}</span>`).join("");
+  const tabs = [["resumo", "Resumo"], ["trades", `Trades (${s.trades})`], ["decisoes", "Decisões"], ["aprendizado", "Aprendizado e evolução"]];
+  const hero = (l, v, sub = "") => `<div><small>${l}</small><b>${v}</b>${sub ? `<em>${sub}</em>` : ""}</div>`;
+  const rows = (pairs) => `<div class="bm-rows">${pairs.filter(Boolean).map(([l, v]) => `<div><span>${l}</span><b>${v}</b></div>`).join("")}</div>`;
+  const ex = s.exits || {};
+  const exitRow = (k, label) => ex[k] ? [label, `${ex[k].n} · ${pnl(ex[k].pnl)}`] : null;
+  let body = "";
+  if (modalTab === "resumo") {
+    body = `<h4>${d.titular ? "Conta real de meme coins" : "Laboratório de memes"}</h4>
+      <div class="bm-hero">${hero("Resultado fechado", pnl(s.pnl_usd), `${s.trades} trades`)}${hero("Acerto", pct0(s.win_rate), s.trades ? `${s.wins} de ${s.trades}` : "sem trades ainda")}
+        ${hero("Em aberto agora", pnl(d.positions.reduce((a, p) => a + p.now - p.cost, 0)), plural(d.positions.length, "posição", "posições"))}${hero("Patrimônio", usd(s.equity))}</div>
+      <div class="bm-two" style="margin-top:12px">
+        <div class="bm-card"><div class="t">📊 Como ele sai <span class="muted">por tipo de saída</span></div>${rows([
+          exitRow("ganho rápido", "💨 Ganho rápido"), exitRow("alvo", "🎯 Alvo"), exitRow("stop", "🛑 Stop"), exitRow("tempo", "⏱ Tempo máximo"), exitRow("rug", "🚨 Rug"),
+          ["Ganho médio / perda média", `${pnl(s.avg_win)} / ${pnl(s.avg_loss)}`], ["Fator de lucro", s.profit_factor ?? "–"]])}</div>
+        <div class="bm-card"><div class="t">⚙️ Regras dele <span class="muted">saídas desta geração</span></div>${rows([
+          ["Stop", `−${(P.stop_pct * 100).toFixed(0)}%`], ["Alvo", `+${(P.tp_pct * 100).toFixed(0)}%`], ["Tempo máximo", `${P.max_hold_h}h`],
+          ["Liquidez mínima", `$${Number(P.min_liq).toLocaleString("pt-BR")}`],
+          ["Ganhos rápidos", P.quick_wins.map(([a, k]) => `+${(a * 100).toFixed(0)}% → guarda ${(k * 100).toFixed(0)}%`).join(" · ")]])}
+          <p class="note" style="margin:10px 0 0">Meme sobe e cai em minutos: qualquer alta repentina já vira ganho garantido, sempre acima das taxas (0,5% por lado + impacto).</p></div></div>
+      <h4>Posições abertas</h4>${d.positions.length ? `<div class="bm-rows">${d.positions.map((p) => `<div><span>${esc(p.symbol)} · desde ${dt(p.opened_at)}${p.peak_pct != null ? ` · pico ${p.peak_pct > 0 ? "+" : ""}${p.peak_pct}%` : ""}</span><b>${pnl(p.now - p.cost)}</b></div>`).join("")}</div>` : '<div class="empty">Sem posições agora.</div>'}
+      <h4>⬆️ Caminho para titular</h4><div class="bm-card"><div class="t"><span>${d.titular ? "⚽ Já é titular do time de memes" : d.can_promote ? "✅ Pode subir para titular" : "Ainda não pode subir"}</span></div>
+        <span class="muted">${s.wins} de ${d.need_wins} vitórias · acerto ${pct0(s.win_rate)} (mínimo ${pct0(d.need_win_rate)}). Titular de meme opera a conta real de memes (Solana), com limites pequenos.</span>
+        ${d.can_promote && !d.titular && !REMOTE ? `<div class="bm-actions"><button class="promote" onclick="promoteMeme('${esc(d.model)}', this)">⬆️ Promover ${esc(L.label)} a titular</button></div>` : ""}</div>`;
+  } else if (modalTab === "trades") {
+    body = d.trades.length ? `<div class="tbl"><table><tr><th>Token</th><th>Entrada</th><th>Saída</th><th class="n">Resultado</th><th>Como saiu</th></tr>${d.trades.map((t) =>
+      `<tr><td><b>${esc(t.symbol)}</b></td><td>${dt(t.entry_ts)}</td><td>${dt(t.exit_ts)}</td><td class="n">${pnl(t.pnl)} <span class="muted">(${t.pct > 0 ? "+" : ""}${t.pct}%)</span></td><td>${esc(t.reason)}</td></tr>`).join("")}</table></div>`
+      : '<div class="empty">Nenhum trade fechado ainda.</div>';
+  } else if (modalTab === "decisoes") {
+    body = `<div class="bm-rows">${d.decisions.map((x) => `<div><span>${hhmm(x.ts)} <b>${esc(x.kind)}</b>${x.symbol ? ` ${esc(x.symbol)}` : ""} · ${esc(x.reason)}</span></div>`).join("") || '<div class="empty">Nada ainda.</div>'}</div>`;
+  } else {
+    const l = d.learned || { avoid: [], best: [], seen: 0 };
+    const fmt = (x) => `${esc(x.tag)} (${x.wins}/${x.n}, ${pnl(x.pnl)})`;
+    body = `<h4>🧠 O que ele aprendeu <span class="muted">${l.seen} trades analisados</span></h4><div class="bm-two">
+      <div class="bm-card"><div class="t">Evita</div>${l.avoid.length ? `<div class="bm-rows">${l.avoid.map((x) => `<div><span>${fmt(x)}</span></div>`).join("")}</div>` : '<span class="muted">ainda sem padrão claro</span>'}</div>
+      <div class="bm-card"><div class="t">Vai melhor em</div>${l.best.length ? `<div class="bm-rows">${l.best.map((x) => `<div><span>${fmt(x)}</span></div>`).join("")}</div>` : '<span class="muted">ainda sem padrão claro</span>'}</div></div>
+      <h4>🧬 Evolução</h4><div class="bm-card">${d.gen > 1 ? `<div class="t"><span>Geração ${d.gen} · filho de ${esc(d.parent || "")}</span><span class="muted">nasceu ${dt(d.born_at)}</span></div>
+        <div class="bm-rows">${d.why.map((w) => `<div><span>✨ ${esc(w)}</span></div>`).join("")}${d.inherited_avoid.length ? `<div><span>📚 Já nasceu evitando: ${d.inherited_avoid.map(esc).join(", ")}</span></div>` : ""}</div>` : `<div class="t"><span>Geração 1 · fundador</span><span class="muted">nasceu ${dt(d.born_at)}</span></div>`}
+        ${!d.titular ? `<p class="note" style="margin:10px 0 0">A cada 12h de vida, se não deu lucro no período (ou não operou), ele é aposentado e nasce um sucessor melhorado com nome de campeão da Libertadores. ${d.next_cut ? `Próximo corte: <b>${dt(d.next_cut)}</b>.` : ""}</p>` : ""}</div>`;
+  }
+  document.getElementById("bm-body").innerHTML = `
+    <div class="bm-top" style="--c:${L.color}"><div class="bm-head">${botFace(L.color, L.ico)}
+      <div style="min-width:0"><div class="bm-name" id="bm-title">${esc(L.label)}</div><div class="bm-role">${esc(d.role)}</div><div class="bm-chips">${chips}</div></div></div>
+      <div class="bm-tabs" role="tablist">${tabs.map(([k, l]) => `<button role="tab" aria-selected="${k === modalTab}" class="${k === modalTab ? "on" : ""}" onclick="botTab('${k}')">${l}</button>`).join("")}</div></div>
+    <div class="bm-body">${body}</div>`;
+  document.querySelector(".bm-body").scrollTop = scrollTop;
+}
+
 async function loadMeme() {
   const d = await api("/meme");
   memeBots = Object.fromEntries(d.bots.map((b) => [b.model, b]));
@@ -876,8 +952,8 @@ async function loadMeme() {
     const badge = m.real ? '<span class="mode real">💵 REAL · titular</span>' : m.titular ? '<span class="mode real">⚽ titular · ensaio</span>' : '<span class="mode fake">🧪 FAKE · reserva</span>';
     const prog = m.titular ? "Titular do time de memes: opera a conta real" : `Titular: ${m.wins}/${m.need_wins} vitórias · acerto ${b.trades ? pct0(m.win_rate) : "–"} (mín. ${pct0(m.need_win_rate)})`;
     const cut = m.next_cut ? `<div class="gl" title="${esc(["Se não der lucro no período (ou não operar), é aposentado e nasce um sucessor melhorado.", ...(m.why || [])].join(" · "))}">🧬 ${m.gen > 1 ? `geração ${m.gen}, filho de ${esc(m.parent || "")} · ` : ""}próximo corte ${time(m.next_cut)}: precisa estar no lucro</div>` : "";
-    const promo = m.ready && !m.titular && !REMOTE ? `<div class="bm-actions"><button class="promote" onclick="promoteMeme('${esc(b.model)}', this)">⬆️ Promover a titular</button></div>` : "";
-    return `<div class="meme-bot" style="--c:${L.color}"><div class="top">${botFace(L.color, L.ico)}<div><b>${esc(L.label)}</b> ${badge}<div class="muted" style="font-size:12px">${esc(b.role)}</div></div></div>
+    const promo = m.ready && !m.titular && !REMOTE ? `<div class="bm-actions"><button class="promote" onclick="event.stopPropagation(); promoteMeme('${esc(b.model)}', this)">⬆️ Promover a titular</button></div>` : "";
+    return `<div class="meme-bot click" style="--c:${L.color}" onclick="openMemeBot('${esc(b.model)}')" title="Clique para ver tudo sobre ${esc(L.label)}"><div class="top">${botFace(L.color, L.ico)}<div><b>${esc(L.label)}</b> ${badge}<div class="muted" style="font-size:12px">${esc(b.role)}</div></div></div>
       <div class="nums"><span><b>${pnl(b.pnl)}</b>resultado</span><span><b>${b.trades}</b>trades</span><span><b>${b.win_rate == null ? "–" : pct0(b.win_rate)}</b>acerto</span><span><b>${b.positions.length}</b>abertas</span></div>
       <div class="chips">${b.positions.map((p) => `<span>${esc(p.symbol)} ${pnl(p.now - p.cost)}</span>`).join("") || '<span class="muted">sem posições</span>'}
         ${b.recent.slice(0, 4).map((t) => `<span title="${esc(t.reason)}">${esc(t.symbol)} ${t.pct > 0 ? "+" : ""}${t.pct}%</span>`).join("")}</div>${learnedLine(b.learned)}

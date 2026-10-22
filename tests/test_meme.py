@@ -40,11 +40,13 @@ def test_trench_target_and_rising_stop(tmp_path, monkeypatch):
     monkeypatch.setattr(meme, "_ledgers", {b: Ledger(str(tmp_path / f"arena_{b}.db"), 100.0) for b in meme.BOTS})
     meme.enter("meme_momo", [_token()], {"MINT1": {"price": 1.0, "liq": 1_000_000}})
     led = meme.ledger("meme_momo")
-    meme.manage("meme_momo", {"MINT1": {"price": 1.35, "liq": 1_000_000}})       # +35%: stop now locks 60% of the gain
+    meme.manage("meme_momo", {"MINT1": {"price": 1.35, "liq": 1_000_000}})       # +35%: the lock keeps 80% of the gain (+28%)
     assert led.positions()
-    meme.manage("meme_momo", {"MINT1": {"price": 1.15, "liq": 1_000_000}})       # back below the raised stop (+21%)
+    meme.manage("meme_momo", {"MINT1": {"price": 1.30, "liq": 1_000_000}})       # still above the lock: hold
+    assert led.positions()
+    meme.manage("meme_momo", {"MINT1": {"price": 1.15, "liq": 1_000_000}})       # fell through the lock: banked
     t = led.closed_trades()[0]
-    assert "stop" in t["reason"] and t["pnl_usd"] > 0
+    assert "ganho rápido" in t["reason"] and t["pnl_usd"] > 0
 
 
 def test_whale_flow_rony_and_learning(tmp_path, monkeypatch):
@@ -121,3 +123,18 @@ def test_real_meme_account_dry_run_limits(tmp_path, monkeypatch):
     assert {p["mint"] for p in led.positions()} == {"B"} and len(led.closed_trades()) == 1
     monkeypatch.setattr(mw, "quote", lambda i, o, a: {"outAmount": "0", "priceImpactPct": "0.05", "routePlan": []})
     assert mw.buy("meme_grad", "Z", "ZZZ") is None                 # 5% price impact: no
+
+
+def test_meme_quick_win_banks_a_sudden_spike_net_of_fees(tmp_path, monkeypatch):
+    monkeypatch.setattr(meme, "_ledgers", {b: Ledger(str(tmp_path / f"arena_{b}.db"), 100.0) for b in meme.BOTS})
+    meme.enter("meme_momo", [_token()], {"MINT1": {"price": 1.0, "liq": 1_000_000}})
+    led = meme.ledger("meme_momo")
+    meme.manage("meme_momo", {"MINT1": {"price": 1.05, "liq": 1_000_000}})       # +5% spike: lock 50% of it (+2.5%)
+    assert led.positions()
+    meme.manage("meme_momo", {"MINT1": {"price": 1.03, "liq": 1_000_000}})       # still above the lock: hold
+    assert led.positions()
+    meme.manage("meme_momo", {"MINT1": {"price": 1.02, "liq": 1_000_000}})       # fell through the lock: bank it
+    [t] = led.closed_trades()
+    assert "ganho rápido" in t["reason"] and t["pnl_usd"] > 0                     # a net gain after 0.5% fees each way
+    d = meme.bot_detail("meme_momo")
+    assert d["stats"]["exits"]["ganho rápido"]["n"] == 1 and d["trades"][0]["symbol"] == "FROG"

@@ -735,6 +735,16 @@ def meme_board():
     return meme.board()
 
 
+@router.get("/meme/bot/{model}")
+def meme_bot(model: str):
+    """One meme bot's modal: record, exits by kind, positions, trades, decisions, lessons, lineage, path to titular."""
+    from src.solana import meme
+    try:
+        return meme.bot_detail(model)
+    except KeyError:
+        raise HTTPException(404, "bot de meme desconhecido")
+
+
 @router.post("/meme/promote", dependencies=LOCAL)
 def meme_promote(req: Promote):
     """A meme bot joins the meme team's titulars (12+ lab wins, ≥ 35%): it trades the real meme account."""
