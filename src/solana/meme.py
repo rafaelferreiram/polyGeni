@@ -80,6 +80,7 @@ _ledgers: dict[str, Ledger] = {}
 _radar: list[dict] = []
 _status = {"at": None, "error": None, "candidates": 0}
 _lock = threading.Lock()
+_trade_lock = threading.Lock()        # the round and the fast watch never manage the same ledgers at once
 
 
 def ledger(bot: str) -> Ledger:
@@ -168,7 +169,9 @@ def signal(bot: str, t: dict) -> str | None:
             return f"{ch1:+.0f}% em 1h e {ch5:+.1f}% em 5 min, compra orgânica ${s1.get('buyOrganicVolume', 0):,.0f}/h"
     if bot == "meme_whale":
         need = max(3000 - 1500 * agg, (0.03 - 0.015 * agg) * (t.get("liquidity") or 0))
-        if w.get("net_1h", 0) >= need and w.get("buyers", 0) >= 2 and -10 <= ch1 <= 150 and ch5 > -5:
+        # whales who are already selling are the dump, not the pump: no entry while whale sells run ≥ 40% of whale buys
+        dumping = w.get("sell_1h", 0) >= 0.4 * max(w.get("buy_1h", 0), 1)
+        if w.get("net_1h", 0) >= need and w.get("buyers", 0) >= 2 and not dumping and -10 <= ch1 <= 150 and ch5 > -5:
             return f"baleias compraram ${w['net_1h']:,.0f} líquidos em 1h ({w['buyers']} carteiras grandes)"
     return None
 
@@ -373,15 +376,11 @@ def run_round() -> dict:
             if t["whale"].get("net_1h", 0) >= max(3000, 0.03 * (t.get("liquidity") or 0)) and t["whale"].get("buyers", 0) >= 2:
                 teamchat.post("meme_whale", "tip", f"🐋 Baleias compraram ${t['whale']['net_1h']:,.0f} líquidos de {t.get('symbol')} "
                                                    f"na última hora ({t['whale']['buyers']} carteiras grandes)", t.get("symbol"))
-        for b in list(BOTS):
-            manage(b, prices)
-            enter(b, cands, prices)
-        try:                                              # the real meme account mirrors the lab (dry run or titulars)
-            from src.solana import meme_wallet
-            meme_wallet.mirror({b: {p["mint"]: p["symbol"] for p in ledger(b).positions()} for b in BOTS},
-                               {b for b in BOTS if is_titular(b)}, {m: q["price"] for m, q in prices.items()})
-        except Exception as e:
-            logger.warning(f"meme real account: {e}")
+        with _trade_lock:
+            for b in list(BOTS):
+                manage(b, prices)
+                enter(b, cands, prices)
+            _mirror(prices)
         evolve()
         rows = []
         for t in cands:
@@ -404,6 +403,30 @@ def run_round() -> dict:
         _status["error"] = str(e)[:200]
         logger.warning(f"meme round: {e}")
         return {"error": str(e)}
+
+
+def _mirror(prices: dict[str, dict]):
+    """The real meme account follows the lab (dry run, or the titulars for real)."""
+    try:
+        from src.solana import meme_wallet
+        meme_wallet.mirror({b: {p["mint"]: p["symbol"] for p in ledger(b).positions()} for b in BOTS},
+                           {b for b in BOTS if is_titular(b)}, {m: q["price"] for m, q in prices.items()})
+    except Exception as e:
+        logger.warning(f"meme real account: {e}")
+
+
+def watch() -> int:
+    """Fast exit check (every MEME_WATCH_SEC): re-price only the open positions and run the exits. A meme can lose
+    half its value between two one-minute rounds; the stop and the quick-win locks must see it sooner."""
+    mints = list(dict.fromkeys(p["mint"] for b in list(BOTS) for p in ledger(b).positions()))
+    if not mints:
+        return 0
+    prices = pair_prices(mints)
+    with _trade_lock:
+        for b in list(BOTS):
+            manage(b, prices)
+        _mirror(prices)
+    return len(mints)
 
 
 def board() -> dict:
@@ -578,3 +601,5 @@ def start():
     if cfg.MEME_ENABLED and sch.get_job("meme_round") is None:
         sch.add_job(run_round, "interval", seconds=cfg.MEME_CYCLE_SEC, id="meme_round", max_instances=1, coalesce=True,
                     next_run_time=datetime.now() + timedelta(seconds=30))
+        sch.add_job(watch, "interval", seconds=cfg.MEME_WATCH_SEC, id="meme_watch", max_instances=1, coalesce=True,
+                    next_run_time=datetime.now() + timedelta(seconds=45))

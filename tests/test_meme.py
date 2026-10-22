@@ -138,3 +138,17 @@ def test_meme_quick_win_banks_a_sudden_spike_net_of_fees(tmp_path, monkeypatch):
     assert "ganho rápido" in t["reason"] and t["pnl_usd"] > 0                     # a net gain after 0.5% fees each way
     d = meme.bot_detail("meme_momo")
     assert d["stats"]["exits"]["ganho rápido"]["n"] == 1 and d["trades"][0]["symbol"] == "FROG"
+
+
+def test_fast_watch_reprices_only_open_positions_and_rony_skips_dumping_whales(tmp_path, monkeypatch):
+    monkeypatch.setattr(meme, "_ledgers", {b: Ledger(str(tmp_path / f"arena_{b}.db"), 100.0) for b in meme.BOTS})
+    monkeypatch.setattr(meme, "_mirror", lambda prices: None)
+    assert meme.watch() == 0                                                     # nothing open: no price call
+    meme.enter("meme_momo", [_token()], {"MINT1": {"price": 1.0, "liq": 1_000_000}})
+    asked = []
+    monkeypatch.setattr(meme, "pair_prices", lambda mints: asked.append(mints) or {"MINT1": {"price": 0.5, "liq": 1_000_000}})
+    assert meme.watch() == 1 and asked == [["MINT1"]]
+    assert meme.ledger("meme_momo").positions() == []                            # the −50% gap was caught by the watch
+    whales = {"net_1h": 6000, "buy_1h": 10000, "sell_1h": 4000, "buyers": 3}     # sells already 40% of buys: the dump
+    assert meme.signal("meme_whale", _token(whale=whales)) is None
+    assert meme.signal("meme_whale", _token(whale={**whales, "sell_1h": 1000}))

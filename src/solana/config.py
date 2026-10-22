@@ -161,6 +161,7 @@ MAX_TITULARES = _i("MAX_TITULARES", 6)
 # the meme-coin trench (meme.py): lab only, paper money, real Solana prices
 MEME_ENABLED = os.getenv("MEME_ENABLED", "1") == "1"
 MEME_CYCLE_SEC = _i("MEME_CYCLE_SEC", 60)
+MEME_WATCH_SEC = _i("MEME_WATCH_SEC", 15)             # open meme positions are re-priced this often (memes gap in minutes)
 MEME_CAPITAL_USD = _f("MEME_CAPITAL_USD", 100.0)
 MEME_TRADE_USD = _f("MEME_TRADE_USD", 10.0)
 MEME_MAX_POSITIONS = _i("MEME_MAX_POSITIONS", 4)
