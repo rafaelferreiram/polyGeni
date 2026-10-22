@@ -689,3 +689,8 @@ def test_lab_reserves_scan_every_coin_while_titulars_keep_the_hourly_universe(le
     assert run(None, False) == 1                                                   # the real/plain engine: only the universe coin
     assert run("whales2_g2_5", True) == 1                                          # a titular's lab twin: same
     assert run("whales2_g2_5", False) == 3                                         # a reserve: all coins
+
+
+def test_lab_scalp_hold_only_for_lab():
+    from src.solana.engine import _max_hold
+    assert _max_hold("trend", 72, lab=True) == 0.5 and _max_hold("trend", 72) == 2   # real account keeps the 2h cap

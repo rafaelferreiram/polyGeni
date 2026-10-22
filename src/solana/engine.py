@@ -263,8 +263,8 @@ class PaperEngine:
                 reason = f"take-profit hit ({price:.6g} >= {pos['tp_price']:.6g})"
             elif held_h >= cfg.STALE_EXIT_H and price < pos["cost_usd"] / pos["qty"] * (1 + cfg.STALE_EXIT_PCT):
                 reason = f"sem tração: {held_h:.1f}h sem passar de +{cfg.STALE_EXIT_PCT:.1%} — fecha antes do tempo máximo"
-            elif held_h >= (limit := _max_hold(pos["strategy"], self.max_hold_h)):
-                reason = f"max holding time {limit:.0f}h reached"
+            elif held_h >= (limit := _max_hold(pos["strategy"], self.max_hold_h, bool(self.__dict__.get("lab_model")))):
+                reason = f"max holding time {limit:g}h reached"
             elif self.decision_mode() == "llm" and self.team and pos.get("pool_address"):
                 # the bot that opened the position manages its exit
                 owner = next((d for d in self.team if d.name == pos["strategy"]), self.llm)
@@ -627,6 +627,11 @@ class PaperEngine:
                     sig.stop_pct = min(sig.stop_pct * profile["stop_mult"], 0.5)
                     sig.tp_pct *= profile["stop_mult"]
                 lab_model = self.__dict__.get("lab_model")
+                if sig is not None and lab_model:      # lab scalp mode: tight, near-symmetric stop/target
+                    if cfg.LAB_SCALP_STOP_PCT:
+                        sig.stop_pct = min(sig.stop_pct, cfg.LAB_SCALP_STOP_PCT)
+                    if cfg.LAB_SCALP_TP_PCT:
+                        sig.tp_pct = min(sig.tp_pct, cfg.LAB_SCALP_TP_PCT)
                 if sig is None and lab_model:          # an opportunity a teammate passed to this bot
                     from src.solana import arena
                     sig = arena.take_handoff(lab_model, c.symbol, strat.name)
@@ -742,13 +747,14 @@ def bench_prices() -> dict:
     return {"SOL": float(mids["SOL"]), "BTC": float(mids["BTC"])}
 
 
-def _max_hold(strategy: str, default: float) -> float:
+def _max_hold(strategy: str, default: float, lab: bool = False) -> float:
     """Day-trade bots close their positions sooner (e.g. trend: 24h); others use the engine default."""
     from src.solana import arena
     from src.solana.strategies import RULE_BOTS
     hold = min(getattr(RULE_BOTS.get(strategy), "max_hold_h", None) or default, cfg.MAX_HOLD_CAP_H)   # no buy-and-hold: 2h cap
     fast = arena.fast_exit_hold(strategy)
-    return min(hold, fast) if fast else hold
+    hold = min(hold, fast) if fast else hold
+    return min(hold, cfg.LAB_SCALP_HOLD_H) if lab and cfg.LAB_SCALP_HOLD_H else hold
 
 
 def _market_temp(ready: list) -> dict:

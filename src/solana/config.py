@@ -237,6 +237,11 @@ X_STATE_PATH = os.getenv("X_STATE_PATH", "x_feed.json")
 # closed at once. 0 disables. Reserves in the lab also skip the BTC-below-average buy filter: they must trade to learn
 # (titulars, and everything on the real account, keep the filter).
 SCALP_TP_PCT = _f("SCALP_TP_PCT", 0.01)
+# lab-only scalp mode (2026-10-22 data: win 22-40%, avg win +0.7% vs avg loss -1.1%, 2h cap killed trades): lab bots cap the stop
+# and target at these distances and exit after LAB_SCALP_HOLD_H. The real account (no lab_model) is untouched. 0 disables each.
+LAB_SCALP_STOP_PCT = _f("LAB_SCALP_STOP_PCT", 0.006)
+LAB_SCALP_TP_PCT = _f("LAB_SCALP_TP_PCT", 0.008)
+LAB_SCALP_HOLD_H = _f("LAB_SCALP_HOLD_H", 0.5)
 # the 15-minute bots may trade the REAL account even while BTC is below its 50h average (owner's decision 2026-10-22):
 # long only, LIVE_FAST_USD per trade, at most LIVE_FAST_MAX_OPEN open at once. 0 turns it off.
 LIVE_FAST_ALLOW = os.getenv("LIVE_FAST_ALLOW", "1") == "1"
