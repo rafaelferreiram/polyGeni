@@ -320,9 +320,11 @@ class Ledger:
             from src.solana import teamchat
             teamchat.from_decision(source, self.get_state("model") if source.startswith("lab:") else strategy,
                                    kind, symbol, reason, signals or {})
-        if kind in ("entry", "exit") and symbol:
+        if kind in ("entry", "exit") and symbol and notify.configured():
             trade = next((t for t in self.closed_trades() if t["symbol"] == symbol), None) if kind == "exit" else None
-            notify.trade_event(source, kind, symbol, strategy, reason, trade)
+            fill = self._q("SELECT * FROM fills WHERE symbol=? AND side=? ORDER BY seq DESC LIMIT 1",
+                           (symbol, "buy" if kind == "entry" else "sell"))
+            notify.trade_event(source, kind, symbol, strategy, reason, trade, fill[0] if fill else None)
         return cur.lastrowid
 
     def decisions(self, limit: int = 100, kind: str | None = None) -> list[dict]:
