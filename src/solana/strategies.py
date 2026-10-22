@@ -411,6 +411,23 @@ FAST_BOTS = {"trend4h_15m", "whales_15m", "copy_15m", "short_break_15m"}      # 
 LAB_ONLY_BOTS = SHORT_BOTS
 
 
+_fast_cache: dict[str, tuple[float, bool]] = {}
+
+
+def is_fast(name: str) -> bool:
+    """A 15-minute twin (or an evolved successor of one): long-side fast bots only, never the shorts. The lineage file
+    is re-read at most once a minute per name (this runs for every candidate of every cycle)."""
+    import time
+    hit = _fast_cache.get(name)
+    if hit and time.time() - hit[0] < 60:
+        return hit[1]
+    from src.solana import evolution
+    base = evolution.base_of(name.removeprefix("llm:"))
+    out = base in FAST_BOTS and base not in SHORT_BOTS
+    _fast_cache[name] = (time.time(), out)
+    return out
+
+
 def features(candles: list[dict]) -> dict:
     """Indicators handed to the LLM bots so they reason on the same facts as the rules (no raw-candle guessing)."""
     if len(candles) < 30:

@@ -612,3 +612,40 @@ def test_a_small_profit_is_sold_at_once_and_a_lab_reserve_trades_through_the_btc
     monkeypatch.setattr(arena, "is_titular", lambda m: False)          # a reserve in the lab keeps learning
     eng.run_cycle()
     assert len(ledger.positions()) == 1
+
+
+def test_fast_15m_bots_trade_the_real_engine_through_a_weak_btc_one_at_a_time_while_others_stay_blocked(ledger, monkeypatch):
+    from src.solana import arena, config as cfg2, strategies as st
+    monkeypatch.setattr(cfg2, "LIVE_FAST_ALLOW", True)
+    monkeypatch.setattr(cfg2, "LIVE_FAST_MAX_OPEN", 1)
+    st._fast_cache.clear()
+
+    class Two:
+        def candidates(self):
+            return [candidate(mint=TOKEN, symbol="AAA"), candidate(mint="TokenMint2222222222222222222222222222222222", symbol="BBB")]
+
+    class Fire:
+        capital_pct = 0.5
+
+        def __init__(self, name):
+            self.name = name
+
+        def signal(self, candles):
+            return Signal(self.name, 1.0, 0.05, 0.10, "fixture")
+
+    broker = PaperBroker(ledger, quote_fn=Price(1.0).quote, sol_usd_fn=lambda: 100.0, slippage_bps=0, fee_lamports=0)
+    monkeypatch.setattr(PaperEngine, "_btc_ok", lambda self: False)                   # BTC below its 50h average
+    cfg2.BTC_FILTER = True
+    eng = PaperEngine(ledger, Two(), FakeSafety(), [Fire("momentum")], DebateAgent(enabled=False), RiskAgent(),
+                      ExecutorAgent(broker), candles_fn=lambda pool: flat_candles(60), profiles={})
+    eng.fast_real = True
+    eng.run_cycle()
+    assert ledger.positions() == []                                                    # a normal bot: the BTC filter holds
+    eng.strategies = [Fire("whales_15m")]
+    eng.run_cycle()
+    assert [p["symbol"] for p in ledger.positions()] == ["AAA"]                        # the 15m bot trades through it... and only ONE position
+    assert arena.size_for("whales_15m") == cfg2.LIVE_FAST_USD == 10.0
+    members = [type("M", (), {"model": m})() for m in ("whales_15m", "short_break_15m", "whales2")]
+    assert [m.model for m in arena.eligible_for_real(members)] == ["whales_15m"]       # not the short, not an unproven AI/rule bot
+    monkeypatch.setattr(cfg2, "LIVE_FAST_ALLOW", False)
+    assert arena.eligible_for_real(members) == []                                      # switch off: back to the strict rule

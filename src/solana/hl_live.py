@@ -479,6 +479,7 @@ def get_live_engine() -> PaperEngine:
         from src.solana import arena
         _live.size_policy = arena.size_for
         _live.short_gate = lambda btc_ok: short_gate(_live.ledger, btc_ok)       # real shorts: regime + small limits
+        _live.fast_real = cfg.LIVE_FAST_ALLOW                                       # 15m bots: through a weak BTC, 1 open, $10
     return _live
 
 

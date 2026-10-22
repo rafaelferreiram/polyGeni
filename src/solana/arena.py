@@ -104,7 +104,11 @@ def hl_min_order() -> float:
 def size_for(strategy: str) -> float | None:
     """Position size reward/penalty for the bot behind a strategy name ('rules', 'trend', 'llm:<model>')."""
     model = strategy[4:] if strategy.startswith("llm:") else strategy
-    return reward(model)["size_usd"] if model in (_bots or {}) else None
+    size = reward(model)["size_usd"] if model in (_bots or {}) else None
+    from src.solana.strategies import is_fast
+    if cfg.LIVE_FAST_ALLOW and is_fast(model):         # fast bots on the real account: the owner's flat size
+        return cfg.LIVE_FAST_USD if size is None else min(size, cfg.LIVE_FAST_USD)
+    return size
 
 
 def track_record(model: str, n: int = 8) -> dict:
@@ -416,6 +420,9 @@ def eligible_for_real(members: list) -> list:
     if len(ok) > cfg.MAX_TITULARES:      # at most MAX_TITULARES play: the best by reward points, then lab profit
         best = sorted(ok, key=lambda m: (-reward(m.model).get("points", 0), -net_of_cost(m.model)[2]))[:cfg.MAX_TITULARES]
         ok = [m for m in ok if m in best]
+    if cfg.LIVE_FAST_ALLOW:              # the owner lets the 15-minute bots trade real money, small and one at a time
+        from src.solana.strategies import is_fast
+        ok += [m for m in members if m not in ok and is_fast(m.model)]
     return ok
 
 
