@@ -332,15 +332,50 @@ def stop_guard(led: Ledger, bot: str, strategy: str | None = None) -> str | None
     return f"pausa até {until[11:16]} UTC"
 
 
-def enter(bot: str, cands: list[dict], prices: dict[str, dict]):
+_regime = {"ok": True, "size_mult": 1.0, "why": ""}
+
+
+def regime(candles_fn=None) -> dict:
+    """Market regime for meme buys, from SOL's and BTC's closed 1h candles (Hyperliquid, one fetch per hour shared with
+    the crypto bots): a fall below MEME_REGIME_1H_PCT in the last hour on either blocks buys, a 4h fall below
+    MEME_REGIME_4H_PCT halves the trade size. Data errors never block."""
+    from src.solana import hyperliquid as hl
+    out = {"ok": True, "size_mult": 1.0, "why": "", "returns": {}}
+    for coin in ("SOL", "BTC"):
+        try:
+            closes = [c["close"] for c in (candles_fn or hl.candles)(coin)][:-1]      # drop the still-open candle
+        except Exception as e:
+            logger.warning(f"meme regime {coin}: {e}")
+            continue
+        if len(closes) < 5:
+            continue
+        r1, r4 = closes[-1] / closes[-2] - 1, closes[-1] / closes[-5] - 1
+        out["returns"][coin] = {"1h": round(r1, 4), "4h": round(r4, 4)}
+        if r1 < cfg.MEME_REGIME_1H_PCT:
+            out["ok"] = False
+            out["why"] = ", ".join(x for x in (out["why"], f"{coin} {r1:+.1%} em 1h") if x)
+        if r4 < cfg.MEME_REGIME_4H_PCT:
+            out["size_mult"] = 0.5
+    return out
+
+
+def enter(bot: str, cands: list[dict], prices: dict[str, dict], regime: dict | None = None):
     led = ledger(bot)
     if stop_guard(led, bot):
         return
+    reg = regime if regime is not None else _regime
+    if not reg["ok"]:
+        hour = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H")
+        if led.get_state("regime_veto_hour") != hour:              # logged once per hour, not every round
+            led.set_state("regime_veto_hour", hour)
+            led.log_decision("veto", strategy=bot, reason=f"🌧 regime: {reg['why']} — sem compras de meme nesta hora")
+        return
+    usd = cfg.MEME_TRADE_USD * reg["size_mult"]
     held = {p["mint"] for p in led.positions()}
     recent = {d["mint"] for d in led.decisions(200, kind="exit")
               if d["ts"] >= (datetime.now(timezone.utc) - timedelta(hours=6)).isoformat()}
     for t in cands:
-        if len(held) >= (cfg.MEME_MAX_POSITIONS if is_titular(bot) else cfg.MEME_RESERVE_MAX_POSITIONS) or led.cash() < cfg.MEME_TRADE_USD:
+        if len(held) >= (cfg.MEME_MAX_POSITIONS if is_titular(bot) else cfg.MEME_RESERVE_MAX_POSITIONS) or led.cash() < usd:
             return
         mint = t["id"]
         if mint in held or mint in recent or mint not in prices:
@@ -363,7 +398,7 @@ def enter(bot: str, cands: list[dict], prices: dict[str, dict]):
                              reason=f"margem de erro: {edge.describe(est)}")
             continue
         q = prices[mint]
-        buy = _fill(led, bot, "buy", mint, t.get("symbol", "?"), q["price"], q["liq"], usd=cfg.MEME_TRADE_USD, reason=why,
+        buy = _fill(led, bot, "buy", mint, t.get("symbol", "?"), q["price"], q["liq"], usd=usd, reason=why,
               stop=q["price"] * (1 - param(bot, "stop_pct", cfg.MEME_STOP_PCT)), tp=q["price"] * (1 + param(bot, "tp_pct", cfg.MEME_TP_PCT)))
         led.set_state(f"pos:{mint}", {"peak": q["price"], "liq0": q["liq"]})
         _sync_positions(led)
@@ -403,6 +438,8 @@ def run_round() -> dict:
         for t in cands:
             _safe_streak[t["id"]] = _safe_streak.get(t["id"], 0) + 1 if all(ok for ok, _ in safety(t).values()) else 0
         ready = [t for t in cands if _safe_streak.get(t["id"], 0) >= cfg.MEME_SAFE_ROUNDS]
+        global _regime
+        _regime = regime()
         with _trade_lock:
             for b in list(BOTS):
                 manage(b, prices)
