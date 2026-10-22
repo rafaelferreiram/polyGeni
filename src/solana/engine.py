@@ -581,7 +581,16 @@ class PaperEngine:
                 if is_short and gate and (why := gate(btc_ok)):
                     self._agent(strat.name, last_reason=f"{c.symbol} short: {why}")
                     continue
-                if not btc_ok and not is_short:
+                fast_real = bool(getattr(self, "fast_real", False))                                # the real engine, fast bots allowed
+                from src.solana.strategies import is_fast
+                if fast_real and not is_short and is_fast(getattr(strat, "model", None) or strat.name):
+                    if sum(1 for x in self.ledger.positions() if is_fast(x["strategy"])) >= cfg.LIVE_FAST_MAX_OPEN:
+                        self._agent(strat.name, last_reason=f"{c.symbol}: já há {cfg.LIVE_FAST_MAX_OPEN} posição de bot de 15 min aberta (limite)")
+                        continue
+                    pass_filter = True                                                              # 15m bots trade through a weak BTC
+                else:
+                    pass_filter = btc_ok
+                if not pass_filter and not is_short:
                     continue
                 if guards.get(strat.name):
                     self._agent(strat.name, last_reason=f"🛡 guarda de stops: {guards[strat.name]}")

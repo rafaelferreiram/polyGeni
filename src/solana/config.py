@@ -237,6 +237,11 @@ X_STATE_PATH = os.getenv("X_STATE_PATH", "x_feed.json")
 # closed at once. 0 disables. Reserves in the lab also skip the BTC-below-average buy filter: they must trade to learn
 # (titulars, and everything on the real account, keep the filter).
 SCALP_TP_PCT = _f("SCALP_TP_PCT", 0.01)
+# the 15-minute bots may trade the REAL account even while BTC is below its 50h average (owner's decision 2026-10-22):
+# long only, LIVE_FAST_USD per trade, at most LIVE_FAST_MAX_OPEN open at once. 0 turns it off.
+LIVE_FAST_ALLOW = os.getenv("LIVE_FAST_ALLOW", "1") == "1"
+LIVE_FAST_USD = _f("LIVE_FAST_USD", 10.0)
+LIVE_FAST_MAX_OPEN = _i("LIVE_FAST_MAX_OPEN", 1)
 LIVE_ALLOW_SHORT = os.getenv("LIVE_ALLOW_SHORT", "0") == "1"
 LIVE_SHORT_MAX_OPEN = _i("LIVE_SHORT_MAX_OPEN", 1)
 LIVE_SHORT_MAX_PER_DAY = _i("LIVE_SHORT_MAX_PER_DAY", 3)
