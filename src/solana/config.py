@@ -286,6 +286,14 @@ QUICK_WIN2_PCT = _f("QUICK_WIN2_PCT", 0.012)
 QUICK_WIN2_KEEP = _f("QUICK_WIN2_KEEP", 0.8)
 # no buys while BTC is below its 50-hour average (when BTC falls almost every coin falls with it)
 BTC_FILTER = os.getenv("BTC_FILTER", "1") == "1"
+# ─── P1 Market Intelligence ───
+# regime classifier (regime.py): OBSERVATIONAL — logged, shown and tagged on every entry so its efficacy can be
+# compared against the BTC-50h filter on real trades; it gates nothing yet
+REGIME_ENABLED = os.getenv("REGIME_ENABLED", "1") == "1"
+# correlated-exposure guard: a new entry whose last CORR_WINDOW_H 1h returns correlate ≥ CORR_MAX_ENTRY with an
+# already-open same-direction position is economically redundant (no real diversification) and is skipped. 0 = off.
+CORR_MAX_ENTRY = _f("CORR_MAX_ENTRY", 0.92)
+CORR_WINDOW_H = _i("CORR_WINDOW_H", 48)
 # on the real/simulation accounts, one titular may hold at most this many positions (room for the others)
 MAX_POSITIONS_PER_BOT = _i("MAX_POSITIONS_PER_BOT", 3)
 # no burst of buys into one move: at most this many new buys per BURST_WINDOW_MIN on an account (2026-10-21 19h Lisbon:

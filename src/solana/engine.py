@@ -228,6 +228,32 @@ class PaperEngine:
         self.ledger.set_state("quota_levels", levels)
         return levels
 
+    def _redundant(self, c, corr_map: dict) -> str | None:
+        """Economically redundant entry: its recent 1h returns correlate ≥ CORR_MAX_ENTRY with a same-direction
+        position already open (two near-copies of one bet add exposure, not diversification). Opposite directions
+        are hedges, never blocked. Uses candles the cycle already fetched — zero extra API calls."""
+        if not cfg.CORR_MAX_ENTRY:
+            return None
+        mine = self.ledger.positions()
+        if not mine:
+            return None
+        short = c.mint.endswith("~short")
+        a = _hourly_returns(corr_map.get((c.symbol, short)) or [], cfg.CORR_WINDOW_H)
+        if len(a) < 24:
+            return None
+        for p in mine:
+            if p["mint"].endswith("~short") != short or p["symbol"] == c.symbol:
+                continue
+            b = _hourly_returns(corr_map.get((p["symbol"], short)) or [], cfg.CORR_WINDOW_H)
+            n = min(len(a), len(b))
+            if n < 24:
+                continue
+            r = _pearson(a[-n:], b[-n:])
+            if r is not None and r >= cfg.CORR_MAX_ENTRY:
+                return (f"exposição redundante: correlação {r:.2f} com {p['symbol']} já aberta "
+                        f"(limite {cfg.CORR_MAX_ENTRY:.2f} em {cfg.CORR_WINDOW_H}h)")
+        return None
+
     def _learn_ledger(self, strategy: str):
         """Where a bot's experience lives: its lab ledger (the accounts learn from the same bot's lab record)."""
         from src.solana import arena
@@ -581,6 +607,16 @@ class PaperEngine:
         breadth = {k: mt.get(k) for k in ("n", "uptrend", "avg_rsi", "avg_ch24")}   # whole-market context for the AI
         from src.solana import trainer
         trainer.set_breadth(breadth)
+        from src.solana import regime as regime_mod
+        reg = regime_mod.current(breadth)             # observational: logged, shown, tagged — gates nothing yet
+        if reg:
+            prev_reg = self.ledger.get_state("regime") or {}
+            if (prev_reg.get("state"), prev_reg.get("vol_state")) != (reg["state"], reg["vol_state"]):
+                self.ledger.log_decision("regime", cycle=self.cycle, signals=reg["detail"], reason=(
+                    f"🌡 regime do mercado: {reg['state']} · volatilidade em {reg['vol_state']} "
+                    f"(confiança {reg['confidence']}; observacional — o filtro BTC-50h segue mandando)"))
+            self.ledger.set_state("regime", reg)
+        corr_map = {(r[0].symbol, r[0].mint.endswith("~short")): r[1] for r in ready}
         held = {x["mint"] for x in self.ledger.positions()}
         quota = self._quota_levels()
         btc_ok = self._btc_ok()                      # BTC below its 50h average: no new longs (shorts are for that)
@@ -601,6 +637,13 @@ class PaperEngine:
             if self.__dict__.get("_yield"):
                 break
             if c.mint in held:          # already holding it: its stop/target and exit review handle it — no AI tokens
+                continue
+            if why := self._redundant(c, corr_map):   # correlated with an open position: no real diversification
+                self._agent("risk", last_reason=f"{c.symbol}: {why}")
+                if time.time() - self._safety_logged.get(f"corr:{c.mint}", 0) > 3600:   # don't flood the log
+                    self._safety_logged[f"corr:{c.mint}"] = time.time()
+                    self.ledger.log_decision("veto", cycle=self.cycle, mint=c.mint, symbol=c.symbol,
+                                             reason=f"risk: {why}")
                 continue
             for strat in self._ordered(c):
                 from src.solana.strategies import SHORT_BOTS
@@ -674,6 +717,8 @@ class PaperEngine:
                     sig.tp_pct *= 0.6
                     sig.reason = f"{sig.reason} · cota do dia (nível {quota[strat.name]})"
                 tags = learning.situation(candles, c.symbol)
+                if reg and reg.get("state") not in (None, "sem dados"):
+                    tags = tags + [f"regime {reg['state']}"]      # per-regime record: the evidence a future gate needs
                 if cfg.SELF_LEARNING:
                     rec = learning.record(self._learn_ledger(strat.name), strat.name)
                     from src.solana import evolution
@@ -696,6 +741,7 @@ class PaperEngine:
                                                  signals={"tags": tags, "to": mate[0]},
                                                  reason=f"📨 passou {c.symbol} para {mate[0]}: {mate[1]}")
                         continue
+                est = None
                 if cfg.EDGE_CHECK:                      # margin of error: odds of this trade from every memory we have
                     from src.solana import arena, edge as edge_mod
                     mine = self._learn_ledger(strat.name)
@@ -712,6 +758,18 @@ class PaperEngine:
                         continue
                     sig.reason = f"{sig.reason} · {edge_mod.describe(est)}"
                     sig.indicators = {**(sig.indicators or {}), "edge": est}
+                from src.solana import contract
+                intent = contract.build(c, sig, strat.name, candles,
+                                        _max_hold(strat.name, self.max_hold_h, bool(lab_model)),
+                                        reg, {**(est or {}), "tags": tags} if est else {"tags": tags}, self.cycle)
+                try:
+                    intent.validate()                   # semantics first: Risk never sees a malformed intention
+                except ValueError as e:
+                    stats["vetoes"] += 1
+                    self.ledger.log_decision("veto", cycle=self.cycle, mint=c.mint, symbol=c.symbol,
+                                             strategy=strat.name, signals={"intent": intent.as_dict()},
+                                             reason=f"contrato do sinal: {e}")
+                    continue
                 stats["signals"] += 1
                 self._agent(strat.name, last_reason=f"{c.symbol}: {sig.reason}", approved=1)
                 strat_vote = Vote(strat.name, True, sig.reason, sig.indicators)
@@ -751,6 +809,10 @@ class PaperEngine:
                                              reason=f"{vetoer.agent}: {vetoer.reason}")
                     continue
                 order_id = f"c{self.cycle}-{strat.name}-{c.mint[:12]}-buy"
+                intent.decision_id = order_id            # the approved sizing completes the contract
+                intent.risk_budget_request_usd = round(risk.detail["size_usd"], 2)
+                intent.estimated_loss_at_stop_usd = round(risk.detail["size_usd"] * sig.stop_pct, 4)
+                signals["intent"] = intent.as_dict()
                 try:
                     fill = self.executor.open(order_id, c, sig, risk.detail["size_usd"], risk.detail["fingerprint"])
                 except Exception as e:
@@ -859,6 +921,24 @@ def _setup_rank(candles: list[dict]) -> tuple:
         return (1, 100.0)
     trend = ema(closes[-600:], 200) if len(closes) >= 200 else None
     return (0 if trend and closes[-1] > trend else 1, rsi(closes))
+
+
+def _hourly_returns(candles: list[dict], window: int) -> list[float]:
+    closes = [k["close"] for k in candles[-(window + 1):]]
+    return [closes[i + 1] / closes[i] - 1 for i in range(len(closes) - 1) if closes[i]]
+
+
+def _pearson(a: list[float], b: list[float]) -> float | None:
+    n = len(a)
+    if n < 2 or n != len(b):
+        return None
+    ma, mb = sum(a) / n, sum(b) / n
+    va = sum((x - ma) ** 2 for x in a)
+    vb = sum((x - mb) ** 2 for x in b)
+    if va == 0 or vb == 0:
+        return None                      # a flat series correlates with nothing meaningfully
+    cov = sum((x - ma) * (y - mb) for x, y in zip(a, b))
+    return cov / (va * vb) ** 0.5
 
 
 def _votes(*votes: Vote) -> dict:

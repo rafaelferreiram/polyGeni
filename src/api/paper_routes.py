@@ -216,6 +216,12 @@ def _market_temp() -> dict:
     return max(temps, key=lambda t: t.get("ts") or "")
 
 
+def _regime() -> dict | None:
+    """The observational regime (regime.py), freshest of either account."""
+    regs = [r for k in ("sim", "real") if (r := _account_engine(k).ledger.get_state("regime"))]
+    return max(regs, key=lambda r: r.get("asof") or "") if regs else None
+
+
 @router.get("/account")
 def account(kind: str = "sim"):
     from src.solana import hl_live
@@ -234,7 +240,8 @@ def account(kind: str = "sim"):
                   "pnl_usd": round(sum(t["pnl_usd"] for t in trades if t["strategy"] == m.name), 4),
                   "open": [x["symbol"] for x in led.positions() if x["strategy"] == m.name]} for m in eng.team],
         "goals": goals(eng),
-        "sleep": (led.get_state("sleep") or {}) if cfg.BOT_SELF_PAUSE else {}, "coffee_until": eng.coffee(), "market_temp": _market_temp(),
+        "sleep": (led.get_state("sleep") or {}) if cfg.BOT_SELF_PAUSE else {}, "coffee_until": eng.coffee(),
+        "market_temp": _market_temp(), "regime": _regime(),
         "profit": profit(eng),
         "equity": round(p.equity, 4), "cash": round(p.cash, 4), "exposure": round(p.exposure, 4),
         # what is still free: equity minus the margin the open positions hold (notional / leverage)
