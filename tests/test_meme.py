@@ -1,6 +1,8 @@
 """Meme-coin trench: safety gate, signals, paper fills with fees and impact, rug alarm."""
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 from src.solana import meme
 from src.solana.ledger import Ledger
 
@@ -249,3 +251,45 @@ def test_withdraw_refuses_to_send_the_sol_while_a_meme_token_could_not_be_sold(t
     import pytest
     with pytest.raises(ValueError, match="AAA: no route"):
         mw.withdraw()
+
+
+def _major(**kw):
+    t = {"id": "SOLX", "symbol": "SOLX", "isVerified": True, "holderCount": 80_000, "liquidity": 8_000_000, "organicScore": 90, "tags": ["verified"],
+         "stats1h": {"priceChange": 1.5, "numBuys": 900, "numSells": 600, "numNetBuyers": 120}, "stats5m": {"priceChange": 0.3}}
+    t.update(kw)
+    return t
+
+
+def test_solana_crypto_team_trades_verified_majors_with_tight_short_exits(tmp_path, monkeypatch):
+    assert {"sol_break", "sol_dip"} <= set(meme.BOTS) and meme.team("sol_break") == "sol" and meme.team("meme_grad") == "meme"
+    monkeypatch.setattr(meme, "_ledgers", {b: Ledger(str(tmp_path / f"arena_{b}.db"), 100.0) for b in meme.BOTS})
+    monkeypatch.setattr(meme, "_regime", {"ok": True, "size_mult": 1.0, "why": ""})
+    up, dip = _major(), _major(stats1h={"priceChange": -3.0, "numBuys": 800, "numSells": 600, "numNetBuyers": 50}, stats5m={"priceChange": 0.4})
+    assert meme.signal("sol_break", up) and not meme.signal("sol_dip", up)
+    assert meme.signal("sol_dip", dip) and not meme.signal("sol_break", dip)
+    assert all(ok for ok, _ in meme.safety(up, "sol").values())
+    assert not meme.safety(_major(isVerified=False), "sol")["verificado pela Jupiter"][0]
+    assert not meme.safety(_major(liquidity=100_000), "sol")["liquidez ≥ $500k"][0]
+    px = {"SOLX": {"price": 100.0, "liq": 8_000_000}}
+    meme.enter("sol_break", [up], px)
+    led = meme.ledger("sol_break")
+    [pos] = led.positions()
+    assert pos["stop_price"] == pytest.approx(100.0 * 0.98) and pos["tp_price"] == pytest.approx(104.0)   # 2% stop, 4% target
+    assert abs(pos["cost_usd"] - 10) < 1e-9 and led.fills()[0]["fee_usd"] == pytest.approx(0.02)         # 0.2% fee per side, not the memes' 0.5%
+    meme.manage("sol_break", {"SOLX": {"price": 101.5, "liq": 8_000_000}})             # +1.3% spike (entry price already carries the 0.2% fee): quick win locks above the round trip's cost
+    meme.manage("sol_break", {"SOLX": {"price": 100.6, "liq": 8_000_000}})
+    [t] = led.closed_trades()
+    assert "ganho rápido" in t["reason"] and t["pnl_usd"] > 0
+    meme.enter("sol_break", [up], px)
+    assert led.positions() == []                                                       # inside its 30-min cooldown
+    parent = meme.BOTS["sol_dip"]
+    p, why = meme.mutate([{"pnl_usd": -0.1, "reason": "🛑 stop"}] * 3, parent["params"])
+    assert 0.01 <= p["stop_pct"] < 0.02 and p["tp_pct"] <= parent["params"]["tp_pct"]     # tightened, never inflated to meme sizes
+
+
+def test_solana_discovery_keeps_crypto_and_drops_stables_shares_memes_and_launchpad_tokens(monkeypatch):
+    rows = [_major(id="A", symbol="JUP"), _major(id="B", symbol="USDX", tags=["verified", "stable"]), _major(id="C", symbol="TSLAx", tags=["verified", "stocks"]),
+            _major(id="D", symbol="TRUMP", tags=["verified", "meme"]), _major(id="E", symbol="NEW", launchpad="pump.fun"), _major(id="F", symbol="SHADY", isVerified=None)]
+    monkeypatch.setattr(meme, "request_json", lambda *a, **k: rows)
+    monkeypatch.setattr(meme, "_sol_cache", {"at": 0.0, "rows": []})
+    assert [t["symbol"] for t in meme.discover_sol()] == ["JUP"]

@@ -63,6 +63,6 @@ def _isolated_lineage(tmp_path, monkeypatch):
     from src.solana import evolution, meme
     monkeypatch.setattr(evolution, "PATH", str(tmp_path / "lineage.json"))
     monkeypatch.setattr(meme.cfg, "MEME_LINEAGE_PATH", str(tmp_path / "meme_lineage.json"))
-    fresh = {"active": {m: {**v, "base": m, "gen": 1, "params": {}} for m, v in meme.FOUNDERS.items()}, "retired": []}
+    fresh = meme._load_roster()                      # the founding roster of both teams (the lineage file does not exist in tmp)
     monkeypatch.setattr(meme, "ROSTER", fresh)
     monkeypatch.setattr(meme, "BOTS", fresh["active"])

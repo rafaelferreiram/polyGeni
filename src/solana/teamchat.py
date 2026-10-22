@@ -58,7 +58,7 @@ def meta(k: str, v: str | None = None) -> str | None:
 
 
 # ─── personalities: each bot talks like its player ───
-NAMES = {"meme_grad": "Breno Lopes", "meme_momo": "Deyverson", "meme_whale": "Rony", "short": "Gustavo Gómez", "rules": "São Marcos", "trend": "Endrick", "trend4h": "Gabriel Jesus", "whales": "Evair", "whales2": "Dudu",
+NAMES = {"sol_break": "Ademir da Guia", "sol_dip": "Marcos Assunção", "meme_grad": "Breno Lopes", "meme_momo": "Deyverson", "meme_whale": "Rony", "short": "Gustavo Gómez", "rules": "São Marcos", "trend": "Endrick", "trend4h": "Gabriel Jesus", "whales": "Evair", "whales2": "Dudu",
          "copy": "Veiga", "whales_15m": "Evair 15m", "copy_15m": "Veiga 15m", "trend4h_15m": "Gabriel Jesus 15m"}
 VOICE = {   # family -> (buy, win, loss, tip, cheer, calm)
     "rules": ("Calma, pessoal. Esperei a queda certa e entrei em {s}.", "Paciência paga. {s} fechado no verde.",
@@ -83,6 +83,12 @@ VOICE["meme_grad"] = ("Saiu do forno da pump.fun e passou na revista: entrei em 
 VOICE["meme_whale"] = ("As baleias da Solana entraram pesado: fui junto em {s} 🦈", "Velocidade e faro: {s} no verde 🦈",
                        "As baleias saíram de {s} antes de mim. Stop feito.", "@{to}, baleia rondando {s}: {d}",
                        "Isso, @{to}! 🦈", "Bola pra frente, @{to}.")
+VOICE["sol_break"] = ("Rompeu com comprador de verdade: entrei em {s} ◎", "Gol de placa! {s} no verde ◎",
+                      "{s} perdeu a força, saí no stop curto.", "@{to}, olha {s} rompendo na Solana: {d}",
+                      "Boa, @{to}! ◎", "Segue o jogo, @{to}.")
+VOICE["sol_dip"] = ("Caiu demais e já repica: peguei {s} na virada ◎", "Repique certo em {s}, lucro no bolso ◎",
+                    "Faca caindo em {s}: saí no stop.", "@{to}, {s} caiu e está virando: {d}",
+                    "Bela leitura, @{to}!", "Quem espera a virada, vence, @{to}.")
 VOICE["meme_momo"] = ("Tá subindo com comprador de verdade: entrei em {s} 🐸", "Hahaha, {s} voou! 🐸",
                       "{s} virou pó, mas saí no stop.", "@{to}, olha a {s} pegando tração: {d}",
                       "Vai, @{to}! 🐸", "Faz parte da trincheira, @{to}.")
@@ -104,8 +110,8 @@ def name(model: str) -> str:
 
 def _family(model: str) -> str:
     try:
-        from src.solana import evolution
-        model = evolution.base_of(model)
+        from src.solana import evolution, meme
+        model = meme.BOTS[model]["base"] if model in meme.BOTS else evolution.base_of(model)    # evolved meme/Solana bots keep their family's voice
     except Exception:
         pass
     return model.removesuffix("_15m")

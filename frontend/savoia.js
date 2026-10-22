@@ -470,6 +470,8 @@ const MODEL_LOOK = {
   "whales": { label: "Evair", color: "#60a5fa", ico: "🐋", role: "segue as baleias quando compram forte" },
   "meme_grad": { label: "Breno Lopes", color: "#a3e635", ico: "🎓", role: "trincheira: tokens recém-formados na pump.fun" },
   "meme_momo": { label: "Deyverson", color: "#34d399", ico: "🐸", role: "trincheira: momentum de meme coins" },
+  "sol_break": { label: "Ademir da Guia", color: "#c4b5fd", ico: "◎", role: "Solana cripto: rompimento com compradores" },
+  "sol_dip": { label: "Marcos Assunção", color: "#818cf8", ico: "↩", role: "Solana cripto: repique depois da queda" },
   "meme_whale": { label: "Rony", color: "#22d3ee", ico: "🦈", role: "trincheira: segue as baleias das meme coins" },
   "whales2": { label: "Dudu", color: "#38bdf8", ico: "🐳", role: "clone do Evair: mesmas regras, segue as baleias" },
   "copy": { label: "Veiga", color: "#f472b6", ico: "👑", role: "copia os 10 melhores traders da Hyperliquid" },
@@ -852,8 +854,8 @@ function withdrawMeme(btn) {
   run(btn, "Sacando…", () => api("/meme/wallet/withdraw", "POST"), (r) => `✅ Saque enviado (${short(r.signature)})`).then(() => safe(loadMemeReal));
 }
 function promoteMeme(bot, btn) {
-  if (!confirm(`Promover ${look(bot).label} a TITULAR do time de memes?\n\nEle passa a operar a conta real de meme coins (Solana), com os limites pequenos.`)) return;
-  run(btn, "Promovendo…", () => api("/meme/promote", "POST", { bot }), `⚽ ${look(bot).label} é titular do time de memes`).then(() => safe(loadMeme));
+  if (!confirm(`Promover ${look(bot).label} a TITULAR?\n\nEle passa a operar a conta real da Phantom (Solana), com os limites pequenos.`)) return;
+  run(btn, "Promovendo…", () => api("/meme/promote", "POST", { bot }), `⚽ ${look(bot).label} é titular da Solana`).then(() => safe(loadMeme));
 }
 // ─── tabs below the fold: one band at a time; anchors (#g-bots, #ecg, …) open the right tab ───
 function showTab(name, el = null) {
@@ -935,15 +937,15 @@ function renderWallets() {
   const open = dry || !w ? 0 : w.positions.reduce((t, p) => t + p.now, 0);
   const mode = w ? (w.mode === "real" ? '<span class="mode real">💵 REAL</span>' : '<span class="mode fake" title="O bot simula as ordens; nada é enviado">🧪 ENSAIO</span>') : "";
   const phantomOk = phantomProvider() ? '<span class="green">● extensão ok</span>' : REMOTE ? "" : '<span class="red">● sem extensão</span>';
-  const ph = `<div class="wallet ph"><div class="wh">${walletIco("phantom", "👻")}<div><b>Phantom · meme coins ${fake ? fakeTag : mode}</b>
-      <small>Solana · ${fake ? `laboratório: ${bots.length} bots de meme em treino` : `bot opera da carteira ${w ? esc(short(w.address)) : "–"}`}</small></div></div>
+  const ph = `<div class="wallet ph"><div class="wh">${walletIco("phantom", "👻")}<div><b>Phantom · Solana ${fake ? fakeTag : mode}</b>
+      <small>Solana · ${fake ? `laboratório: ${bots.length} bots da Solana em treino (memes + cripto)` : `bot opera da carteira ${w ? esc(short(w.address)) : "–"}`}</small></div></div>
     <div class="big">${fake ? usd(lab.equity) : w?.owner_usd != null ? usd(w.owner_usd) : "–"}<small>${fake ? "saldo simulado dos bots em treino" : w?.owner ? (w.owner_sol != null ? `${w.owner_sol.toFixed(4)} SOL na sua Phantom` : "saldo da sua Phantom") : "conecte a Phantom para ver o saldo"}</small></div>
     ${walletRows(fake ? [["Bots em treino", bots.length], ["Disponível", usd(lab.equity - lab.open)], ["Posições abertas", lab.n], ["Resultado líquido", pnl(lab.pnl)]]
       : [["Na carteira do bot", w?.usd != null ? usd(w.usd) : "–"], ["Em posições", w ? usd(open) : "–"],
          ["Posições abertas", w ? (dry ? 0 : w.positions.length) : "–"], ["Resultado fechado", w ? pnl(dry ? 0 : w.pnl) : "–"]])}
     <div class="addr">${fake ? '<span class="muted">Os bots de meme treinam aqui com $100 de mentira cada, antes de ganhar a vaga de titular.</span>'
       : `Endereço: ${w?.owner ? `<code title="${esc(w.owner)}">${esc(short(w.owner))}</code><button class="link" onclick="copyText('${esc(w.owner)}')">copiar</button>` : '<span class="muted">nenhuma Phantom conectada</span>'} ${phantomOk}`}</div>
-    <div class="acts">${fake ? `<button onclick="showTab('meme')">🐸 Ver o time de memes</button>`
+    <div class="acts">${fake ? `<button onclick="showTab('meme')">◎ Ver os bots da Solana</button>`
       : REMOTE ? "" : `<button class="primary" onclick="connectPhantom(this)">👻 ${w?.owner ? "Trocar" : "Conectar"}</button>
       <button onclick="depositPhantom(this)" ${w?.owner ? "" : "disabled title='Conecte a Phantom primeiro'"}>⬇️ Depositar SOL</button>
       <button onclick="withdrawMeme(this)" ${w?.owner ? "" : "disabled title='Conecte a Phantom primeiro'"}>⬆️ Sacar tudo</button>
@@ -961,7 +963,7 @@ async function loadMemeReal() {
   memeWallet = w;
   renderWallets();
   const real = w.mode === "real";
-  setHTML("meme-real", `<div class="t"><b>💵 Conta real de meme coins <span class="muted">(Solana · separada da conta de cripto)</span></b>
+  setHTML("meme-real", `<div class="t"><b>💵 Conta real da Solana <span class="muted">(memes + cripto · separada da conta da Hyperliquid)</span></b>
       <span class="mode ${real ? "real" : "fake"}">${real ? "💵 REAL" : "🧪 ENSAIO · nada é enviado"}</span>${w.halted ? ' <span class="mode real" style="color:var(--red)">🛑 parada (kill switch)</span>' : ""}</div>
     <div class="nums"><span><b>${w.usd == null ? "–" : usd(w.usd)}</b>na carteira${w.sol != null ? ` (${w.sol.toFixed(4)} SOL)` : ""}</span>
       <span><b>${pnl(w.pnl)}</b>${real ? "resultado" : "resultado do ensaio"}</span><span><b>${w.trades}</b>trades (${w.wins} ganhos)</span>
@@ -970,7 +972,7 @@ async function loadMemeReal() {
     <div class="chips">${w.positions.map((p) => `<span>${esc(p.symbol)} · ${esc(look(p.bot).label)} ${pnl(p.now - p.cost)}</span>`).join("") || '<span class="muted">sem posições</span>'}</div>
     <p class="note">Limites: $${L.trade_usd} por trade · ${L.max_positions} posições · ${L.max_buys_day} compras/dia · para no dia com −$${L.daily_loss_usd} ·
       impacto ≤ ${L.max_impact_pct}% · slippage ≤ ${L.slippage_pct}% · abaixo de ${pct0(L.kill_pct)} do depositado vende tudo e para.
-      ${real ? "Só os titulares do time de memes operam aqui." : "No ensaio, toda compra e venda do laboratório é cotada no Jupiter e simulada na Solana, sem enviar."}</p>
+      ${real ? "Só os titulares (memes e cripto da Solana) operam aqui." : "No ensaio, toda compra e venda do laboratório é cotada no Jupiter e simulada na Solana, sem enviar."}</p>
     <details><summary>Últimos passos</summary><div class="bm-rows">${w.log.slice(0, 8).map((d) => `<div><span>${hhmm(d.ts)} ${d.symbol ? esc(d.symbol) + " · " : ""}${esc(d.reason)}</span></div>`).join("") || '<div class="muted">nada ainda</div>'}</div></details>`);
 }
 safe(loadMemeReal);
@@ -1000,7 +1002,7 @@ function paintMemeModal() {
   if (!d) return;
   const L = look(d.model), s = d.stats, P = d.params;
   const scrollTop = document.querySelector(".bm-body")?.scrollTop || 0;
-  const chips = [d.titular ? "⚽ Titular do time de memes · conta real de memes" : "🪑 Reserva · laboratório ($100 de mentira)",
+  const chips = [d.titular ? "⚽ Titular · opera a conta real da Phantom" : "🪑 Reserva · laboratório ($100 de mentira)",
     d.gen > 1 ? `🧬 Geração ${d.gen} · filho de ${esc(d.parent || "")}` : "", d.can_promote && !d.titular ? "✅ Pronto para subir" : ""]
     .filter(Boolean).map((t) => `<span>${t}</span>`).join("");
   const tabs = [["resumo", "Resumo"], ["trades", `Trades (${s.trades})`], ["decisoes", "Decisões"], ["aprendizado", "Aprendizado e evolução"]];
@@ -1022,7 +1024,7 @@ function paintMemeModal() {
           ["Sem tração", `${P.traction_min} min sem +${(P.traction_pct * 100).toFixed(0)}%`],
           ["Liquidez mínima", `$${Number(P.min_liq).toLocaleString("pt-BR")}`],
           ["Ganhos rápidos", P.quick_wins.map(([a, k]) => `+${(a * 100).toFixed(0)}% → guarda ${(k * 100).toFixed(0)}%`).join(" · ")]])}
-          <p class="note" style="margin:10px 0 0">Meme sobe e cai em minutos: qualquer alta repentina já vira ganho garantido, sempre acima das taxas (0,5% por lado + impacto).</p></div></div>
+          <p class="note" style="margin:10px 0 0">${P.team === "sol" ? "Moedas grandes andam em frações de percentual: stop e alvo curtos, ganho rápido a partir de +1% e fica barato entrar e sair (0,2% por lado + impacto)." : "Meme sobe e cai em minutos: qualquer alta repentina já vira ganho garantido, sempre acima das taxas (0,5% por lado + impacto)."}</p></div></div>
       <h4>Posições abertas</h4>${d.positions.length ? `<div class="bm-rows">${d.positions.map((p) => `<div><span>${esc(p.symbol)} · desde ${dt(p.opened_at)}${p.peak_pct != null ? ` · pico ${p.peak_pct > 0 ? "+" : ""}${p.peak_pct}%` : ""}</span><b>${pnl(p.now - p.cost)}</b></div>`).join("")}</div>` : '<div class="empty">Sem posições agora.</div>'}
       <h4>⬆️ Caminho para titular</h4><div class="bm-card"><div class="t"><span>${d.titular ? "⚽ Já é titular do time de memes" : d.can_promote ? "✅ Pode subir para titular" : "Ainda não pode subir"}</span></div>
         <span class="muted">${s.wins} de ${d.need_wins} vitórias · acerto ${pct0(s.win_rate)} (mínimo ${pct0(d.need_win_rate)}). Titular de meme opera a conta real de memes (Solana), com limites pequenos.</span>
@@ -1057,11 +1059,11 @@ async function loadMeme() {
   renderWallets();
   const st = d.status || {};
   document.getElementById("meme-head").textContent = st.at ? `última varredura ${hhmm(st.at)} · ${st.candidates} tokens analisados${st.error ? " · erro: " + st.error : ""}` : "aguardando a primeira varredura…";
-  setHTML("meme-bots", d.bots.map((b) => {
+  const memeCard = (b) => {
     const L = look(b.model);
     const m = b.mode || {};
     const badge = m.real ? '<span class="mode real">💵 REAL · titular</span>' : m.titular ? '<span class="mode real">⚽ titular · ensaio</span>' : '<span class="mode fake">🧪 FAKE · reserva</span>';
-    const prog = m.titular ? "Titular do time de memes: opera a conta real" : `Titular: ${m.wins}/${m.need_wins} vitórias · acerto ${b.trades ? pct0(m.win_rate) : "–"} (mín. ${pct0(m.need_win_rate)})`;
+    const prog = m.titular ? "Titular: opera a conta real da Phantom" : `Titular: ${m.wins}/${m.need_wins} vitórias · acerto ${b.trades ? pct0(m.win_rate) : "–"} (mín. ${pct0(m.need_win_rate)})`;
     const cut = m.next_cut ? `<div class="gl" title="${esc(["Se não der lucro no período (ou não operar), é aposentado e nasce um sucessor melhorado.", ...(m.why || [])].join(" · "))}">🧬 ${m.gen > 1 ? `geração ${m.gen}, filho de ${esc(m.parent || "")} · ` : ""}próximo corte ${time(m.next_cut)}: precisa estar no lucro</div>` : "";
     const promo = m.ready && !m.titular && !REMOTE ? `<div class="bm-actions"><button class="promote" onclick="event.stopPropagation(); promoteMeme('${esc(b.model)}', this)">⬆️ Promover a titular</button></div>` : "";
     return `<div class="meme-bot click" style="--c:${L.color}" onclick="openMemeBot('${esc(b.model)}')" title="Clique para ver tudo sobre ${esc(L.label)}"><div class="top">${botFace(L.color, L.ico)}<div><b>${esc(L.label)}</b> ${badge}<div class="muted" style="font-size:12px">${esc(b.role)}</div></div></div>
@@ -1069,7 +1071,22 @@ async function loadMeme() {
       <div class="chips">${b.positions.map((p) => `<span>${esc(p.symbol)} ${pnl(p.now - p.cost)}</span>`).join("") || '<span class="muted">sem posições</span>'}
         ${b.recent.slice(0, 4).map((t) => `<span title="${esc(t.reason)}">${esc(t.symbol)} ${t.pct > 0 ? "+" : ""}${t.pct}%</span>`).join("")}</div>${learnedLine(b.learned)}
       <div class="gl${m.ready || m.titular ? " ok" : ""}" title="${m.titular ? "Opera a conta real de memes (Solana), ao mesmo tempo que os titulares de cripto operam a Hyperliquid." : "Treinando no laboratório com $" + "100 de mentira."}">🎓 ${prog}${m.ready && !m.titular ? " · ✅ pronto" : ""}</div>${cut}${promo}</div>`;
-  }).join("") + (d.retired?.length ? `<p class="note" style="grid-column:1/-1;margin:0">🪦 Saíram por não fazer dinheiro: ${d.retired.map((r) => `${esc(r.name)} (${esc(r.verdict)}) → ${esc(r.successor_name)}`).join(" · ")}</p>` : ""));
+  };
+  setHTML("sol-bots", d.bots.filter((b) => b.team === "sol").map(memeCard).join(""));
+  const sh = d.radar_sol || [];
+  document.getElementById("sol-radar-note").textContent = sh.length ? `· ${sh.filter((x) => x.safe).length} de ${sh.length} passam na segurança · ${sh.filter((x) => Object.values(x.signals).some(Boolean)).length} com sinal` : "";
+  const fs = (v, d2 = 0) => (v == null ? "–" : Number(v).toLocaleString("pt-BR", { maximumFractionDigits: d2 }));
+  const chg = (v) => `<td class="n ${(v || 0) >= 0 ? "green" : "red"}">${v == null ? "–" : `${v > 0 ? "+" : ""}${fs(v, 2)}%`}</td>`;
+  setHTML("sol-radar", `<tr><th>Token</th><th class="n">Preço</th><th class="n">Liquidez</th><th class="n">1h</th><th class="n">5 min</th><th>Segurança</th><th>Sinal</th></tr>` +
+    (sh.length ? sh.slice(0, 14).map((x) => {
+      const bad = Object.entries(x.checks).filter(([, c]) => !c.ok).map(([k, c]) => `${k}: ${c.txt}`);
+      const sig = Object.entries(x.signals).filter(([, s]) => s).map(([b]) => look(b).label);
+      return `<tr><td>${x.icon ? `<img class="ti" src="${esc(x.icon)}" alt="" loading="lazy" onerror="this.remove()">` : ""}<b>${esc(x.symbol)}</b></td>
+        <td class="n">${x.price == null ? "–" : "$" + fs(x.price, x.price < 1 ? 4 : 2)}</td><td class="n">$${fs(x.liq)}</td>${chg(x.ch1h)}${chg(x.ch5m)}
+        <td title="${esc(bad.join(" · ") || "passou em tudo")}">${x.safe ? "✅" : `⛔ ${esc(bad[0] || "")}`}</td>
+        <td>${sig.length ? `🟢 ${esc(sig.join(", "))}` : '<span class="muted">—</span>'}</td></tr>`;
+    }).join("") : '<tr><td colspan="7" class="empty">Aguardando a primeira varredura.</td></tr>'));
+  setHTML("meme-bots", d.bots.filter((b) => (b.team || "meme") === "meme").map(memeCard).join("") + (d.retired?.length ? `<p class="note" style="grid-column:1/-1;margin:0">🪦 Saíram por não fazer dinheiro: ${d.retired.map((r) => `${esc(r.name)} (${esc(r.verdict)}) → ${esc(r.successor_name)}`).join(" · ")}</p>` : ""));
   const r = d.radar || [];
   document.getElementById("meme-radar-note").textContent = r.length ? `· ${r.filter((x) => x.safe).length} de ${r.length} passam na segurança` : "";
   const f = (v, d2 = 0) => (v == null ? "–" : Number(v).toLocaleString("pt-BR", { maximumFractionDigits: d2 }));
