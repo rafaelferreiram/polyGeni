@@ -58,7 +58,7 @@ def meta(k: str, v: str | None = None) -> str | None:
 
 
 # ─── personalities: each bot talks like its player ───
-NAMES = {"short_break": "Edmundo", "sol_break": "Ademir da Guia", "sol_dip": "Marcos Assunção", "meme_grad": "Breno Lopes", "meme_momo": "Deyverson", "meme_whale": "Rony", "short": "Gustavo Gómez", "rules": "São Marcos", "trend": "Endrick", "trend4h": "Gabriel Jesus", "whales": "Evair", "whales2": "Dudu",
+NAMES = {"short_break_15m": "Edmundo 15m", "short_break": "Edmundo", "sol_break": "Ademir da Guia", "sol_dip": "Marcos Assunção", "meme_grad": "Breno Lopes", "meme_momo": "Deyverson", "meme_whale": "Rony", "short": "Gustavo Gómez", "rules": "São Marcos", "trend": "Endrick", "trend4h": "Gabriel Jesus", "whales": "Evair", "whales2": "Dudu",
          "copy": "Veiga", "whales_15m": "Evair 15m", "copy_15m": "Veiga 15m", "trend4h_15m": "Gabriel Jesus 15m"}
 VOICE = {   # family -> (buy, win, loss, tip, cheer, calm)
     "rules": ("Calma, pessoal. Esperei a queda certa e entrei em {s}.", "Paciência paga. {s} fechado no verde.",
