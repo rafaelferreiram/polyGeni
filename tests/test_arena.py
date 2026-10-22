@@ -403,3 +403,49 @@ def test_short_successor_stays_lab_only(tmp_path, monkeypatch):
         assert not arena.can_promote("short_g2_1")["ok"]
     finally:
         st.SHORT_BOTS.discard("short_g2_1")
+
+
+def test_a_patient_reserve_is_not_cut_for_waiting_but_a_blind_one_is(tmp_path, monkeypatch):
+    """§8.5: an empty 12h window is never a fail — punishing it breeds overtrading. Only a bot that stays empty for
+    EVOLVE_IDLE_PERIODS windows IN A ROW while the team keeps finding trades is retired as blind; and one trade
+    resets the idle count."""
+    from datetime import datetime, timedelta, timezone
+    from src.solana import evolution, learning
+    monkeypatch.setattr(evolution, "PATH", str(tmp_path / "lineage.json"))
+    monkeypatch.setattr(cfg, "ARENA_MODELS", ["trend4h", "whales"])
+    monkeypatch.setattr(arena, "build_bot", lambda m, **kw: _fresh(tmp_path, m))
+    monkeypatch.setattr(evolution, "_refresh_accounts", lambda: None)
+    monkeypatch.setattr(arena, "_bots", None)
+    monkeypatch.setattr(arena, "is_titular", lambda m: False)
+    quiet, busy = arena.bots()["trend4h"], arena.bots()["whales"]
+    now = datetime.now(timezone.utc)
+    born = now - timedelta(hours=13)
+    quiet.ledger.set_state("born_at", born.isoformat(timespec="seconds"))
+    busy.ledger.set_state("born_at", now.isoformat(timespec="seconds"))     # not at a checkpoint: never judged here
+    ts = (now - timedelta(hours=2)).isoformat()
+    team_trades = [{"pnl_usd": 0.1, "reason": "take-profit hit", "strategy": "whales", "order_id": f"exit-w{i}",
+                    "entry_ts": ts, "exit_ts": ts} for i in range(12)]
+    monkeypatch.setattr(type(busy.ledger), "closed_trades",
+                        lambda self: team_trades if self is busy.ledger else [])
+    # 1st empty window: logged as healthy waiting, nobody retired
+    assert evolution.check(now) == []
+    assert quiet.ledger.get_state("idle_checkpoints") == 1
+    assert any("não é punido" in d["reason"] for d in quiet.ledger.decisions(kind="evolution"))
+    # 6th consecutive empty window while the team closed 12 trades: blind, retired
+    quiet.ledger.set_state("idle_checkpoints", cfg.EVOLVE_IDLE_PERIODS - 1)
+    quiet.ledger.set_state("judged_checkpoint", None)
+    [ev] = evolution.check(now)
+    assert ev["retired"] == "trend4h" and ev["verdict"]["idle"] and ev["verdict"]["team_trades"] == 12
+    old = quiet.ledger.decisions(kind="evolution")[0]
+    assert "não identifica sinais" in old["reason"]
+    # a bot that finally trades resets its idle streak (even failing the win-rate bar it is judged on RESULTS)
+    heir = next(m for m in arena.bots() if m != "whales")
+    eng2 = arena.bots()[heir]
+    eng2.ledger.set_state("born_at", (now - timedelta(hours=13)).isoformat(timespec="seconds"))
+    eng2.ledger.set_state("idle_checkpoints", 3)
+    t2 = [{"pnl_usd": 0.2, "reason": "take-profit hit", "strategy": heir, "order_id": "exit-a",
+           "entry_ts": (now - timedelta(hours=3)).isoformat(), "exit_ts": (now - timedelta(hours=2)).isoformat()}]
+    monkeypatch.setattr(type(eng2.ledger), "closed_trades",
+                        lambda self: t2 if self is eng2.ledger else (team_trades if self is busy.ledger else []))
+    evolution.check(now)
+    assert eng2.ledger.get_state("idle_checkpoints") == 0
