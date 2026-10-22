@@ -222,7 +222,7 @@ def test_fifteen_minute_twins_can_earn_real_money_and_are_named_for_their_exits(
     from src.solana.strategies import FAST_BOTS, RULE_BOTS
     for m in FAST_BOTS:
         s = RULE_BOTS[m]()
-        assert s.name == m and s.max_hold_h == (1 if m == "short_break_15m" else 6) and _max_hold(m, 72) <= 2   # the 2h cap (MAX_HOLD_CAP_H) applies to every bot
+        assert s.name == m and s.max_hold_h == (1 if m in ("short_break_15m", "rebound_15m") else 6) and _max_hold(m, 72) <= 2   # the 2h cap (MAX_HOLD_CAP_H) applies to every bot
         g = arena.green_light(m)
         assert "versão de 15 min: só laboratório" not in g.get("missing", [])     # same green light as everyone
     assert {"whales_15m", "copy_15m"} <= {t.model for t in hl_live.team()}

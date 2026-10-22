@@ -398,16 +398,42 @@ def fast(cls, label: str, hold_h: float = 6):
 
 Trend4h15 = fast(type("Trend15", (TrendFollow,), {"__init__": lambda s: TrendFollow.__init__(s, fast=20, slow=50, breakout=6, stop_atr=2.0, tp_atr=3.0)}),
                  "trend4h_15m")
-ShortBreak15 = fast(ShortBreak, "short_break_15m", hold_h=1)          # the same breakdown short on 15m bars: 4x more chances a day
+class Rebound:
+    """Lab-only long for oversold markets (2026-10-22: 26 of 30 coins under their 50h average, average RSI 28): on 15m
+    bars, RSI(14) at or under 30 with the last bar closing green after the low touched (or pierced) the lower Bollinger
+    band — the first tick back up. Quick in, quick out: stop 1.5 ATR, target 2 ATR, the +1% scalp exit usually first.
+    Counter-trend, so it never reaches the real account unless the owner lists it in LIVE_FAST_BOTS."""
+    name = "rebound"
+    capital_pct = 1.0
+    max_hold_h = 1
+
+    def signal(self, candles: list[dict]) -> Signal | None:
+        closes = [c["close"] for c in candles]
+        if len(closes) < 40:
+            return None
+        relax = getattr(self, "relax", 0)
+        window = closes[-20:]
+        lower = mean(window) - 2 * pstdev(window)
+        last = candles[-1]
+        r = rsi(closes)
+        touched = min(c["low"] for c in candles[-3:]) <= lower * (1 + 0.002 * relax)
+        if not (r <= 30 + 3 * relax and last["close"] > last["open"] and touched):
+            return None
+        stop, tp, a = _atr_stops(candles, 1.5, 2.0)
+        return Signal(self.name, closes[-1], stop, tp, f"repique: RSI {r:.0f} na banda inferior e o primeiro candle verde", {"rsi": r, "atr": a, "lower_band": lower})
+
+
+ShortBreak15 = fast(ShortBreak, "short_break_15m", hold_h=1)
+Rebound15 = fast(Rebound, "rebound_15m", hold_h=1)          # the same breakdown short on 15m bars: 4x more chances a day
 WhaleFollow15 = fast(WhaleFollow, "whales_15m")
 CopyTop15 = fast(CopyTop, "copy_15m")
 
 
 # deterministic bots (no LLM, no API cost): model name -> strategy
 RULE_BOTS = {"rules": MeanReversionATR, "trend": TrendStrong, "trend4h": Trend4h, "whales": WhaleFollow, "whales2": WhaleFollowClone, "copy": CopyTop,
-             "short": ShortFade, "short_break": ShortBreak, "short_break_15m": ShortBreak15, "trend4h_15m": Trend4h15, "whales_15m": WhaleFollow15, "copy_15m": CopyTop15}
+             "short": ShortFade, "short_break": ShortBreak, "short_break_15m": ShortBreak15, "rebound_15m": Rebound15, "trend4h_15m": Trend4h15, "whales_15m": WhaleFollow15, "copy_15m": CopyTop15}
 SHORT_BOTS = {"short", "short_break", "short_break_15m"}          # lab only: the real account (and its simulation) never short
-FAST_BOTS = {"trend4h_15m", "whales_15m", "copy_15m", "short_break_15m"}      # 15-minute twins: quick trades, they decide on 15m candles
+FAST_BOTS = {"trend4h_15m", "whales_15m", "copy_15m", "short_break_15m", "rebound_15m"}      # 15-minute twins: quick trades, they decide on 15m candles
 LAB_ONLY_BOTS = SHORT_BOTS
 
 

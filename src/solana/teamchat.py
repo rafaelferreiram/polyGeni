@@ -58,7 +58,7 @@ def meta(k: str, v: str | None = None) -> str | None:
 
 
 # ─── personalities: each bot talks like its player ───
-NAMES = {"short_break_15m": "Edmundo 15m", "short_break": "Edmundo", "sol_break": "Ademir da Guia", "sol_dip": "Marcos Assunção", "meme_grad": "Breno Lopes", "meme_momo": "Deyverson", "meme_whale": "Rony", "short": "Gustavo Gómez", "rules": "São Marcos", "trend": "Endrick", "trend4h": "Gabriel Jesus", "whales": "Evair", "whales2": "Dudu",
+NAMES = {"rebound_15m": "Pedrinho 15m", "short_break_15m": "Edmundo 15m", "short_break": "Edmundo", "sol_break": "Ademir da Guia", "sol_dip": "Marcos Assunção", "meme_grad": "Breno Lopes", "meme_momo": "Deyverson", "meme_whale": "Rony", "short": "Gustavo Gómez", "rules": "São Marcos", "trend": "Endrick", "trend4h": "Gabriel Jesus", "whales": "Evair", "whales2": "Dudu",
          "copy": "Veiga", "whales_15m": "Evair 15m", "copy_15m": "Veiga 15m", "trend4h_15m": "Gabriel Jesus 15m"}
 VOICE = {   # family -> (buy, win, loss, tip, cheer, calm)
     "rules": ("Calma, pessoal. Esperei a queda certa e entrei em {s}.", "Paciência paga. {s} fechado no verde.",
@@ -73,6 +73,9 @@ VOICE = {   # family -> (buy, win, loss, tip, cheer, calm)
     "copy": ("Os craques do top 10 entraram em {s}, copiei.", "Camisa 10 entrega: {s} no verde.", "Os craques erraram em {s}, eu junto.",
              "@{to}, anota aí {s}: {d}", "Bonito, @{to}! 🎯", "Bola pra frente, @{to}."),
 }
+VOICE["rebound"] = ("Caiu demais e virou: peguei {s} no repique ⚡", "Repique rápido em {s}, lucro curto no bolso ⚡",
+                    "{s} não virou como eu esperava. Saí no stop.", "@{to}, {s} está esticada para baixo e começando a virar: {d}",
+                    "Boa, @{to}! ⚡", "O repique vem, @{to}.")
 VOICE["short_break"] = ("Perdeu o fundo: vendi {s} a descoberto 📉", "O Animal avisou: {s} caiu e eu lucrei 📉",
                         "{s} segurou a mínima. Fecho no stop curto.", "@{to}, {s} rompeu para baixo: {d}",
                         "Boa, @{to}! 📉", "Mercado em queda também dá jogo, @{to}.")
