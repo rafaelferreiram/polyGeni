@@ -378,6 +378,8 @@ def test_no_reentry_on_the_same_signal_candle(ledger):
 
 
 def test_bot_records_situations_and_avoids_specific_losing_ones(ledger, monkeypatch):
+    from src.solana import config as _cfg
+    monkeypatch.setattr(_cfg, "BURST_MAX_ENTRIES", 0)            # this test buys three times in a row on purpose
     from src.solana import config as cfg, learning
     monkeypatch.setattr(learning, "CACHE_S", 0)
     monkeypatch.setattr(cfg, "LEARN_MIN_TRADES", 3)
@@ -479,3 +481,20 @@ def test_titular_holds_at_most_3_positions_on_the_account(ledger, monkeypatch):
     monkeypatch.setattr(cfg, "MAX_POSITIONS_PER_BOT", 0)       # already at the cap
     eng = build(ledger, Price(1.0))
     assert eng.run_cycle()["entries"] == 0
+
+
+def test_account_waits_after_a_burst_of_buys(ledger, monkeypatch):
+    from src.solana import config as cfg
+    monkeypatch.setattr(cfg, "BURST_MAX_ENTRIES", 1)
+    price = Price(1.0)
+    eng = build(ledger, price)
+    eng.rests_on_goal = False
+    assert eng.run_cycle()["entries"] == 1
+    price.p = 1.2                                  # target hit: the position closes, the coin is free again
+    eng.strategies[0].fire = False
+    eng.run_cycle()
+    price.p, eng.strategies[0].fire = 1.0, True
+    eng.__dict__.get("_entered", set()).clear()
+    assert ledger.positions() == [] and eng.run_cycle()["entries"] == 0     # one buy in the last 30 min already
+    monkeypatch.setattr(cfg, "BURST_MAX_ENTRIES", 2)
+    assert eng.run_cycle()["entries"] == 1

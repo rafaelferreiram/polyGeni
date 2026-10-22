@@ -3,9 +3,7 @@
 *Kairos* is Greek for "the right moment": a team of trading bots that watches the whole crypto market 24/7 and acts
 only when the moment is right. (Repository and package name: `polyGeni`.)
 
-> ⚠️ **No real trading by default.** The Polymarket bot only places real orders with `POLY_LIVE_TRADING=1`
-> explicitly set; otherwise every order is a dry run. The Solana bot is **paper trading only**. The Hyperliquid
-> bot trades real money only with `LIVE_TRADING=1`, an API wallet key for that network **and** a click on Start in
+> ⚠️ **No real trading by default.** The Hyperliquid bot trades real money only with `LIVE_TRADING=1`, an API wallet key for that network **and** a click on Start in
 > the dashboard's 💰 Real account, inside hard USD caps (default $20 capital, $12 per position, 2x isolated, long-only).
 
 ## Multi-agent crypto + gold/silver bot — paper, simulation and small live account
@@ -17,7 +15,6 @@ Dashboard: [http://127.0.0.1:8000](http://127.0.0.1:8000) (the old `/paper` link
 ### Quick start
 ```bash
 make install     # Python 3.11 venv via uv
-make demo        # dummy account: real quotes, forced trades on both venues, ledger self-check, UI on :8001
 make run         # 24/7 loop + dashboard on http://127.0.0.1:8000
 make test        # offline pytest suite
 make service     # run 24/7 on this Mac as a launchd agent (see "Running 24/7" below)
@@ -52,7 +49,7 @@ Lesson applied from Alpha Arena (LLMs trading alone lost 30–60%): **rules deci
 Same engine and agents; only the broker is real (`HyperliquidLiveBroker`, official `hyperliquid-python-sdk`).
 - **Two keys:** an API ("agent") wallet per network in `.env` (`HL_ACCOUNT_ADDRESS`, `HL_API_WALLET_KEY_TESTNET` /
   `HL_API_WALLET_KEY_MAINNET` — they can trade but cannot withdraw), `HL_NETWORK=testnet|mainnet`, **and** Start on
-  the dashboard's 💰 Real account. Mainnet also needs `LIVE_TRADING=1` (Polymarket uses its own `POLY_LIVE_TRADING`).
+  the dashboard's 💰 Real account. Mainnet also needs `LIVE_TRADING=1`.
 - **Unified accounts** are supported: the balance is read from the spot clearinghouse (no Spot→Perps transfer needed).
 - **Hard limits:** 1x isolated, long-only, `LIVE_MAX_CAPITAL_USD` / `LIVE_MAX_POSITION_USD` caps, one position,
   daily loss → kill switch, Hyperliquid's $10 minimum respected.
@@ -95,11 +92,10 @@ the others must first show ≥ 10 profitable lab trades.
 - **AI turbo** (`POST /api/paper/arena/boost`, dashboard "🚀 Turbo da IA"): run the AI bot with Sonnet, Opus or
   Fable for N cycles (1 cycle = 5 min), then it returns to Haiku. It re-decides every market of the current candle with
   the stronger model; cost still counts against the bot's reward and the profit-linked AI allowance.
-- **Training center** (`src/solana/trainer.py`, `training.db`, `GET /api/paper/training`): one virtual trade per coin per
-  closed 1h candle with the full context the bots saw (indicators, setups, whales, top traders, news, breadth); 24h
-  later the outcome of a long and a short with the bots' stop (2 ATR) / target (3 ATR) is recorded. Seeded from the
-  candle history on first run (~4,800 samples). Lessons (hit rate per situation) are given to the AI bot. Separate from
-  the lab, which keeps proving each bot with its real rules.
+- **Removed (2026-10-22)**: the original Polymarket bot (`src/bot`, `src/analysis`, `src/feeds`, `src/polymarket`, its
+  `/api` routes; the app no longer creates `polygeni.db`), the old Solana/Jupiter paper engine and its ~40 endpoints, the demo, the
+  "Como uma decisão é feita" panel and the training-center job and panel (it only fed the retired AI bot; `trainer.py`
+  stays for the situation labels the bots learn from).
 - **Shorts, lab only** (`ShortFade`, bot **Gustavo Gómez**, back on the bench at the user's request): sells an overshooting rally (RSI > 70 above the upper band) in a
   downtrend, stop 2 ATR, target 3 ATR, 12h. Paper shorts are held as longs on the mirror price `2*entry - price`
   (exact short P&L, funding sign flipped). Backtest: about break-even (every other short variant lost over 208 days), so
@@ -238,7 +234,6 @@ the others must first show ≥ 10 profitable lab trades.
 uv venv --python 3.11 .venv && uv pip install --python .venv/bin/python -r requirements.txt
 PAPER_AUTOSTART=1 .venv/bin/uvicorn src.main:app --port 8000      # 24/7 loop + dashboard at /paper
 .venv/bin/python -m src.solana.engine --cycles 3                   # or a few cycles from the shell
-.venv/bin/python -m src.solana.demo                                # dummy account demo → demo.db (forced entries, proves plumbing)
 .venv/bin/python -m src.solana.backtest --days 180                 # walk-forward report → reports/
 .venv/bin/python -m pytest -q                                      # offline tests (no network)
 ```
@@ -360,222 +355,6 @@ in this bull window**; mean-reversion beats holding gold/silver. Reports: `repor
 - Sub-hour timeframes were tested and rejected: on 1–15 min candles the typical move is smaller than the round-trip cost.
 - Paper fills assume the quoted route would fill; no MEV/landing failures beyond the extra slippage bps.
 
----
-
-Automated trading bot for [Polymarket](https://polymarket.com) prediction markets.
-Covers **Bitcoin**, **Sports**, and **Global Events** markets with a real-time analysis engine, Kelly Criterion position sizing, and a live dashboard.
-
----
-
-## How it works
-
-### 1. Market Discovery
-Every scan cycle (default: every 5 minutes) the bot fetches active markets from Polymarket's Gamma API across three categories:
-- **Bitcoin** — price targets (e.g. "Will BTC hit $120k by Dec 2026?")
-- **Sports** — match outcomes with bookmaker consensus cross-reference
-- **Events** — political and world events with news sentiment analysis
-
-### 2. Analysis Engine
-
-#### Bitcoin
-- Fetches 90 days of BTC/USDT daily candles from Binance (no API key needed)
-- Computes RSI, MACD, and Bollinger Bands
-- Uses a **log-normal probability model** to estimate the probability of BTC reaching a price target by the market's resolution date
-- Compares model probability against Polymarket's implied probability (current YES/NO price)
-
-#### Sports
-- Fetches live H2H odds from **The Odds API** across 8 leagues (NFL, NBA, EPL, UCL, MLB, NHL, MMA, Tennis)
-- Removes bookmaker margin (overround) to get **fair consensus probability**
-- Skips season-long markets (championships, cups, finals) to avoid comparing game odds to futures
-- Adds a small news sentiment nudge for relevant headlines
-
-#### Events
-- Queries **NewsAPI** for headlines matching each market question
-- Scores sentiment with a lightweight keyword model
-- Shifts the probability estimate from the market's baseline based on sentiment signal
-
-### 3. Edge Detection
-For each market, the bot computes:
-- **Edge** = our estimated probability − Polymarket implied probability
-- **Bet direction**: YES or NO, whichever side has the edge
-- Only surfaces opportunities where edge ≥ 5% (configurable)
-
-### 4. Position Sizing — Kelly Criterion
-The bot sizes every bet using **fractional Kelly (¼ Kelly)** for safety:
-
-```
-f* = (b × p − q) / b       # full Kelly fraction
-bet = bankroll × f* × 0.25  # fractional Kelly
-bet = min(bet, bankroll × 30%)  # hard cap per position
-```
-
-Where `b = (1 − price) / price`, `p` = our probability, `q = 1 − p`.
-
-### 5. Risk Management
-Before every trade:
-- Max **3 open positions** at once
-- Min **$1.00 USDC** per bet
-- Max **30%** of bankroll per single position
-- Edge floor recheck before execution
-
-### 6. Trade Execution
-Orders are placed via the official `py-clob-client` SDK using L2 API credentials derived from your wallet private key. All order signing happens locally — Polymarket never has your private key.
-
----
-
-## Dashboard
-
-There is one dashboard, Kairos, at `http://localhost:8000` (see the dashboard section at the top). The legacy
-Polymarket bot has no UI of its own any more; it is controlled through its REST API (`/api/...`, below).
-
----
-
-## Setup
-
-### Requirements
-- Python 3.10+
-- A funded Polymarket account (USDC on Polygon)
-
-### 1. Clone and install
-```bash
-cd ~/Workspace/Personal
-git clone git@github.com:rafaelferreiram/polyGeni.git
-cd polyGeni
-python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
-```
-
-### 2. Configure `.env`
-```bash
-cp .env.example .env
-```
-
-Fill in your credentials:
-
-| Variable | Where to get it |
-|---|---|
-| `POLY_PRIVATE_KEY` | Polymarket → Cash → `···` → Export Private Key |
-| `POLY_WALLET_ADDRESS` | Your `0x...` Polymarket wallet address |
-| `NEWS_API_KEY` | [newsapi.org](https://newsapi.org) — free, 100 req/day |
-| `ODDS_API_KEY` | [the-odds-api.com](https://the-odds-api.com) — free, 500 req/month |
-
-Bot settings (optional):
-```
-BOT_BUDGET_USDC=10.0         # starting bankroll reference
-BOT_MAX_POSITION_PCT=0.30    # max % per trade (30%)
-BOT_KELLY_FRACTION=0.25      # fractional Kelly multiplier
-BOT_MIN_EDGE=0.05            # minimum edge threshold (5%)
-BOT_SCAN_INTERVAL_SEC=300    # scan interval in seconds
-```
-
-### 3. Fund your Polymarket wallet
-Deposit USDC to your Polymarket wallet. The bot reads your live balance at every scan.
-
-### 4. Run locally
-```bash
-.venv/bin/uvicorn src.main:app --reload --port 8000
-```
-
-Open [http://localhost:8000](http://localhost:8000)
-
----
-
-## Running the bot
-
-### Monitor-only mode (recommended to start)
-Click **Start (monitor)** in the dashboard — the bot scans every 5 minutes and surfaces opportunities, but places **no real orders**.
-
-### Auto-trade mode
-Click **Start (auto-trade)** — the bot picks the top opportunity each scan cycle if edge ≥ 5%.
-Orders stay dry-run unless the server runs with `POLY_LIVE_TRADING=1` (see the audit before enabling it).
-
-### Manual scan
-Click **Scan Now** to run a scan immediately at any time.
-
----
-
-## Deploy to production (Docker)
-
-### Build and run
-```bash
-docker-compose up -d
-```
-
-This starts the server on port `8000` and mounts the SQLite database as a volume so your trade history persists across restarts.
-
-### Deploy on a VPS (Hetzner/DigitalOcean)
-```bash
-# On the server
-git clone git@github.com:rafaelferreiram/polyGeni.git
-cd polyGeni
-cp .env.example .env   # fill in credentials
-docker-compose up -d
-```
-
-Add a reverse proxy (nginx/Caddy) for HTTPS in production.
-
----
-
-## Project structure
-
-```
-polyGeni/
-├── src/
-│   ├── main.py                 # FastAPI app entry point
-│   ├── config.py               # Settings from .env
-│   ├── database.py             # SQLite setup
-│   ├── models.py               # Trade, Position, Opportunity models
-│   ├── polymarket/
-│   │   ├── client.py           # CLOB API wrapper (auth + orders)
-│   │   └── gamma.py            # Market discovery (Gamma API)
-│   ├── feeds/
-│   │   ├── bitcoin.py          # Binance price feed + indicators
-│   │   ├── news.py             # NewsAPI sentiment feed
-│   │   └── sports.py           # The Odds API feed
-│   ├── analysis/
-│   │   ├── engine.py           # Scan orchestrator
-│   │   ├── bitcoin.py          # Bitcoin probability model
-│   │   ├── sports.py           # Sports edge detector
-│   │   ├── events.py           # Events sentiment analyzer
-│   │   └── kelly.py            # Kelly Criterion sizing
-│   ├── bot/
-│   │   ├── scanner.py          # Scheduled scan loop
-│   │   ├── trader.py           # Order execution + DB recording
-│   │   └── risk.py             # Pre-trade risk checks
-│   └── api/
-│       └── routes.py           # FastAPI REST endpoints
-└── frontend/
-    ├── paper.html              # Kairos dashboard (served at /)
-    ├── paper.js                # Dashboard logic
-    └── style.css               # Base styles
-```
-
----
-
-## API endpoints
-
-| Method | Path | Description |
-|---|---|---|
-| GET | `/api/status` | Bot status + balance |
-| POST | `/api/bot/start?auto_trade=false` | Start bot |
-| POST | `/api/bot/stop` | Stop bot |
-| POST | `/api/bot/scan` | Trigger immediate scan |
-| GET | `/api/opportunities` | Saved opportunities from DB |
-| GET | `/api/opportunities/live` | Latest in-memory scan results |
-| GET | `/api/positions` | Open positions with live P&L |
-| GET | `/api/trades` | Trade history |
-| GET | `/api/portfolio` | Portfolio summary |
-| POST | `/api/trade/manual` | Place a manual trade |
-
----
-
-## Important notes
-
-- **Never share your private key** or commit `.env` to version control (`.gitignore` already excludes it)
-- Start in **monitor mode** first to validate opportunities before enabling auto-trade
-- The $10 → $20 goal requires finding 1-2 high-confidence trades — quality over quantity
-- Bitcoin markets tend to have the strongest signal from the log-normal model
-- Sports opportunities require an active H2H game scheduled (not season-long futures)
 
 ## Admin page
 

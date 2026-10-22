@@ -1,10 +1,8 @@
 """
 24/7 paper loop: heartbeat -> reconcile ledger<->positions -> mark-to-market & exits
 -> kill-switch check -> scout/safety/strategy/debate/risk/executor -> equity snapshot.
-
-Run a few cycles from the shell:  python -m src.solana.engine --cycles 3
+Used by the real account, its simulation and every lab bot (hl_live.py, arena.py).
 """
-import argparse
 import logging
 import threading
 import time
@@ -15,14 +13,9 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from src.solana import config as cfg
 from src.solana import learning
 from src.solana import market_data as md
-from src.solana.agents import (DebateAgent, ExecutorAgent, Portfolio, RiskAgent, SafetyAgent,
-                               ScoutAgent, Vote)
-from src.solana.broker import PaperBroker
+from src.solana.agents import DebateAgent, ExecutorAgent, Portfolio, RiskAgent, SafetyAgent, Vote
 from src.solana.ledger import Ledger, now_iso
 from src.solana import hyperliquid as hl
-from src.solana.llm_trader import LLMDecider
-from src.solana.research import ResearchAgent
-from src.solana.strategies import default_strategies
 
 logger = logging.getLogger("solana.engine")
 
@@ -547,6 +540,10 @@ class PaperEngine:
         quota = self._quota_levels()
         btc_ok = self._btc_ok()                      # BTC below its 50h average: no new longs (shorts are for that)
         per_bot = {}
+        if not self.__dict__.get("lab_model") and cfg.BURST_MAX_ENTRIES:
+            since = (datetime.now(timezone.utc) - timedelta(minutes=cfg.BURST_WINDOW_MIN)).isoformat()
+            if sum(f["side"] == "buy" and f["ts"] >= since for f in self.ledger.fills(50)) >= cfg.BURST_MAX_ENTRIES:
+                ready = []                         # enough new buys in this window: wait, don't chase one move
         for x in self.ledger.positions():
             per_bot[x["strategy"]] = per_bot.get(x["strategy"], 0) + 1
         for c, candles, safety, profile in ready:
@@ -756,24 +753,7 @@ def _votes(*votes: Vote) -> dict:
 
 # ─── singleton + scheduler ───────────────────────────────────────────────────
 
-_engine: PaperEngine | None = None
 _scheduler: BackgroundScheduler | None = None
-
-
-def get_engine() -> PaperEngine:
-    global _engine
-    if _engine is None:
-        ledger = Ledger(cfg.PAPER_DB_PATH, cfg.PAPER_START_USDC)
-        scouts, brokers = [ScoutAgent()], [PaperBroker(ledger)]
-        candles = {"jupiter": md.pool_candles}
-        if cfg.HL_ENABLED:
-            scouts.append(hl.HyperliquidScout())
-            brokers.append(hl.HyperliquidPaperBroker(ledger))
-            candles["hyperliquid"] = hl.candles
-        _engine = PaperEngine(ledger, scouts, SafetyAgent(), default_strategies(), DebateAgent(),
-                              RiskAgent(), ExecutorAgent(*brokers), candles_fn=candles,
-                              research=ResearchAgent(ledger), bench_fn=bench_prices, llm=LLMDecider())
-    return _engine
 
 
 def scheduler() -> BackgroundScheduler:
@@ -785,46 +765,3 @@ def scheduler() -> BackgroundScheduler:
                                          job_defaults={"misfire_grace_time": 300, "coalesce": True})
         _scheduler.start()
     return _scheduler
-
-
-def start():
-    eng = get_engine()
-    sch = scheduler()
-    if sch.get_job("paper_cycle") is None:
-        sch.add_job(eng.run_cycle, "interval", seconds=cfg.PAPER_CYCLE_SEC, id="paper_cycle",
-                    max_instances=1, coalesce=True, next_run_time=datetime.now())
-    else:
-        sch.resume_job("paper_cycle")
-    eng.ledger.set_state("running", True)
-    return {"status": "started", "mode": "PAPER", "interval_sec": cfg.PAPER_CYCLE_SEC}
-
-
-def stop():
-    job = scheduler().get_job("paper_cycle")
-    if job:
-        job.pause()
-    get_engine().ledger.set_state("running", False)
-    return {"status": "stopped", "mode": "PAPER"}
-
-
-def is_running() -> bool:
-    job = _scheduler.get_job("paper_cycle") if _scheduler else None
-    return bool(job and job.next_run_time) and get_engine().ledger.get_state("running", False)
-
-
-def heartbeat_ok() -> bool:
-    hb = get_engine().ledger.get_state("heartbeat")
-    return bool(hb) and datetime.now(timezone.utc) - _ts(hb["ts"]) < timedelta(seconds=2.5 * cfg.PAPER_CYCLE_SEC)
-
-
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
-    ap = argparse.ArgumentParser(description="Run paper-trading cycles (no real transactions).")
-    ap.add_argument("--cycles", type=int, default=1)
-    ap.add_argument("--sleep", type=float, default=0, help="seconds between cycles")
-    args = ap.parse_args()
-    eng = get_engine()
-    for i in range(args.cycles):
-        print(eng.run_cycle())
-        if i < args.cycles - 1:
-            time.sleep(args.sleep)

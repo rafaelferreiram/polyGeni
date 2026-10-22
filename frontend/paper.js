@@ -112,8 +112,6 @@ function setKind(k) {
   setTimeout(() => { safe(loadEquityChart); safe(loadHistory); }, 800);
   setTimeout(() => safe(loadDaily), 0);
   try { localStorage.setItem("acct", k); } catch (e) { /* ignore */ }
-  replay = null;
-  lastCycleSeen = null;
   safe(refresh);
 }
 
@@ -174,109 +172,7 @@ const hhmm = (iso) => {
   return `${d.toLocaleDateString("pt-BR", { timeZone: TZ, day: "2-digit", month: "2-digit" })} ${hm}`;
 };
 
-// ─── animated bot room ───
-const STATIONS = [
-  { key: "scout", ico: "🔭", name: "Scout", role: "observa os mercados", color: "#7dd3fc",
-    about: "Busca preço, candles de 1h e funding de cada mercado e entrega os candidatos aos outros bots." },
-  { key: "decider", ico: "🎯", name: "Estratégia", role: "decide se compra", color: "#34d399",
-    about: "Procura uma queda forte dentro de uma tendência de alta. Sem queda, não compra." },
-  { key: "risk", ico: "🛡️", name: "Risk", role: "limites e tamanho", color: "#fbbf24",
-    about: "Define o tamanho da posição e pode vetar qualquer compra: limites de capital, perda diária e kill switch." },
-  { key: "executor", ico: "⚙️", name: "Executor", role: "envia a ordem", color: "#fb923c",
-    about: "O único que fala com a corretora. Envia a ordem aprovada com stop e alvo na Hyperliquid." },
-  { key: "guard", ico: "👁️", name: "Guarda", role: "vigia stop e alvo", color: "#a3e635",
-    about: "Acompanha as posições abertas, o stop-loss e o alvo, e registra as saídas." },
-];
-let replay = null, lastCycleSeen = null;
-
-function stationData(st, a) {
-  const deciderKey = a.decision_mode === "llm" ? "llm" : "mean_reversion";
-  if (st.key === "decider") {
-    return { ...(a.agents[deciderKey] || {}), name: a.decision_mode === "llm" ? "Coordenador" : "Estratégia",
-             ico: a.decision_mode === "llm" ? "🧭" : "🎯",
-             role: a.decision_mode === "llm" ? "escolhe o melhor bot" : "compra quedas exageradas" };
-  }
-  if (st.key === "guard") {
-    const p = a.positions[0];
-    const lastExit = a.decisions.find((d) => d.kind === "exit");
-    return { last_reason: p ? `${p.symbol}: stop ${Number(p.stop_price).toPrecision(5)} · alvo ${Number(p.tp_price).toPrecision(5)} · agora ${usd(p.mark_value)}`
-                            : lastExit ? `Última saída: ${lastExit.symbol} — ${lastExit.reason}` : "Sem posições para vigiar",
-             last_run: a.heartbeat?.ts, last_ok: true, guard: true };
-  }
-  return a.agents[st.key] || {};
-}
-
-// real numbers of the last finished cycle for each stage (from the engine, not illustrative)
-function stageMetric(key, a) {
-  const lc = a.last_cycle || {};
-  if (a.kill_switch?.active && key !== "guard") return '<span class="red">parado pelo kill switch</span>';
-  if (lc.skipped && key !== "guard") return `<span class="muted">${esc(lc.skipped)}</span>`;
-  const n = (v) => `<b>${v ?? 0}</b>`;
-  return { scout: `${n(lc.candidates)} mercados lidos`, decider: `${n(lc.signals)} sinais de compra`,
-           risk: `${n(lc.vetoes)} vetos · ${n(lc.entries)} aprovadas`, executor: `${n(lc.entries)} ordens enviadas`,
-           guard: `${n(a.positions.length)} posições vigiadas` }[key] || "";
-}
-
-function renderRoom(a) {
-  const cycleStart = a.heartbeat ? new Date(a.heartbeat.ts).getTime() : 0;
-  const liveAgent = a.live?.running && Date.now() - new Date(a.live.ts) < 30000 ? a.live.agent : null;
-  const activeKey = replay ? replay.order[replay.i] : liveAgent === "llm" || liveAgent === "mean_reversion" ? "decider" : liveAgent;
-  const html = STATIONS.map((st, i) => {
-    const d = stationData(st, a);
-    const acted = d.last_run && new Date(d.last_run).getTime() >= cycleStart - 1000;
-    const working = a.running && activeKey === st.key;
-    let cls = !a.running ? "off" : working ? "working" : !acted ? "idle" : d.last_ok === false ? "blocked" : "ok";
-    if (st.key === "guard" && a.running && !working) cls = a.positions.length ? "ok" : "idle";
-    const state = !a.running ? "desligado" : working ? "trabalhando" : cls === "idle" ? "aguardando" : cls === "blocked" ? "bloqueou" : "feito";
-    const bubble = !a.running ? "Clique em ▶ Start para me colocar para trabalhar"
-      : working && !replay ? (a.live.detail || "pensando…") : (d.last_reason || (st.key === "risk" || st.key === "executor" ? "Só entro em ação quando há sinal de compra" : "…"));
-    const tip = `<b>${esc(d.name || st.name)}</b> · ${esc(d.role || st.role)}<div class="note" style="margin-top:4px">${esc(d.about || st.about)}</div>
-      ${tipRows([["Status", esc(state)], ["Última vez", d.last_run ? `${hhmm(d.last_run)} (há ${ago(d.last_run)})` : "ainda não rodou"],
-                 ["Ciclo", a.cycle ? `#${a.cycle}` : null], ["Próxima", nextCycleAt && a.running ? hhmm(new Date(nextCycleAt).toISOString()) : null]])}
-      <div class="wip"><b>Em andamento</b><br>${esc(working ? (a.live.detail || "pensando…") : bubble)}</div>`;
-    const wireOn = a.running && (working || (replay && replay.order.indexOf(st.key) >= 0 && replay.order.indexOf(st.key) < replay.i));
-    return `${i ? `<div class="wire ${wireOn ? "on" : ""}"></div>` : ""}
-      <div class="st ${cls}" tabindex="0" style="--c:${st.color}" aria-label="${esc(d.name || st.name)}: ${esc(state)}">
-        ${cls === "idle" ? '<span class="zz">z z</span>' : ""}
-        <div class="head">${botFace(st.color, d.ico || st.ico)}
-          <div><div class="nm">${esc(d.name || st.name)}</div><div class="rl">${esc(d.role || st.role)}</div></div></div>
-        <div class="state"><span class="dot"></span>${state}${d.last_run ? ` · ${hhmm(d.last_run)}` : ""}</div>
-        <div class="metric">${stageMetric(st.key, a)}</div>
-        <div class="bubble">${esc(bubble)}</div>
-        <div class="tip" role="tooltip">${tip}</div>
-      </div>`;
-  }).join("");
-  setHTML("line", html);
-}
-
-function maybeReplay(a) {
-  // after each finished cycle, replay what every bot did, one after the other
-  const lc = a.last_cycle;
-  if (!lc || !a.running || a.scanning) return;
-  if (lastCycleSeen === null) { lastCycleSeen = lc.cycle; if (Date.now() - new Date(lc.finished) > 120000) return; }
-  else if (lc.cycle === lastCycleSeen) return;
-  lastCycleSeen = lc.cycle;
-  const cycleStart = a.heartbeat ? new Date(a.heartbeat.ts).getTime() - 1000 : 0;
-  const ranAt = (k) => {
-    const d = k === "decider" ? (a.agents.llm?.last_run && a.decision_mode === "llm" ? a.agents.llm : a.agents.mean_reversion) : a.agents[k];
-    return d?.last_run && new Date(d.last_run).getTime() >= cycleStart ? new Date(d.last_run).getTime() : null;
-  };
-  const order = ["scout", "decider", "risk", "executor"].filter((k) => ranAt(k) !== null);
-  if (a.positions.length) order.push("guard");
-  if (!order.length) return;
-  replay = { order, i: 0 };
-  const step = () => {
-    renderRoom(acc);
-    if (++replay.i <= order.length) setTimeout(step, 900);
-    else { replay = null; renderRoom(acc); }
-  };
-  step();
-}
-
 // ─── main refresh ───
-const KINDS = { entry: "🟢 compra", exit: "🔵 venda", veto: "🟡 bloqueio", error: "🔴 erro", kill_switch: "🛑 kill switch",
-                reconcile: "🧾 reconciliação", arm: "🔓 ligado", disarm: "🔒 desligado", mode: "🔀 modo",
-                sleep: "😴 pausa", wake: "⏰ acordou", coffee: "☕ café" };
 let nextCycleAt = null;
 
 async function refresh() {
@@ -332,19 +228,12 @@ async function refresh() {
   const scanning = a.scanning || (a.live?.running && Date.now() - new Date(a.live.ts) < 60000);
   document.getElementById("scanbar").hidden = !scanning;
   if (scanning) document.getElementById("scan-text").textContent = `Analisando o mercado (ciclo #${a.cycle})…`;
-  document.getElementById("room-tag").textContent = KIND === "sim" ? "simulação · ao vivo" : `real · ${a.network} · ao vivo`;
-  const lcx = a.last_cycle || {};
-  document.getElementById("room-head").innerHTML = lcx.finished ? `último ciclo <b>#${lcx.cycle}</b> terminou às <b>${hhmm(lcx.finished)}</b> (há ${ago(lcx.finished)})` : "";
-  if (scanning) document.getElementById("room-head").innerHTML = '<span class="live-chip">analisando o mercado agora</span>';
-  if (!replay) renderRoom(a);
   renderTeam();
   renderThermo(a);
   renderPositions(a);
   fillManualCoins(a);
   renderGoals(a);
   renderRadar(a);
-  maybeReplay(a);
-  renderFoot();
   // trades
   document.getElementById("trades-total").innerHTML = a.trades.length ? pnl(a.trades.reduce((x, t) => x + t.pnl_usd, 0)) : "";
   table("trades", ["Ativo", "Entrada → saída", "Lucro", "Motivo"], a.trades.map((t) => `
@@ -546,15 +435,6 @@ function renderProfit(P) {
   bar.className = used >= 1 ? "full" : used > 0.8 ? "warn" : "";
   document.getElementById("budget-note").innerHTML = `IA este mês: <b>${usd(P.ai_month)}</b> de ${usd(P.ai_budget)} permitidos
     <span title="A IA só gasta o que o trading paga: base de ${usd(P.ai_base)} para aprender + ${(P.ai_share * 100).toFixed(0)}% do lucro real do mês, até ${usd(P.ai_hard_cap)}.">(base ${usd(P.ai_base)} + ${(P.ai_share * 100).toFixed(0)}% do lucro ⓘ)</span>${used >= 1 ? " — <b>IA pausada</b>: os bots de regras (grátis) continuam" : ""}`;
-}
-
-function renderFoot() {
-  if (!acc) return;
-  const left = document.getElementById("room-left"), right = document.getElementById("room-right");
-  if (!acc.running) { left.innerHTML = "Bots <b>desligados</b>"; right.textContent = ""; return; }
-  const secs = nextCycleAt ? Math.round((nextCycleAt - Date.now()) / 1000) : null;
-  left.innerHTML = acc.scanning ? `Ciclo <b>#${acc.cycle}</b> em andamento` : `Próxima análise em <b>${secs > 0 ? `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}` : "instantes"}</b>`;
-  right.innerHTML = `Quem decide: <b>${acc.decision_mode === "llm" ? `🧠 ${esc(acc.model)}` : "regras"}</b>`;
 }
 
 // ─── advanced actions (real account) ───
@@ -902,7 +782,7 @@ function renderChat(force) {
   box.innerHTML = shown.length ? shown.map((m) => {
     const net = m.author === "rede", L = net ? { label: "Rede do time", color: "#34d399", ico: "📡" } : look(m.author);
     const res = m.kind === "exit" ? (/\+\$/.test(m.text) ? " win" : /−\$/.test(m.text) ? " loss" : "") : "";
-    return `<div class="msg k-${m.kind}${res}" style="--c:${L.color}">${net ? "" : `<div class="av">${botFace(L.color, L.ico)}</div>`}
+    return `<div class="msg c-${m.kind}${res}" style="--c:${L.color}">${net ? "" : `<div class="av">${botFace(L.color, L.ico)}</div>`}
       <div class="bub"><div class="who">${esc(L.ico || "")} ${esc(L.label)}<small>${hhmm(m.ts)}</small></div>${mentions(esc(m.text))}</div></div>`;
   }).join("") : '<div class="empty">Ninguém falou ainda — as mensagens aparecem quando os bots comprarem, venderem, passarem oportunidades ou aprenderem algo.</div>';
   if (atBottom) box.scrollTop = box.scrollHeight;
@@ -986,7 +866,6 @@ function trainBoost(model, btn) {
 safe(refresh); safe(loadArena);
 setInterval(() => safe(loadArena), 5000);
 setInterval(() => safe(refresh), 2000);
-setInterval(renderFoot, 1000);
 
 // ─── daily report ───
 async function loadDaily() {
@@ -1192,7 +1071,7 @@ setInterval(() => safe(loadEquityChart), 60000);
 
 // ─── collapsible sections (remembered in this browser) ───
 // secondary panels start minimized on a first visit; after that the user's own choice is remembered
-let folded = ["room", "baleias", "toptraders", "noticias", "transacoes", "relatorio", "fundos", "conexoes", "treino"];
+let folded = ["baleias", "toptraders", "transacoes", "relatorio", "fundos", "conexoes"];
 try { const saved = localStorage.getItem("folded2"); if (saved) folded = JSON.parse(saved); } catch (e) { /* storage blocked */ }
 document.querySelectorAll("main section.panel").forEach((sec, i) => {
   const h2 = sec.querySelector("h2");
@@ -1239,25 +1118,6 @@ safe(loadHistory);
 setInterval(() => safe(loadHistory), 30000);
 
 // ─── training center: virtual trades and what they teach ───
-async function loadTraining() {
-  const t = await api("/training");
-  document.getElementById("train-tag").textContent = `${t.samples} exemplos · ${t.resolved} com resultado`;
-  const L = t.lessons || [];
-  const best = [...L].sort((a, b) => b.long_win - a.long_win)[0], worst = [...L].sort((a, b) => a.long_win - b.long_win)[0];
-  const card = (k, v, s) => `<div class="goal"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`;
-  setHTML("train-kpis", [
-    card("Exemplos de treino", t.samples, "1 por moeda por vela de 1h"),
-    card("Com resultado", t.resolved, "já passaram 24h"),
-    best ? card("Melhor situação p/ comprar", `${pct(best.long_win)}`, `${esc(best.tag)} · ${best.n} casos`) : "",
-    worst ? card("Pior situação p/ comprar", `${pct(worst.long_win)}`, `${esc(worst.tag)} · ${worst.n} casos`) : "",
-  ].join(""));
-  table("train-table", ["Situação", "Casos", "Compra: alvo", "Compra: stop", "Short: alvo", "Retorno médio 24h"], L.map((x) => `<tr>
-    <td><b>${esc(x.tag)}</b></td><td>${x.n}</td><td class="${x.long_win >= 0.45 ? "green" : ""}">${pct(x.long_win)}</td>
-    <td class="${x.long_loss >= 0.55 ? "red" : ""}">${pct(x.long_loss)}</td><td>${pct(x.short_win)}</td>
-    <td>${x.avg_ret_24h >= 0 ? `<span class="green">+${x.avg_ret_24h}%</span>` : `<span class="red">${x.avg_ret_24h}%</span>`}</td></tr>`));
-}
-safe(loadTraining);
-setInterval(() => safe(loadTraining), 60000);
 
 // ─── confidence: is the real account proven enough to add money? ───
 async function loadConfidence() {
