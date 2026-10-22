@@ -567,7 +567,15 @@ class PaperEngine:
             if c.mint in held:          # already holding it: its stop/target and exit review handle it — no AI tokens
                 continue
             for strat in self._ordered(c):
-                if not btc_ok and not c.mint.endswith("~short"):
+                from src.solana.strategies import SHORT_BOTS
+                is_short = c.mint.endswith("~short")
+                if is_short != ((getattr(strat, "model", None) or strat.name) in SHORT_BOTS):     # short bots see shorts, the others longs
+                    continue
+                gate = getattr(self, "short_gate", None)                                          # the real account's short rules
+                if is_short and gate and (why := gate(btc_ok)):
+                    self._agent(strat.name, last_reason=f"{c.symbol} short: {why}")
+                    continue
+                if not btc_ok and not is_short:
                     continue
                 if guards.get(strat.name):
                     self._agent(strat.name, last_reason=f"🛡 guarda de stops: {guards[strat.name]}")
@@ -593,6 +601,8 @@ class PaperEngine:
                 if sig is not None:                      # stop sized by this coin's ATR, within the strategy's bounds
                     from src.solana.strategies import atr_stop
                     sig.stop_pct = atr_stop(candles, sig.stop_pct)
+                    if is_short and gate:                # real-account short: the stop never exceeds LIVE_SHORT_MAX_STOP_PCT
+                        sig.stop_pct = min(sig.stop_pct, cfg.LIVE_SHORT_MAX_STOP_PCT)
                 if sig is not None and profile.get("stop_mult", 1) != 1:
                     sig.stop_pct = min(sig.stop_pct * profile["stop_mult"], 0.5)
                     sig.tp_pct *= profile["stop_mult"]

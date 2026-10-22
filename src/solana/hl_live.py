@@ -198,24 +198,37 @@ class HyperliquidLiveBroker(Broker):
                     out[p["position"]["coin"]] = szi
         return out
 
-    def _protect(self, coin: str, sz: float, stop_price: float, tp_price: float, szd: int) -> dict:
-        """Reduce-only SL + TP trigger orders resting on the exchange."""
+    def _protect(self, coin: str, sz: float, stop_price: float, tp_price: float, szd: int, short_entry: float | None = None) -> dict:
+        """Reduce-only SL + TP trigger orders resting on the exchange. A short (short_entry = its real entry price) is
+        held in the ledger on the mirror price 2*entry - price, so the mirror stop/target convert back to real prices
+        (stop above the entry, target below it) and the orders BUY to close."""
         ex, _ = self._connect()
         oids = {}
         for kind, px in (("sl", stop_price), ("tp", tp_price)):
-            trig = _round_px(px, szd)
-            resp = ex.order(coin, False, sz, trig, {"trigger": {"triggerPx": trig, "isMarket": True, "tpsl": kind}},
+            trig = _round_px(2 * short_entry - px if short_entry else px, szd)
+            resp = ex.order(coin, bool(short_entry), sz, trig, {"trigger": {"triggerPx": trig, "isMarket": True, "tpsl": kind}},
                             reduce_only=True)
             oids[kind] = _resting_oid(resp)
         return oids
 
+    def _short_entry(self, instrument: str, entry_id: str | None = None) -> float:
+        """The short's real entry price (the fill's price): the mirror price starts there."""
+        if entry_id is None:
+            entry_id = next(p["entry_order_id"] for p in self.ledger.positions_from_fills().values() if p["mint"] == instrument)
+        return self.ledger.get_fill(entry_id)["price"]
+
     def buy(self, order_id, instrument, symbol, usd, decimals=0, *, strategy, stop_price, tp_price, meta=None):
-        if hl.is_short(instrument):        # hard stop: shorts exist only in the paper lab
+        short = hl.is_short(instrument)
+        from src.solana.strategies import SHORT_BOTS
+        if short and not (cfg.LIVE_ALLOW_SHORT and strategy in SHORT_BOTS):     # hard stop unless the owner switched shorts on
             raise RuntimeError("short orders are not allowed on the real account")
         if (existing := self.ledger.get_fill(order_id)):
             return existing
         ex, info = self._connect()
         coin = hl.coin_of(instrument)
+        open_now = self.exchange_positions().get(coin)
+        if open_now is not None and (short or open_now < 0):          # one direction per coin: a net position cannot hold both
+            raise RuntimeError(f"{coin} already has an open {'short' if open_now < 0 else 'long'} on the exchange: refused")
         cloid = cloid_for(order_id)
         if info.query_order_by_cloid(self.address, cloid).get("status") == "order":
             # we crashed after submitting: never submit twice; flag for a human
@@ -226,9 +239,9 @@ class HyperliquidLiveBroker(Broker):
         lev = ex.update_leverage(int(cfg.LIVE_LEVERAGE), coin, is_cross=False)       # isolated, every time
         if not lev or lev.get("status") != "ok":
             raise RuntimeError(f"could not set {int(cfg.LIVE_LEVERAGE)}x isolated leverage: {lev}")
-        filled, avg, oid = _parse_fill(ex.market_open(coin, True, sz, slippage=self.slippage, cloid=cloid))
+        filled, avg, oid = _parse_fill(ex.market_open(coin, not short, sz, slippage=self.slippage, cloid=cloid))
         try:
-            prot = self._protect(coin, filled, stop_price, tp_price, szd)
+            prot = self._protect(coin, filled, stop_price, tp_price, szd, short_entry=avg if short else None)
         except Exception as e:
             ex.market_close(coin, sz=filled, slippage=self.slippage)   # never leave a position unprotected
             raise RuntimeError(f"protection orders failed, position closed immediately: {e}")
@@ -236,11 +249,11 @@ class HyperliquidLiveBroker(Broker):
         fill, _ = self.ledger.append_fill(dict(
             order_id=order_id, ts=now_iso(), venue=self.venue, side="buy", mint=instrument, symbol=symbol,
             strategy=strategy, qty=filled, decimals=0, usd_gross=notional, fee_usd=self._fee(oid, notional),
-            price=avg, quote_price=mid, price_impact_pct=(avg / mid - 1) * 100,
-            slippage_bps=round((avg / mid - 1) * 1e4), route=f"Hyperliquid {network()} IOC oid {oid}",
+            price=avg, quote_price=mid, price_impact_pct=((mid / avg if short else avg / mid) - 1) * 100,
+            slippage_bps=round(((mid / avg if short else avg / mid) - 1) * 1e4), route=f"Hyperliquid {network()} IOC oid {oid}",
             stop_price=stop_price, tp_price=tp_price,
             meta=json.dumps({**(meta or {}), "oid": oid, "sl_oid": prot["sl"], "tp_oid": prot["tp"],
-                             "network": network(), "leverage": 1, "requested_usd": usd}),
+                             "network": network(), "leverage": 1, "requested_usd": usd, "short": short}),
         ))
         return fill
 
@@ -256,8 +269,9 @@ class HyperliquidLiveBroker(Broker):
         ex, _ = self._connect()
         meta = json.loads((self.ledger.get_fill(entry_id) or {}).get("meta") or "{}")
         old = self._stop_oid(entry_id, meta)
-        trig = _round_px(new_stop, self._sz_decimals(coin))
-        resp = ex.order(coin, False, pos["qty"], trig, {"trigger": {"triggerPx": trig, "isMarket": True, "tpsl": "sl"}}, reduce_only=True)
+        short = hl.is_short(pos["mint"])
+        trig = _round_px(2 * self._short_entry(pos["mint"], entry_id) - new_stop if short else new_stop, self._sz_decimals(coin))
+        resp = ex.order(coin, short, pos["qty"], trig, {"trigger": {"triggerPx": trig, "isMarket": True, "tpsl": "sl"}}, reduce_only=True)
         self.ledger.set_state(f"sl:{entry_id}", _resting_oid(resp))
         if old:
             try:
@@ -285,15 +299,19 @@ class HyperliquidLiveBroker(Broker):
         if coin not in self.exchange_positions():
             return self._record_native_exit(order_id, instrument, symbol, qty, strategy, entry_id)
         mid = self._mid(coin)
+        short = hl.is_short(instrument)
         filled, avg, oid = _parse_fill(ex.market_close(coin, sz=qty, slippage=self.slippage, cloid=cloid_for(order_id)))
         if entry_id:
             self._cancel_protection(coin, entry_id)
         notional = filled * avg
+        entry_px = self._short_entry(instrument, entry_id) if short else None
+        booked = filled * (2 * entry_px - avg) if short else notional            # a short is worth entry + (entry - buyback)
         fill, _ = self.ledger.append_fill(dict(
             order_id=order_id, ts=now_iso(), venue=self.venue, side="sell", mint=instrument, symbol=symbol,
-            strategy=strategy, qty=filled, decimals=0, usd_gross=notional, fee_usd=self._fee(oid, notional),
-            price=avg, quote_price=mid, price_impact_pct=(1 - avg / mid) * 100,
-            slippage_bps=round((1 - avg / mid) * 1e4), route=f"Hyperliquid {network()} IOC oid {oid}",
+            strategy=strategy, qty=filled, decimals=0, usd_gross=booked, fee_usd=self._fee(oid, notional),
+            price=booked / filled if filled else avg, quote_price=(2 * entry_px - mid) if short else mid,
+            price_impact_pct=((avg / mid - 1) if short else (1 - avg / mid)) * 100,
+            slippage_bps=round(((avg / mid - 1) if short else (1 - avg / mid)) * 1e4), route=f"Hyperliquid {network()} IOC oid {oid}",
             stop_price=None, tp_price=None, meta=json.dumps({**(meta or {}), "oid": oid, "network": network()}),
         ))
         return fill
@@ -304,13 +322,16 @@ class HyperliquidLiveBroker(Broker):
         coin = hl.coin_of(instrument)
         entry = self.ledger.get_fill(entry_id) if entry_id else None
         since = datetime.fromisoformat(entry["ts"]).timestamp() * 1000 if entry else 0
+        short = hl.is_short(instrument)
         fills = [f for f in info.user_fills(self.address)
-                 if f["coin"] == coin and f["side"] == "A" and f["time"] >= since]
+                 if f["coin"] == coin and f["side"] == ("B" if short else "A") and f["time"] >= since]     # a short closes with buys
         sz = sum(float(f["sz"]) for f in fills)
         if sz <= 0:
             raise RuntimeError(f"{coin} is gone from the exchange but no closing fills were found")
         notional = sum(float(f["sz"]) * float(f["px"]) for f in fills)
         avg = notional / sz
+        if short:                                    # book it on the mirror price, like every other short fill
+            notional, avg = min(sz, qty) * (2 * self._short_entry(instrument, entry_id) - avg), 2 * self._short_entry(instrument, entry_id) - avg
         if entry_id:
             self._cancel_protection(coin, entry_id)
         fill, _ = self.ledger.append_fill(dict(
@@ -326,6 +347,9 @@ class HyperliquidLiveBroker(Broker):
     def quote_sell_value(self, instrument, qty, decimals=0):
         _, info = self._connect()
         book = info.l2_snapshot(hl.coin_of(instrument))
+        if hl.is_short(instrument):                  # buying back on the asks: worth qty * (2*entry - buyback price)
+            asks = [(float(l["px"]), float(l["sz"])) for l in book["levels"][1]]
+            return qty * 2 * self._short_entry(instrument) - hl.walk(asks, qty=qty)[1], book
         bids = [(float(l["px"]), float(l["sz"])) for l in book["levels"][0]]
         return hl.walk(bids, qty=qty)[1], book
 
@@ -394,11 +418,14 @@ class HyperliquidLiveBroker(Broker):
                                          order_id=f"exit-{p['entry_order_id']}",
                                          reason="stop-loss/take-profit executed by the exchange")
         tracked = {hl.coin_of(m) for m in mine}
+        shorts = {hl.coin_of(m) for m in mine if hl.is_short(m)}
         for coin, szi in ex_pos.items():
             if coin not in tracked:
                 problems.append(f"position {coin} ({szi}) on the exchange is not in the ledger")
-            elif szi < 0:
-                problems.append(f"{coin} is short on the exchange — this bot is long-only")
+            elif szi < 0 and coin not in shorts:
+                problems.append(f"{coin} is short on the exchange — the ledger holds it long")
+            elif szi > 0 and coin in shorts:
+                problems.append(f"{coin} is long on the exchange — the ledger holds it short")
         equity = self.account_value()
         ledger_equity = self.ledger.cash() + sum(p["cost_usd"] for p in self.ledger.positions())
         if abs(equity - ledger_equity) > max(1.0, 0.05 * max(equity, 1)) and not ex_pos and not mine:
@@ -442,7 +469,8 @@ def get_live_engine() -> PaperEngine:
         ledger = Ledger(cfg.LIVE_DB_PATH, 0.0)
         url = info_url()
         _live = PaperEngine(
-            ledger, [hl.HyperliquidScout(cfg.HL_LIVE_MARKETS, ctx_fn=lambda c: hl.asset_ctx(c, url))], _NoSafety(),
+            ledger, [hl.HyperliquidScout(cfg.HL_LIVE_MARKETS, ctx_fn=lambda c: hl.asset_ctx(c, url))]
+            + ([hl.ShortScout(hl.HyperliquidScout(cfg.HL_LIVE_MARKETS, ctx_fn=lambda c: hl.asset_ctx(c, url)))] if cfg.LIVE_ALLOW_SHORT else []), _NoSafety(),
             default_strategies(), DebateAgent(model_for=_reviewer_model), _risk(), ExecutorAgent(HyperliquidLiveBroker(ledger)),
             candles_fn={hl.VENUE: lambda coin: hl.candles(coin, url=url)},
             profiles={hl.VENUE: {"max_pos_pct": 1.0, "stop_mult": cfg.MARKET_PROFILES.get(hl.VENUE, {}).get("stop_mult", 1.5)}},
@@ -450,7 +478,26 @@ def get_live_engine() -> PaperEngine:
         )
         from src.solana import arena
         _live.size_policy = arena.size_for
+        _live.short_gate = lambda btc_ok: short_gate(_live.ledger, btc_ok)       # real shorts: regime + small limits
     return _live
+
+
+def short_gate(ledger, btc_ok: bool) -> str | None:
+    """Why a real-account short may NOT open right now (None = allowed): switch, regime (only while BTC is under its
+    50h average, the same regime that blocks longs) and the small limits: open shorts, shorts per day, the day's loss."""
+    if not cfg.LIVE_ALLOW_SHORT:
+        return "short desligado na conta real (LIVE_ALLOW_SHORT=0)"
+    if btc_ok:
+        return "BTC acima da média de 50h: só se faz short com o BTC abaixo dela"
+    open_shorts = [p for p in ledger.positions_from_fills().values() if hl.is_short(p["mint"])]     # the fills are the truth
+    if len(open_shorts) >= cfg.LIVE_SHORT_MAX_OPEN:
+        return f"já há {len(open_shorts)} short(s) aberto(s) (limite {cfg.LIVE_SHORT_MAX_OPEN})"
+    day = datetime.now(cfg.TZ).replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc).isoformat()
+    if sum(1 for f in ledger.fills(300) if f["side"] == "buy" and hl.is_short(f["mint"]) and f["ts"] >= day) >= cfg.LIVE_SHORT_MAX_PER_DAY:
+        return f"limite de {cfg.LIVE_SHORT_MAX_PER_DAY} shorts por dia"
+    if sum(t["pnl_usd"] for t in ledger.closed_trades() if hl.is_short(t["mint"]) and t["exit_ts"] >= day) <= -cfg.LIVE_SHORT_DAILY_LOSS_USD:
+        return f"shorts perderam ${cfg.LIVE_SHORT_DAILY_LOSS_USD:.2f} hoje: sem novos shorts até amanhã"
+    return None
 
 
 def team() -> list:
@@ -461,7 +508,7 @@ def team() -> list:
     # lab-only bots (shorts, 15-minute twins) never propose for the real account or its simulation
     from src.solana import evolution
     evolution.register()                           # evolved strategies must exist before members are built
-    return [TeamMember(m, lab_lookup=arena.lab_decider) for m in evolution.active_models() if m not in LAB_ONLY_BOTS]
+    return [TeamMember(m, lab_lookup=arena.lab_decider) for m in evolution.active_models() if m not in LAB_ONLY_BOTS or cfg.LIVE_ALLOW_SHORT]
 
 
 def _coordinate(market, members):

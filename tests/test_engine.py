@@ -551,3 +551,35 @@ def test_a_position_that_goes_nowhere_is_closed_after_an_hour_but_a_winner_keeps
     price.p = 1.01
     eng.mark_and_exit()
     assert len(ledger.positions()) == 1              # in profit: not stale, it keeps going to its stop/target/cap
+
+
+def test_short_candidates_go_only_to_short_bots_and_the_real_gate_can_close_them(ledger, monkeypatch):
+    """One scout offers BTC long and BTC~short: a long bot must never trade the short instrument and a short bot never the long one;
+    on the real account the short gate (switch / regime / limits) decides before any short bot may open."""
+    class Both:
+        def candidates(self):
+            return [candidate(mint=TOKEN, symbol="LNG"), candidate(mint="hl:BTC~short", symbol="SHT")]
+
+    class Fire:
+        capital_pct = 0.5
+
+        def __init__(self, name):
+            self.name = name
+
+        def signal(self, candles):
+            return Signal(self.name, 1.0, 0.05, 0.10, "fixture")
+
+    broker = PaperBroker(ledger, quote_fn=Price(1.0).quote, sol_usd_fn=lambda: 100.0, slippage_bps=0, fee_lamports=0)
+    eng = PaperEngine(ledger, Both(), FakeSafety(), [Fire("momentum"), Fire("short_break")], DebateAgent(enabled=False), RiskAgent(),
+                      ExecutorAgent(broker), candles_fn=lambda pool: flat_candles(60), profiles={})
+    eng.run_cycle()
+    entered = {(d["symbol"], d["strategy"]) for d in ledger.decisions(kind="entry")}
+    assert ("LNG", "short_break") not in entered and ("SHT", "momentum") not in entered      # no cross-trading
+    assert ("LNG", "momentum") in entered
+    ledger2 = ledger.__class__(":memory:", 100.0)
+    broker2 = PaperBroker(ledger2, quote_fn=Price(1.0).quote, sol_usd_fn=lambda: 100.0, slippage_bps=0, fee_lamports=0)
+    eng2 = PaperEngine(ledger2, Both(), FakeSafety(), [Fire("short_break")], DebateAgent(enabled=False), RiskAgent(),
+                       ExecutorAgent(broker2), candles_fn=lambda pool: flat_candles(60), profiles={})
+    eng2.short_gate = lambda btc_ok: "short desligado na conta real"                           # what the real engine installs
+    eng2.run_cycle()
+    assert ledger2.decisions(kind="entry") == []

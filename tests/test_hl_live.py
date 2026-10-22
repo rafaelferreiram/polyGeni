@@ -66,24 +66,25 @@ class FakeExchange:
     def market_open(self, coin, is_buy, sz, slippage=0.05, cloid=None):
         self.calls.append(("open", coin, sz, str(cloid)))
         filled = round(sz * self.fill_ratio, 8)
-        px = self.info.mids[coin] * 1.0005
+        px = self.info.mids[coin] * (1.0005 if is_buy else 0.9995)
         oid = self._next()
-        self.info.positions[coin] = self.info.positions.get(coin, 0) + filled
-        self.info.fills.append({"oid": oid, "coin": coin, "side": "B", "sz": str(filled), "px": str(px), "fee": "0.004", "time": 0})
+        self.info.positions[coin] = self.info.positions.get(coin, 0) + (filled if is_buy else -filled)
+        self.info.fills.append({"oid": oid, "coin": coin, "side": "B" if is_buy else "A", "sz": str(filled), "px": str(px), "fee": "0.004", "time": 0})
         return {"status": "ok", "response": {"data": {"statuses": [{"filled": {"totalSz": str(filled), "avgPx": str(px), "oid": oid}}]}}}
 
     def order(self, coin, is_buy, sz, px, order_type, reduce_only=False, cloid=None):
-        self.calls.append(("trigger", coin, sz, px, order_type["trigger"]["tpsl"], reduce_only))
+        self.calls.append(("trigger", coin, sz, px, order_type["trigger"]["tpsl"], reduce_only, is_buy))
         if self.fail_trigger:
             return {"status": "err", "response": "rejected"}
         return {"status": "ok", "response": {"data": {"statuses": [{"resting": {"oid": self._next()}}]}}}
 
     def market_close(self, coin, sz=None, slippage=0.05, cloid=None):
         self.calls.append(("close", coin, sz))
-        px = self.info.mids[coin] * 0.9995
+        was_short = self.info.positions.get(coin, 0) < 0
+        px = self.info.mids[coin] * (1.0005 if was_short else 0.9995)
         oid = self._next()
         self.info.positions.pop(coin, None)
-        self.info.fills.append({"oid": oid, "coin": coin, "side": "A", "sz": str(sz), "px": str(px), "fee": "0.004", "time": 0})
+        self.info.fills.append({"oid": oid, "coin": coin, "side": "B" if was_short else "A", "sz": str(sz), "px": str(px), "fee": "0.004", "time": 0})
         return {"status": "ok", "response": {"data": {"statuses": [{"filled": {"totalSz": str(sz), "avgPx": str(px), "oid": oid}}]}}}
 
     def cancel(self, coin, oid):
@@ -351,3 +352,101 @@ def test_failed_stop_move_keeps_the_old_exchange_stop(live):
     with pytest.raises(RuntimeError, match="trigger rejected"):
         br.move_stop(pos, 80_000.0)
     assert not any(c[0] == "cancel" for c in ex.calls) and ledger.get_state(f"sl:{entry['order_id']}") is None
+
+
+# ─── real-account shorts (Phase 1: built, OFF by default) ───
+def short_buy(br, order_id="s1", usd=12.0, coin="BTC", stop_m=79200.0, tp_m=81600.0):
+    """Mirror convention (as in the lab): stop below / target above the entry on the mirror price."""
+    return br.buy(order_id, f"hl:{coin}~short", coin, usd, strategy="short_break", stop_price=stop_m, tp_price=tp_m)
+
+
+def test_real_shorts_are_refused_while_the_switch_is_off(live, monkeypatch):
+    ledger, info, ex, br = live
+    assert cfg.LIVE_ALLOW_SHORT is False                                  # the default everywhere
+    with pytest.raises(RuntimeError, match="short orders are not allowed"):
+        short_buy(br)
+    assert ex.calls == [] and ledger.fills() == []
+    monkeypatch.setattr(cfg, "LIVE_ALLOW_SHORT", True)
+    with pytest.raises(RuntimeError, match="short orders are not allowed"):          # and only the short bots may use it
+        br.buy("s2", "hl:BTC~short", "BTC", 12.0, strategy="whales", stop_price=79200.0, tp_price=81600.0)
+
+
+def test_a_real_short_sells_to_open_protects_with_buy_triggers_and_books_the_mirror_price(live, monkeypatch):
+    monkeypatch.setattr(cfg, "LIVE_ALLOW_SHORT", True)
+    ledger, info, ex, br = live
+    entry = short_buy(br)
+    E = entry["price"]
+    assert info.positions["BTC"] < 0 and ex.calls[1][0] == "open" and E == pytest.approx(80000.0 * 0.9995)      # sold on the bid
+    sl, tp = [c for c in ex.calls if c[0] == "trigger"]
+    assert sl[4] == "sl" and sl[5] is True and sl[6] is True and tp[6] is True                                     # reduce-only BUYs
+    assert sl[3] == pytest.approx(round(2 * E - 79200.0, 0), abs=1) and tp[3] == pytest.approx(round(2 * E - 81600.0, 0), abs=1)
+    assert sl[3] > E > tp[3]                                                                                      # real stop above, real target below
+    assert json.loads(entry["meta"])["short"] is True and entry["price_impact_pct"] >= 0
+    pos = ledger.positions_from_fills()["hl:BTC~short"]
+    info.mids["BTC"] = 79000.0                                                                                    # price fell 1.25%: the short wins
+    value, _ = br.quote_sell_value("hl:BTC~short", pos["qty"])
+    assert value > pos["cost_usd"]
+    sell = br.sell("exit-s1", "hl:BTC~short", "BTC", pos["qty"], strategy="short_break", meta={"reason": "tp"})
+    assert ex.calls[-3][0] == "close" or any(c[0] == "close" for c in ex.calls)
+    [t] = ledger.closed_trades()
+    assert t["pnl_usd"] > 0.1 and sell["usd_gross"] > entry["usd_gross"]                                          # gained about what the price fell
+    cancels = {c[2] for c in ex.calls if c[0] == "cancel"}
+    assert len(cancels) == 2                                                                                      # both exchange orders cancelled
+
+
+def test_a_short_that_loses_books_a_loss_and_the_exchange_stop_closing_it_is_recorded(live, monkeypatch):
+    monkeypatch.setattr(cfg, "LIVE_ALLOW_SHORT", True)
+    ledger, info, ex, br = live
+    entry = short_buy(br)
+    ledger.upsert_position({**ledger.positions_from_fills()["hl:BTC~short"], "mark_price": None, "mark_value": None})
+    info.positions.pop("BTC")                                                                                      # squeezed up: the exchange stop (a BUY) fired
+    info.fills.append({"oid": 999, "coin": "BTC", "side": "B", "sz": str(entry["qty"]), "px": "80800.0", "fee": "0.004", "time": 10**15})
+    assert br.sync() == []                                                                                         # the ledger learns the native exit
+    [t] = ledger.closed_trades()
+    assert t["pnl_usd"] < 0 and "exchange" in t["reason"]                                                          # bought back higher than it sold: a loss
+
+
+def test_one_direction_per_coin_and_sync_tells_long_from_short(live, monkeypatch):
+    monkeypatch.setattr(cfg, "LIVE_ALLOW_SHORT", True)
+    ledger, info, ex, br = live
+    buy(br)                                                                                                       # a long BTC is open
+    with pytest.raises(RuntimeError, match="already has an open long"):
+        short_buy(br, order_id="s9")
+    ledger2 = Ledger(":memory:", 0.0)
+    ledger2.move_cash("deposit", 20, "sync")
+    info2 = FakeInfo()
+    ex2 = FakeExchange(info2)
+    br2 = hl_live.HyperliquidLiveBroker(ledger2, exchange=ex2, info=info2, address=ADDR)
+    short_buy(br2)
+    ledger2.upsert_position({**ledger2.positions_from_fills()["hl:BTC~short"], "mark_price": None, "mark_value": None})
+    assert br2.sync() == []                                                                                       # a tracked short is expected
+    info2.positions["BTC"] = 0.00015                                                                              # the exchange now says long
+    assert any("long on the exchange" in p for p in br2.sync())
+    info2.positions["BTC"] = -0.00015
+    other = Ledger(":memory:", 0.0)
+    br3 = hl_live.HyperliquidLiveBroker(other, exchange=FakeExchange(info2), info=info2, address=ADDR)
+    assert any("not in the ledger" in p for p in br3.sync())                                                      # an untracked short is still a problem
+
+
+def test_a_raised_short_stop_moves_the_real_stop_down_with_a_buy_trigger(live, monkeypatch):
+    monkeypatch.setattr(cfg, "LIVE_ALLOW_SHORT", True)
+    ledger, info, ex, br = live
+    entry = short_buy(br)
+    pos = ledger.positions_from_fills()["hl:BTC~short"]
+    n = len(ex.calls)
+    br.move_stop(pos, entry["price"] + 100.0)                                                                     # mirror stop +100: the short locks a gain
+    trig = [c for c in ex.calls[n:] if c[0] == "trigger"][0]
+    assert trig[6] is True and trig[3] == pytest.approx(entry["price"] - 100.0, abs=1)                            # real stop now BELOW the entry
+
+
+def test_short_gate_enforces_regime_and_the_small_limits(live, monkeypatch):
+    ledger, info, ex, br = live
+    assert "desligado" in hl_live.short_gate(ledger, False)                                                       # switch off
+    monkeypatch.setattr(cfg, "LIVE_ALLOW_SHORT", True)
+    assert "acima da média" in hl_live.short_gate(ledger, True)                                                   # only while BTC is weak
+    assert hl_live.short_gate(ledger, False) is None
+    short_buy(br)
+    assert "já há 1 short" in hl_live.short_gate(ledger, False)                                                   # 1 open at a time
+    monkeypatch.setattr(cfg, "LIVE_SHORT_MAX_OPEN", 5)
+    monkeypatch.setattr(cfg, "LIVE_SHORT_MAX_PER_DAY", 1)
+    assert "por dia" in hl_live.short_gate(ledger, False)
