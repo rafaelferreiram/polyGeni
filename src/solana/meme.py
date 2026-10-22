@@ -49,7 +49,7 @@ FOUNDERS = {
 
 # The Solana crypto team (same wallet, same process: lab -> titular -> real): verified, liquid, non-meme tokens (SOL, JUP,
 # ZEC, XMR, PUMP, BTC/ETH wrappers…). Their moves are small, so exits are tight and quick, and swap costs are lower.
-SOL_PARAMS = {"stop_pct": 0.02, "tp_pct": 0.04, "max_hold_h": 2, "traction_min": 20, "traction_pct": 0.004,
+SOL_PARAMS = {"jump_guard": 0.08, "stop_pct": 0.02, "tp_pct": 0.04, "max_hold_h": 2, "traction_min": 20, "traction_pct": 0.004,
               "min_liq": 500_000, "fee": 0.002, "lock_floor": 0.002, "cooldown_h": 0.5,
               "quick_wins": [[0.01, 0.5], [0.02, 0.65], [0.035, 0.75]]}
 SOL_FOUNDERS = {
@@ -347,6 +347,13 @@ def manage(bot: str, prices: dict[str, dict]):
         if not q:
             continue
         px, entry = q["price"], p["cost_usd"] / p["qty"]
+        prev, guard = p["mark_price"] or entry, param(bot, "jump_guard", cfg.MEME_JUMP_GUARD)
+        if abs(px / prev - 1) > guard:                    # one bad quote must not close (or mirror a sale of) a real position
+            seen = led.get_state(f"suspect:{p['mint']}")
+            if not seen or abs(px / seen - 1) > 0.03:     # first sighting (or a different price): wait for the next tick
+                led.set_state(f"suspect:{p['mint']}", px)
+                continue
+        led.set_state(f"suspect:{p['mint']}", None)
         led.set_mark(p["mint"], px, px * p["qty"])
         meta = led.get_state(f"pos:{p['mint']}") or {}
         peak, liq0 = max(meta.get("peak", entry), px), meta.get("liq0", q["liq"])
