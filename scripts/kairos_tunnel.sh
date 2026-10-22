@@ -1,5 +1,5 @@
 #!/bin/bash
-# Public HTTPS address for the dashboard (Cloudflare quick tunnel -> 127.0.0.1:8000), 24/7 via launchd.
+# Public HTTPS address for the dashboard (Cloudflare quick tunnel -> 127.0.0.1:1914), 24/7 via launchd.
 # The app itself asks for login and is read-only from outside (src/api/auth.py).
 # The quick-tunnel address changes when cloudflared restarts (reboot): `url` prints the current one, and
 # `sync` points the Vercel site at it. `install` also adds a launchd job running `sync` every 2 minutes, so after a
@@ -14,6 +14,7 @@ LOG="$HOME/Library/Logs/kairos-tunnel.log"
 DOMAIN="gui/$(id -u)"
 CF="$(command -v cloudflared || echo /opt/homebrew/bin/cloudflared)"
 VERCEL_PROJECT="${VERCEL_PROJECT:-kairos-bots}"
+PORT="${SAVOIA_PORT:-1914}"
 
 url() { grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' "$LOG" 2>/dev/null | tail -1; }
 
@@ -53,7 +54,7 @@ install() {
 <plist version="1.0"><dict>
   <key>Label</key><string>$LABEL</string>
   <key>ProgramArguments</key><array><string>$CF</string><string>tunnel</string><string>--no-autoupdate</string>
-    <string>--url</string><string>http://127.0.0.1:8000</string></array>
+    <string>--url</string><string>http://127.0.0.1:$PORT</string></array>
   <key>RunAtLoad</key><true/><key>KeepAlive</key><true/><key>ThrottleInterval</key><integer>15</integer>
   <key>StandardOutPath</key><string>$LOG</string><key>StandardErrorPath</key><string>$LOG</string>
 </dict></plist>

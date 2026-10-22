@@ -2,7 +2,7 @@ services:
   polygeni:
     build: .
     ports:
-      - "127.0.0.1:8000:8000"   # never expose the API publicly
+      - "127.0.0.1:1914:1914"   # never expose the API publicly
     env_file:
       - .env
     volumes:

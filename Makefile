@@ -5,8 +5,8 @@ UV := .venv/bin/uvicorn
 install:
 	uv venv --python 3.11 .venv && uv pip install --python $(PY) -r requirements.txt
 
-run:            ## 24/7 loop + dashboard on http://127.0.0.1:8000
-	PAPER_AUTOSTART=1 $(UV) src.main:app --host 127.0.0.1 --port 8000
+run:            ## 24/7 loop + dashboard on http://127.0.0.1:1914
+	PAPER_AUTOSTART=1 $(UV) src.main:app --host 127.0.0.1 --port 1914
 
 service:        ## run Kairos 24/7 on this Mac (launchd: starts at login, restarts on crash, no idle sleep)
 	scripts/kairos_service.sh install

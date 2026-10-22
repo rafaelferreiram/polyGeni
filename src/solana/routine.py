@@ -3,7 +3,7 @@ Data snapshot for the morning / evening trading routine (.claude/skills/trading-
 
 Reads the running dashboard's read-only GET endpoints (so it sees exactly what the bots see) plus public
 Hyperliquid candles for setup proximity, and prints one JSON document. It never places or changes anything.
-Usage:  python -m src.solana.routine [--base http://127.0.0.1:8000]
+Usage:  python -m src.solana.routine [--base http://127.0.0.1:1914]
 """
 import argparse
 import json
@@ -89,7 +89,7 @@ def snapshot(base: str, hours: float = 24) -> dict:
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--base", default="http://127.0.0.1:8000")
+    ap.add_argument("--base", default="http://127.0.0.1:1914")
     ap.add_argument("--hours", type=float, default=24)
     a = ap.parse_args()
     print(json.dumps(snapshot(a.base, a.hours), indent=1, default=str, ensure_ascii=False))

@@ -10,12 +10,12 @@ only when the moment is right. (Repository and package name: `polyGeni`.)
 
 Simulated money, **real market data**: Solana spot via real Jupiter quotes, and Hyperliquid perps
 (BTC, ETH, SOL, `xyz:GOLD`, `xyz:SILVER`) via the real L2 order book, taker fees and hourly funding.
-Dashboard: [http://127.0.0.1:8000](http://127.0.0.1:8000) (the old `/paper` link opens the same page).
+Dashboard: [http://127.0.0.1:1914](http://127.0.0.1:1914) (the old `/paper` link opens the same page).
 
 ### Quick start
 ```bash
 make install     # Python 3.11 venv via uv
-make run         # 24/7 loop + dashboard on http://127.0.0.1:8000
+make run         # 24/7 loop + dashboard on http://127.0.0.1:1914
 make test        # offline pytest suite
 make service     # run 24/7 on this Mac as a launchd agent (see "Running 24/7" below)
 make backtest    # walk-forward reports in reports/
@@ -241,7 +241,7 @@ the others must first show ≥ 10 profitable lab trades.
 ### Run it (paper)
 ```bash
 uv venv --python 3.11 .venv && uv pip install --python .venv/bin/python -r requirements.txt
-PAPER_AUTOSTART=1 .venv/bin/uvicorn src.main:app --port 8000      # 24/7 loop + dashboard at /paper
+PAPER_AUTOSTART=1 .venv/bin/uvicorn src.main:app --port 1914      # 24/7 loop + dashboard at /paper
 .venv/bin/python -m src.solana.engine --cycles 3                   # or a few cycles from the shell
 .venv/bin/python -m src.solana.backtest --days 180                 # walk-forward report → reports/
 .venv/bin/python -m pytest -q                                      # offline tests (no network)
@@ -270,7 +270,7 @@ Gold/silver are not traded yet (later phase).
 State-changing endpoints (start/stop, cycle, kill switch, deposit/withdraw, wallets, research, pause) only
 accept loopback clients with a loopback `Host` header (anti DNS-rebinding) **and** an `X-Paper-Token` that the
 dashboard fetches same-origin (cross-site pages can't read it ⇒ CSRF-safe). Uvicorn binds 127.0.0.1;
-docker-compose publishes `127.0.0.1:8000` only (inside Docker set `PAPER_TRUSTED_CLIENTS` to the bridge IP).
+docker-compose publishes `127.0.0.1:1914` only (inside Docker set `PAPER_TRUSTED_CLIENTS` to the bridge IP).
 
 ### Funds and wallets — what is and isn't possible now
 - Paper deposits/withdrawals are simulated ledger entries.
@@ -376,7 +376,7 @@ scale: recommendations, the "ready to add money?" checklist and a linear project
 
 ## Remote access (phone, anywhere)
 
-- `scripts/kairos_tunnel.sh install` runs a Cloudflare quick tunnel to `127.0.0.1:8000` 24/7 (launchd `com.kairos.tunnel`);
+- `scripts/kairos_tunnel.sh install` runs a Cloudflare quick tunnel to `127.0.0.1:1914` 24/7 (launchd `com.kairos.tunnel`);
   `scripts/kairos_tunnel.sh url` prints its address. The Vercel project `kairos-bots` (https://kairos-bots.vercel.app) is a
   single `vercel.json` rewrite to that address. The quick-tunnel address changes when cloudflared restarts (e.g. reboot):
   `scripts/kairos_tunnel.sh install` also installs `com.kairos.tunnel-sync`, which runs `sync` every 2 minutes and

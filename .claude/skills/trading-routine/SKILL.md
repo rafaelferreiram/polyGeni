@@ -27,7 +27,7 @@ If `server` is OFFLINE, that is the headline: the bots are not trading. Tell the
 (or start the app) and stop there — do not invent numbers.
 
 For a single trade or decision that needs more detail you can also read
-`GET http://127.0.0.1:8000/api/paper/account?kind=real` directly. Do not call POST endpoints.
+`GET http://127.0.0.1:1914/api/paper/account?kind=real` directly. Do not call POST endpoints.
 
 ### Market context from CoinMarketCap (MCP)
 
