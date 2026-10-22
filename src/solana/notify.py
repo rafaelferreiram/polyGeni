@@ -76,7 +76,7 @@ def _html(title: str, color: str, rows: list[tuple[str, str]], note: str) -> str
 <div style="background:{color};color:#fff;padding:16px 20px;font-size:18px;font-weight:700">{escape(title)}</div>
 <table style="border-collapse:collapse;width:100%;font-size:14px;margin:8px 0">{tr}</table>
 <div style="padding:12px 20px 18px;font-size:12px;color:#6b7280">{escape(note)}<br>
-<a href="http://127.0.0.1:8000" style="color:#059669">Painel do Savoia</a> · Savoia envia um e-mail por operação.</div>
+<a href="http://127.0.0.1:1914" style="color:#059669">Painel do Savoia</a> · Savoia envia um e-mail por operação.</div>
 </div></body></html>"""
 
 
@@ -110,5 +110,5 @@ def trade_event(account: str, kind: str, symbol: str, strategy: str | None, reas
             rows += [("Entrada → saída", f"${trade['entry_price']:,.6g} → ${trade['exit_price']:,.6g}  (aberta em {_when(trade['entry_ts'])})"),
                      ("Resultado", f"{'+' if trade['pnl_usd'] >= 0 else '−'}${abs(trade['pnl_usd']):.4f} ({trade['pnl_pct'] * 100:+.2f}%, já com taxas e funding)")]
     rows.append(("Motivo", reason))
-    text = "\n".join(f"{k}: {v}" for k, v in rows) + "\n\nPainel: http://127.0.0.1:8000"
+    text = "\n".join(f"{k}: {v}" for k, v in rows) + "\n\nPainel: http://127.0.0.1:1914"
     threading.Thread(target=_send, args=(subject, text, _html(title, color, rows, where)), daemon=True).start()

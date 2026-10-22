@@ -9,6 +9,7 @@ DIR="$(cd "$(dirname "$0")/.." && pwd)"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 LOG="$HOME/Library/Logs/kairos.log"
 DOMAIN="gui/$(id -u)"
+PORT="${SAVOIA_PORT:-1914}"
 
 install() {
   [ -x "$DIR/.venv/bin/uvicorn" ] || { echo "missing $DIR/.venv — run 'make install' first"; exit 1; }
@@ -23,7 +24,7 @@ install() {
   <array>
     <string>/usr/bin/caffeinate</string><string>-i</string><string>-s</string>
     <string>$DIR/.venv/bin/uvicorn</string><string>src.main:app</string>
-    <string>--host</string><string>127.0.0.1</string><string>--port</string><string>8000</string>
+    <string>--host</string><string>127.0.0.1</string><string>--port</string><string>$PORT</string>
   </array>
   <key>WorkingDirectory</key><string>$DIR</string>
   <key>EnvironmentVariables</key>
@@ -45,7 +46,7 @@ EOF
   launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
   for _ in $(seq 1 30); do launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1 || break; sleep 1; done   # bootout is async
   launchctl bootstrap "$DOMAIN" "$PLIST"
-  echo "installed: $PLIST (logs: $LOG) — dashboard http://127.0.0.1:8000"
+  echo "installed: $PLIST (logs: $LOG) — dashboard http://127.0.0.1:$PORT"
 }
 
 case "${1:-status}" in

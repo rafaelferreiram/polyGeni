@@ -811,11 +811,11 @@ const phantomProvider = () => (window.phantom?.solana?.isPhantom ? window.phanto
 async function phantomKey() {
   let p = phantomProvider();
   for (let i = 0; !p && i < 10; i++) { await new Promise((r) => setTimeout(r, 200)); p = phantomProvider(); }
-  if (!p) throw new Error("Phantom não encontrada neste navegador. Abra http://127.0.0.1:8000 no Chrome/Brave/Firefox com a extensão Phantom instalada e desbloqueada.");
+  if (!p) throw new Error("Phantom não encontrada neste navegador. Abra http://127.0.0.1:1914 no Chrome/Brave/Firefox com a extensão Phantom instalada e desbloqueada.");
   return (await p.connect()).publicKey.toString();
 }
 const phantomLine = () => (phantomProvider() ? '<span class="green">👻 extensão Phantom detectada</span>'
-  : REMOTE ? '<span class="muted">Conectar a Phantom só funciona no Mac, em http://127.0.0.1:8000</span>'
+  : REMOTE ? '<span class="muted">Conectar a Phantom só funciona no Mac, em http://127.0.0.1:1914</span>'
   : '<span class="red">extensão Phantom não detectada neste navegador</span> — <a href="https://phantom.app/download" target="_blank" rel="noopener">instalar</a> e recarregar');
 async function connectPhantom(btn) {
   run(btn, "Conectando…", async () => {
