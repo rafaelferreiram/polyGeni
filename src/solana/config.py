@@ -224,6 +224,12 @@ MEME_REAL_SLIPPAGE_BPS = _i("MEME_REAL_SLIPPAGE_BPS", 300)
 MEME_REAL_MAX_ENTRY_AGE_S = _i("MEME_REAL_MAX_ENTRY_AGE_S", 180)    # the real account only follows lab entries this fresh
 # real-account shorts (Hyperliquid): OFF. Phase 1 is only the machinery; it stays unreachable until the owner sets
 # LIVE_ALLOW_SHORT=1 (and a short bot has earned the green light in the lab). Small limits for when it is on:
+# X.com posts (xfeed.py): pay-per-use, $0.005 per post returned. HARD daily cap in dollars; one read of X_MAX_RESULTS posts
+# at most every X_POLL_MIN minutes, so the default (≈ $0.25/day) is about 5 reads of 10 posts a day.
+X_DAILY_BUDGET_USD = _f("X_DAILY_BUDGET_USD", 0.25)
+X_POLL_MIN = _i("X_POLL_MIN", 120)
+X_MAX_RESULTS = _i("X_MAX_RESULTS", 10)
+X_STATE_PATH = os.getenv("X_STATE_PATH", "x_feed.json")
 LIVE_ALLOW_SHORT = os.getenv("LIVE_ALLOW_SHORT", "0") == "1"
 LIVE_SHORT_MAX_OPEN = _i("LIVE_SHORT_MAX_OPEN", 1)
 LIVE_SHORT_MAX_PER_DAY = _i("LIVE_SHORT_MAX_PER_DAY", 3)

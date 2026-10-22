@@ -979,6 +979,17 @@ async function loadMemeReal() {
 safe(loadMemeReal);
 setInterval(() => safe(loadMemeReal), 30000);
 
+// ─── X posts (read-only, budgeted) ───
+async function loadX() {
+  const d = await api("/xfeed?limit=10"), s = d.status;
+  document.getElementById("x-tag").textContent = s.enabled ? `gasto hoje ${usd(s.spent_usd)} de ${usd(s.budget_usd)} · ${s.calls_today} leituras` : "sem token do X";
+  document.getElementById("x-head").textContent = s.last_call ? `última leitura ${hhmm(s.last_call)} · a cada ${s.poll_min} min · busca por ${s.query}${s.error ? " · erro: " + s.error : ""}` : "";
+  setHTML("x-list", d.posts.length ? d.posts.map((p) => `<div class="xp"><div class="m">${p.ts ? hhmm(p.ts) : ""}${p.coins.slice(0, 5).map((c) => `<span class="c">${esc(c)}</span>`).join("")}<span>♥ ${p.likes} · ↻ ${p.reposts}</span></div>${esc(p.text)}</div>`).join("")
+    : `<div class="empty">${s.enabled ? "Nenhum post lido ainda (a primeira leitura roda em instantes)." : "Coloque X_BEARER_TOKEN no .env para ligar."}</div>`);
+}
+safe(loadX);
+setInterval(() => safe(loadX), 120000);
+
 // ─── meme bot modal: the same dialog as the crypto bots, with the trench's own facts ───
 let memeModalData = null;
 async function openMemeBot(model) {
