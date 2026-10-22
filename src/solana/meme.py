@@ -81,6 +81,7 @@ _radar: list[dict] = []
 _status = {"at": None, "error": None, "candidates": 0}
 _lock = threading.Lock()
 _trade_lock = threading.Lock()        # the round and the fast watch never manage the same ledgers at once
+_safe_streak: dict[str, int] = {}     # mint -> consecutive rounds it passed the safety checks
 
 
 def ledger(bot: str) -> Ledger:
@@ -312,8 +313,29 @@ def manage(bot: str, prices: dict[str, dict]):
         _sync_positions(led)
 
 
+def stop_guard(led: Ledger, bot: str, strategy: str | None = None) -> str | None:
+    """Stop-loss guard: N stop-outs within the window -> this bot pauses entries for a while (text says why)."""
+    now = datetime.now(timezone.utc)
+    key = f"stop_guard_until:{strategy or bot}"       # the accounts hold several strategies on one ledger
+    paused = led.get_state(key)
+    if paused and paused > now.isoformat():
+        return f"pausa até {paused[11:16]} UTC: {cfg.STOPLOSS_GUARD_N} stops em {cfg.STOPLOSS_GUARD_WINDOW_H:.0f}h"
+    since = (now - timedelta(hours=cfg.STOPLOSS_GUARD_WINDOW_H)).isoformat()
+    stops = [t for t in led.closed_trades() if t["exit_ts"] >= since and (strategy is None or t["strategy"] == strategy)
+             and ("stop" in t["reason"] or "rug" in t["reason"]) and "ganho rápido" not in t["reason"] and t["pnl_usd"] < 0]
+    if len(stops) < cfg.STOPLOSS_GUARD_N:
+        return None
+    until = (now + timedelta(hours=cfg.STOPLOSS_GUARD_PAUSE_H)).isoformat(timespec="seconds")
+    led.set_state(key, until)
+    led.log_decision("veto", strategy=strategy or bot, reason=f"🛡 guarda de stops: {len(stops)} stops em {cfg.STOPLOSS_GUARD_WINDOW_H:.0f}h "
+                                                 f"(${sum(t['pnl_usd'] for t in stops):+.2f}) — sem entradas por {cfg.STOPLOSS_GUARD_PAUSE_H:.0f}h")
+    return f"pausa até {until[11:16]} UTC"
+
+
 def enter(bot: str, cands: list[dict], prices: dict[str, dict]):
     led = ledger(bot)
+    if stop_guard(led, bot):
+        return
     held = {p["mint"] for p in led.positions()}
     recent = {d["mint"] for d in led.decisions(200, kind="exit")
               if d["ts"] >= (datetime.now(timezone.utc) - timedelta(hours=6)).isoformat()}
@@ -376,10 +398,15 @@ def run_round() -> dict:
             if t["whale"].get("net_1h", 0) >= max(3000, 0.03 * (t.get("liquidity") or 0)) and t["whale"].get("buyers", 0) >= 2:
                 teamchat.post("meme_whale", "tip", f"🐋 Baleias compraram ${t['whale']['net_1h']:,.0f} líquidos de {t.get('symbol')} "
                                                    f"na última hora ({t['whale']['buyers']} carteiras grandes)", t.get("symbol"))
+        # a token must pass the safety checks on consecutive rounds: one-second fake liquidity or a holder snapshot
+        # that looks fine for a minute does not get a buy (warp-id's CONSECUTIVE_FILTER_MATCHES)
+        for t in cands:
+            _safe_streak[t["id"]] = _safe_streak.get(t["id"], 0) + 1 if all(ok for ok, _ in safety(t).values()) else 0
+        ready = [t for t in cands if _safe_streak.get(t["id"], 0) >= cfg.MEME_SAFE_ROUNDS]
         with _trade_lock:
             for b in list(BOTS):
                 manage(b, prices)
-                enter(b, cands, prices)
+                enter(b, ready, prices)
             _mirror(prices)
         evolve()
         rows = []

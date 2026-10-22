@@ -152,3 +152,29 @@ def test_fast_watch_reprices_only_open_positions_and_rony_skips_dumping_whales(t
     whales = {"net_1h": 6000, "buy_1h": 10000, "sell_1h": 4000, "buyers": 3}     # sells already 40% of buys: the dump
     assert meme.signal("meme_whale", _token(whale=whales)) is None
     assert meme.signal("meme_whale", _token(whale={**whales, "sell_1h": 1000}))
+
+
+def test_stop_guard_pauses_a_bot_after_three_stops(tmp_path, monkeypatch):
+    monkeypatch.setattr(meme, "_ledgers", {b: Ledger(str(tmp_path / f"arena_{b}.db"), 1000.0) for b in meme.BOTS})
+    led = meme.ledger("meme_momo")
+    for i in range(3):
+        meme.enter("meme_momo", [_token(id=f"M{i}", symbol=f"T{i}")], {f"M{i}": {"price": 1.0, "liq": 1_000_000}})
+        meme.manage("meme_momo", {f"M{i}": {"price": 0.7, "liq": 1_000_000}})
+    assert len(led.closed_trades()) == 3
+    meme.enter("meme_momo", [_token(id="M9", symbol="T9")], {"M9": {"price": 1.0, "liq": 1_000_000}})
+    assert led.positions() == [] and any("guarda de stops" in d["reason"] for d in led.decisions(10, kind="veto"))
+    assert meme.stop_guard(led, "meme_momo").startswith("pausa até")
+
+
+def test_safety_must_hold_on_consecutive_rounds(tmp_path, monkeypatch):
+    monkeypatch.setattr(meme, "_ledgers", {b: Ledger(str(tmp_path / f"arena_{b}.db"), 100.0) for b in meme.BOTS})
+    monkeypatch.setattr(meme, "_safe_streak", {})
+    monkeypatch.setattr(meme, "discover", lambda: [_token()])
+    monkeypatch.setattr(meme, "pair_prices", lambda mints: {"MINT1": {"price": 1.0, "liq": 80_000, "pool": None}})
+    monkeypatch.setattr(meme, "_mirror", lambda prices: None)
+    monkeypatch.setattr(meme, "evolve", lambda now=None: [])
+    monkeypatch.setattr(meme.teamchat, "post", lambda *a, **k: True)
+    meme.run_round()
+    assert meme.ledger("meme_momo").positions() == []                            # safe once: not yet
+    meme.run_round()
+    assert meme.ledger("meme_momo").positions()                                  # safe twice in a row: buy
