@@ -287,7 +287,7 @@ def test_evolution_retires_a_weak_reserve_and_breeds_an_improved_champion(tmp_pa
     data = evolution.load()
     child = data["bots"][ev["born"]]
     assert data["active"] == [ev["born"]] and child["base"] == "trend4h" and child["gen"] == 2
-    assert child["params"]["no_fast_exit"] and child["params"]["max_hold_h"] >= 12      # learned from losing time exits
+    assert child["params"]["max_hold_h"] <= 1      # learned from losing time exits: the successor leaves sooner (data: longer holds lose)
     assert ev["born"] in arena.bots() and "trend4h" not in arena.bots()
     from src.solana.strategies import RULE_BOTS
     assert RULE_BOTS[ev["born"]]().name == ev["born"]

@@ -161,6 +161,10 @@ MAX_TITULARES = _i("MAX_TITULARES", 6)
 # the meme-coin trench (meme.py): lab only, paper money, real Solana prices
 MEME_ENABLED = os.getenv("MEME_ENABLED", "1") == "1"
 MEME_CYCLE_SEC = _i("MEME_CYCLE_SEC", 60)
+# "no traction" exit: a meme that has not shown +MEME_TRACTION_PCT of peak gain after MEME_TRACTION_MIN minutes is cut
+# (data: every winner was +3% inside 10 min; the six stop-outs lived 7–120 min and ended −12…−56%)
+MEME_TRACTION_MIN = _f("MEME_TRACTION_MIN", 15)
+MEME_TRACTION_PCT = _f("MEME_TRACTION_PCT", 0.03)
 MEME_WATCH_SEC = _i("MEME_WATCH_SEC", 15)             # open meme positions are re-priced this often (memes gap in minutes)
 MEME_SAFE_ROUNDS = _i("MEME_SAFE_ROUNDS", 2)          # a token must pass the safety checks on this many consecutive rounds
 # stop-loss guard (Freqtrade's most-used protection): a bot stopped out STOPLOSS_GUARD_N times within
@@ -171,12 +175,16 @@ STOPLOSS_GUARD_PAUSE_H = _f("STOPLOSS_GUARD_PAUSE_H", 6)
 MEME_CAPITAL_USD = _f("MEME_CAPITAL_USD", 100.0)
 MEME_TRADE_USD = _f("MEME_TRADE_USD", 10.0)
 MEME_MAX_POSITIONS = _i("MEME_MAX_POSITIONS", 4)
-MEME_STOP_PCT = _f("MEME_STOP_PCT", 0.18)
+MEME_STOP_PCT = _f("MEME_STOP_PCT", 0.12)            # was 18%: the 6 stops averaged −26% (gaps); winners popped within 10 min
 MEME_TP_PCT = _f("MEME_TP_PCT", 0.40)
 MEME_MAX_HOLD_H = _f("MEME_MAX_HOLD_H", 2)
 # every trade, crypto or meme, is short: at most MAX_HOLD_CAP_H (the owner's rule — trades can last 30s or 2h, never a
 # buy-and-hold); the quick-win locks bank the fast moves before that. FOCUS_COINS are scanned first each cycle.
 MAX_HOLD_CAP_H = _f("MAX_HOLD_CAP_H", 2)
+# crypto "no traction" exit: 149 time exits lost $9.15 (27% wins); trades held past 2h won 24%, under 1h 57%. After
+# STALE_EXIT_H without clearing +STALE_EXIT_PCT over entry the position is closed instead of waiting for the cap.
+STALE_EXIT_H = _f("STALE_EXIT_H", 1.0)
+STALE_EXIT_PCT = _f("STALE_EXIT_PCT", 0.002)
 FOCUS_COINS = tuple(c.strip().upper() for c in os.getenv("FOCUS_COINS", "ZEC,PUMP").split(",") if c.strip())
 # universe filter (passivbot forager / Freqtrade VolumePairList): each hour the rule bots scan only the UNIVERSE_SIZE
 # coins with the most 24h volume × 1h log-range volatility (plus FOCUS_COINS and any coin already held). 0 = all 30.

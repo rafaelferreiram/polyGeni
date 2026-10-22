@@ -246,7 +246,7 @@ def situation(t: dict) -> list[str]:
             "orgânico alto" if (t.get("organicScore") or 0) >= 60 else "orgânico médio",
             "liquidez < $100k" if (t.get("liquidity") or 0) < 100_000 else "liquidez ≥ $100k",
             "baleias comprando" if w.get("net_1h", 0) > 0 else "baleias vendendo" if w.get("net_1h", 0) < 0 else "sem baleias",
-            f"launchpad {t.get('launchpad') or 'outro'}", f"moeda {t.get('symbol', '?')}"]
+            f"launchpad {t.get('launchpad') or 'outro'}", f"moeda {t.get('symbol', '?')}", learning.window_tag()]
     return tags
 
 
@@ -297,9 +297,12 @@ def manage(bot: str, prices: dict[str, dict]):
         if locked is not None:
             stop = max(stop, locked)
         held_h = (datetime.now(timezone.utc) - datetime.fromisoformat(p["opened_at"])).total_seconds() / 3600
+        held_min = held_h * 60
         reason = ("🚨 liquidez desabou (possível rug)" if q["liq"] < 0.6 * liq0 else
                   "🎯 alvo" if px >= entry * (1 + param(bot, "tp_pct", cfg.MEME_TP_PCT)) else
                   (f"💨 ganho rápido (pico {gain:+.0%}, garantiu {px / entry - 1:+.1%})" if locked is not None and px > entry else "🛑 stop") if px <= stop else
+                  f"🧊 sem tração: {held_min:.0f} min sem passar de +{cfg.MEME_TRACTION_PCT:.0%} (pico {gain:+.0%})"
+                  if held_min >= param(bot, "traction_min", cfg.MEME_TRACTION_MIN) and gain < cfg.MEME_TRACTION_PCT else
                   "⏱ tempo máximo" if held_h >= min(param(bot, "max_hold_h", cfg.MEME_MAX_HOLD_H), cfg.MAX_HOLD_CAP_H) else None)
         led.set_state(f"pos:{p['mint']}", {"peak": peak, "liq0": liq0})
         if not reason:
@@ -530,6 +533,7 @@ def bot_detail(bot: str) -> dict:
     exits: dict[str, dict] = {}
     for t in trades:
         k = ("ganho rápido" if "ganho rápido" in t["reason"] else "alvo" if "alvo" in t["reason"] else "rug" if "rug" in t["reason"]
+             else "sem tração" if "sem tração" in t["reason"]
              else "stop" if "stop" in t["reason"] else "tempo" if "tempo" in t["reason"] else "outro")
         e = exits.setdefault(k, {"n": 0, "pnl": 0.0})
         e["n"] += 1
@@ -539,6 +543,7 @@ def bot_detail(bot: str) -> dict:
             "parent": meta.get("parent_name"), "why": meta.get("why", []), "inherited_avoid": meta.get("inherited_avoid", []),
             "params": {"stop_pct": param(bot, "stop_pct", cfg.MEME_STOP_PCT), "tp_pct": param(bot, "tp_pct", cfg.MEME_TP_PCT),
                        "max_hold_h": param(bot, "max_hold_h", cfg.MEME_MAX_HOLD_H), "min_liq": param(bot, "min_liq", 30_000),
+                       "traction_min": param(bot, "traction_min", cfg.MEME_TRACTION_MIN), "traction_pct": cfg.MEME_TRACTION_PCT,
                        "quick_wins": cfg.MEME_QUICK_WINS},
             "titular": tit, "can_promote": can_promote(bot), "need_wins": cfg.PROMOTE_MIN_WINS, "need_win_rate": cfg.PROMOTE_MIN_WIN_RATE,
             "born_at": _born(led).isoformat(timespec="seconds"), "next_cut": None if tit else _next_cut(led),
@@ -596,16 +601,21 @@ def mutate(trades: list[dict], params: dict) -> tuple[dict, list[str]]:
     p, why, n = dict(params), [], len(trades) or 1
     by = lambda k: [t for t in trades if k in (t.get("reason") or "")]
     pnl = lambda ts: sum(t["pnl_usd"] for t in ts)
-    stops, tps, times, rugs = by("stop"), by("alvo"), by("tempo"), by("rug")
+    stops, tps, times, rugs, cold = by("stop"), by("alvo"), by("tempo"), by("rug"), by("sem tração")
     if len(stops) / n >= 0.4 and pnl(stops) < 0:
-        p["stop_pct"] = round(min(p.get("stop_pct", cfg.MEME_STOP_PCT) * 1.25, 0.35), 3)
-        why.append(f"stop mais largo ({p['stop_pct']:.0%}): o pai era stopado demais")
+        # memes that fall hard keep falling (stops averaged −26%): a wider stop only deepens the loss. Cut sooner instead.
+        p["stop_pct"] = round(max(p.get("stop_pct", cfg.MEME_STOP_PCT) * 0.8, 0.07), 3)
+        p["traction_min"] = round(max(p.get("traction_min", cfg.MEME_TRACTION_MIN) * 0.7, 5), 1)
+        why.append(f"stop mais curto ({p['stop_pct']:.0%}) e corta sem tração em {p['traction_min']:.0f} min: o pai perdia nos stops")
+    if len(cold) / n >= 0.4 and pnl(cold) < 0:
+        p["traction_min"] = round(min(p.get("traction_min", cfg.MEME_TRACTION_MIN) * 1.5, 45), 1)
+        why.append(f"dá mais tempo para engrenar ({p['traction_min']:.0f} min): o pai cortava cedo demais e perdia")
     if trades and len(tps) / n < 0.15:
         p["tp_pct"] = round(max(p.get("tp_pct", cfg.MEME_TP_PCT) * 0.8, 0.15), 3)
         why.append(f"alvo mais perto (+{p['tp_pct']:.0%}): o pai quase nunca chegava ao alvo")
     if len(times) / n >= 0.4 and pnl(times) < 0:
-        p["max_hold_h"] = round(min(p.get("max_hold_h", cfg.MEME_MAX_HOLD_H) * 1.5, 12), 1)
-        why.append(f"segura mais ({p['max_hold_h']:.0f}h): o pai perdia saindo por tempo")
+        p["max_hold_h"] = round(max(p.get("max_hold_h", cfg.MEME_MAX_HOLD_H) * 0.6, 0.5), 1)
+        why.append(f"sai mais cedo ({p['max_hold_h']:.1f}h): o pai perdia ficando preso por tempo")
     if rugs:
         p["min_liq"] = round(max(p.get("min_liq", 30_000) * 1.5, 45_000))
         why.append(f"só entra com liquidez ≥ ${p['min_liq']:,.0f}: o pai pegou {len(rugs)} rug(s)")

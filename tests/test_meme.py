@@ -95,7 +95,7 @@ def test_meme_reserve_without_profit_is_replaced_by_a_tuned_successor(tmp_path, 
     [ev] = meme.evolve(now=datetime.now(timezone.utc) + timedelta(hours=11))   # trades fall inside the judged window
     assert ev["retired"] == "meme_grad" and "meme_grad" not in meme.BOTS
     child = meme.BOTS[ev["born"]]
-    assert child["base"] == "meme_grad" and child["gen"] == 2 and child["params"]["stop_pct"] > meme.cfg.MEME_STOP_PCT
+    assert child["base"] == "meme_grad" and child["gen"] == 2 and child["params"]["stop_pct"] < meme.cfg.MEME_STOP_PCT and child["params"]["traction_min"] < meme.cfg.MEME_TRACTION_MIN   # stops lose: cut sooner
     assert meme.signal(ev["born"], _token())                      # same family's rules
     assert meme.evolve(now=datetime.now(timezone.utc) + timedelta(hours=11)) == []   # the newborn is not judged yet
 
@@ -198,3 +198,33 @@ def test_market_regime_gate_blocks_meme_buys_and_halves_size(tmp_path, monkeypat
     [pos] = led.positions()
     assert abs(pos["cost_usd"] - 5) < 1e-9                               # half of MEME_TRADE_USD
     assert meme.regime(lambda coin: 1 / 0)["ok"]                         # data errors never block
+
+
+def test_no_traction_exit_cuts_a_meme_that_does_not_pop_and_keeps_one_that_does(tmp_path, monkeypatch):
+    monkeypatch.setattr(meme, "_ledgers", {b: Ledger(str(tmp_path / f"arena_{b}.db"), 100.0) for b in meme.BOTS})
+    led = meme.ledger("meme_momo")
+    old = (datetime.now(timezone.utc) - timedelta(minutes=20)).isoformat(timespec="seconds")
+    for mint, sym in (("COLD", "COLD"), ("HOT", "HOT")):
+        meme.enter("meme_momo", [_token(id=mint, symbol=sym)], {mint: {"price": 1.0, "liq": 1_000_000}})
+    with led._lock:
+        led.conn.execute("UPDATE positions SET opened_at=?", (old,))              # both held 20 min
+    led.set_state("pos:HOT", {"peak": 1.06, "liq0": 1_000_000})                    # HOT showed +6% early
+    meme.manage("meme_momo", {"COLD": {"price": 0.99, "liq": 1_000_000}, "HOT": {"price": 1.05, "liq": 1_000_000}})
+    assert [p["mint"] for p in led.positions()] == ["HOT"]
+    [t] = led.closed_trades()
+    assert t["symbol"] == "COLD" and "sem tração" in t["reason"] and t["pnl_usd"] > -0.5     # small loss, not the −12% stop
+
+
+def test_time_window_is_a_learned_situation_and_older_trades_get_theirs_from_entry_time(tmp_path):
+    from src.solana import learning
+    from datetime import datetime, timezone
+    assert learning.window_tag(datetime(2026, 10, 22, 18, 30, tzinfo=timezone.utc)) == "janela 16-20h UTC"
+    led = Ledger(str(tmp_path / "w.db"), 100.0)
+    for i, mins in enumerate((0, 10, 20, 30, 40, 50)):                              # six losers entered between 18:00 and 18:50
+        ts = datetime(2026, 10, 22, 18, mins, tzinfo=timezone.utc).isoformat()
+        led.append_fill(dict(order_id=f"o{i}", ts=ts, venue="hyperliquid", side="buy", mint=f"M{i}", symbol=f"C{i}", strategy="s", qty=1,
+                             decimals=0, usd_gross=10, fee_usd=0, price=10, quote_price=10, stop_price=None, tp_price=None))
+        led.append_fill(dict(order_id=f"exit-o{i}", ts=ts, venue="hyperliquid", side="sell", mint=f"M{i}", symbol=f"C{i}", strategy="s",
+                             qty=1, decimals=0, usd_gross=9, fee_usd=0, price=9, quote_price=9, stop_price=None, tp_price=None))
+    rec = learning.record(led, "s")
+    assert rec["janela 16-20h UTC"] == {"n": 6, "wins": 0, "pnl": -6.0}

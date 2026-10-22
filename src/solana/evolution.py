@@ -99,9 +99,8 @@ def mutate(trades: list[dict], params: dict, hold_h: float) -> tuple[dict, list[
     by = {k: [t for t in trades if kind(t) == k] for k in ("time", "tp", "stop")}
     pnl = lambda ts: sum(t["pnl_usd"] for t in ts)
     if len(by["time"]) / n >= 0.5 and pnl(by["time"]) < 0:
-        p["no_fast_exit"] = True
-        p["max_hold_h"] = min(max(hold_h, 6) * 2, 48)
-        why.append(f"segura mais ({p['max_hold_h']:.0f}h, sem saída forçada de 2h): o pai perdia fechando por tempo")
+        p["max_hold_h"] = max(round(min(hold_h, cfg.MAX_HOLD_CAP_H) * 0.5, 1), 0.5)
+        why.append(f"sai mais cedo ({p['max_hold_h']:.1f}h): o pai perdia ficando preso até o tempo máximo (os dados: quanto mais tempo, pior)")
     if len(by["stop"]) / n >= 0.4 and pnl(by["stop"]) < 0:
         p["stop_mult"] = min(params.get("stop_mult", 1.0) * 1.25, 2.0)
         why.append(f"stop {p['stop_mult']:.2f}x mais largo: o pai era stopado demais")
