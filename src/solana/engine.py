@@ -191,7 +191,8 @@ class PaperEngine:
             self.ledger.set_state("btc_ok", ok)
             self.ledger.log_decision("btc_filter", cycle=self.cycle, reason=(
                 "✅ filtro BTC: BTC voltou acima da média de 50h — compras liberadas" if ok else
-                "⏸ filtro BTC: BTC abaixo da média de 50h — sem compras novas até ele voltar (vendas e stops seguem normais)"))
+                "⏸ filtro BTC: BTC abaixo da média de 50h — sem compras novas até ele voltar (vendas e stops seguem normais)"
+                + (" · reserva do laboratório: segue operando para aprender" if self.__dict__.get("lab_model") else "")))
         return ok
 
     def _quota_levels(self) -> dict[str, int]:
