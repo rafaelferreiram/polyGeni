@@ -158,6 +158,15 @@ LEARN_DAYS = _i("LEARN_DAYS", 30)
 LEARN_MIN_TRADES = _i("LEARN_MIN_TRADES", 6)
 LEARN_MAX_WIN_RATE = _f("LEARN_MAX_WIN_RATE", 0.35)
 MAX_TITULARES = _i("MAX_TITULARES", 6)
+# the meme-coin trench (meme.py): lab only, paper money, real Solana prices
+MEME_ENABLED = os.getenv("MEME_ENABLED", "1") == "1"
+MEME_CYCLE_SEC = _i("MEME_CYCLE_SEC", 60)
+MEME_CAPITAL_USD = _f("MEME_CAPITAL_USD", 100.0)
+MEME_TRADE_USD = _f("MEME_TRADE_USD", 10.0)
+MEME_MAX_POSITIONS = _i("MEME_MAX_POSITIONS", 4)
+MEME_STOP_PCT = _f("MEME_STOP_PCT", 0.18)
+MEME_TP_PCT = _f("MEME_TP_PCT", 0.40)
+MEME_MAX_HOLD_H = _f("MEME_MAX_HOLD_H", 4)
 # margin of error before a buy (edge.py): skip only when confident (this much evidence) that even the optimistic odds lose
 EDGE_CHECK = os.getenv("EDGE_CHECK", "1") == "1"
 EDGE_MIN_EVIDENCE = _i("EDGE_MIN_EVIDENCE", 30)

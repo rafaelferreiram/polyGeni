@@ -462,6 +462,8 @@ const MODEL_LOOK = {
   "trend": { label: "Endrick", color: "#67e8f9", ico: "⚡", role: "rompimentos rápidos, day trade de 24h" },
   "trend4h": { label: "Gabriel Jesus", color: "#fbbf24", ico: "🎯", role: "tendências maiores, velas de 4h" },
   "whales": { label: "Evair", color: "#60a5fa", ico: "🐋", role: "segue as baleias quando compram forte" },
+  "meme_grad": { label: "Breno Lopes", color: "#a3e635", ico: "🎓", role: "trincheira: tokens recém-formados na pump.fun" },
+  "meme_momo": { label: "Deyverson", color: "#34d399", ico: "🐸", role: "trincheira: momentum de meme coins" },
   "whales2": { label: "Dudu", color: "#38bdf8", ico: "🐳", role: "clone do Evair: mesmas regras, segue as baleias" },
   "copy": { label: "Veiga", color: "#f472b6", ico: "👑", role: "copia os 10 melhores traders da Hyperliquid" },
   "short": { label: "Gustavo Gómez", color: "#f87171", ico: "📉", role: "zagueiro do short: lucra quando o preço cai (laboratório)" },
@@ -789,6 +791,35 @@ function renderChat(force) {
 }
 safe(loadChat);
 setInterval(() => safe(loadChat), 6000);
+
+// ─── 🐸 Trincheira: meme-coin lab bots ───
+async function loadMeme() {
+  const d = await api("/meme");
+  const st = d.status || {};
+  document.getElementById("meme-head").textContent = st.at ? `última varredura ${hhmm(st.at)} · ${st.candidates} tokens analisados${st.error ? " · erro: " + st.error : ""}` : "aguardando a primeira varredura…";
+  setHTML("meme-bots", d.bots.map((b) => {
+    const L = look(b.model);
+    return `<div class="meme-bot" style="--c:${L.color}"><div class="top">${botFace(L.color, L.ico)}<div><b>${esc(L.label)}</b><div class="muted" style="font-size:12px">${esc(b.role)}</div></div></div>
+      <div class="nums"><span><b>${pnl(b.pnl)}</b>resultado</span><span><b>${b.trades}</b>trades</span><span><b>${b.win_rate == null ? "–" : pct0(b.win_rate)}</b>acerto</span><span><b>${b.positions.length}</b>abertas</span></div>
+      <div class="chips">${b.positions.map((p) => `<span>${esc(p.symbol)} ${pnl(p.now - p.cost)}</span>`).join("") || '<span class="muted">sem posições</span>'}
+        ${b.recent.slice(0, 4).map((t) => `<span title="${esc(t.reason)}">${esc(t.symbol)} ${t.pct > 0 ? "+" : ""}${t.pct}%</span>`).join("")}</div></div>`;
+  }).join(""));
+  const r = d.radar || [];
+  document.getElementById("meme-radar-note").textContent = r.length ? `· ${r.filter((x) => x.safe).length} de ${r.length} passam na segurança` : "";
+  const f = (v, d2 = 0) => (v == null ? "–" : Number(v).toLocaleString("pt-BR", { maximumFractionDigits: d2 }));
+  setHTML("meme-radar", `<tr><th>Token</th><th class="n">Liquidez</th><th class="n">Holders</th><th class="n">Orgânico</th><th class="n">1h</th><th>Segurança</th><th>Sinal</th></tr>` +
+    (r.length ? r.slice(0, 15).map((x) => {
+      const bad = Object.entries(x.checks).filter(([, c]) => !c.ok).map(([k, c]) => `${k}: ${c.txt}`);
+      const sig = Object.entries(x.signals).filter(([, s]) => s).map(([b]) => look(b).label);
+      return `<tr><td>${x.icon ? `<img class="ti" src="${esc(x.icon)}" alt="" loading="lazy" onerror="this.remove()">` : ""}<b>${esc(x.symbol)}</b>${x.graduated_h != null && x.graduated_h < 24 ? ' <span class="muted">🎓</span>' : ""}</td>
+        <td class="n">$${f(x.liq)}</td><td class="n">${f(x.holders)}</td><td class="n">${f(x.organic)}</td>
+        <td class="n ${(x.ch1h || 0) >= 0 ? "green" : "red"}">${x.ch1h == null ? "–" : `${x.ch1h > 0 ? "+" : ""}${f(x.ch1h, 1)}%`}</td>
+        <td title="${esc(bad.join(" · ") || "passou em tudo")}">${x.safe ? "✅ seguro" : `⛔ ${esc(bad[0] || "")}`}</td>
+        <td>${sig.length ? `🟢 ${esc(sig.join(", "))}` : '<span class="muted">—</span>'}</td></tr>`;
+    }).join("") : '<tr><td colspan="7" class="empty">Aguardando a primeira varredura (a cada minuto).</td></tr>'));
+}
+safe(loadMeme);
+setInterval(() => safe(loadMeme), 30000);
 
 // manual promotion (the user's rule: 12+ lab wins and win rate ≥ 35%)
 function promoteCard(d, r) {

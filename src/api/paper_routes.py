@@ -728,6 +728,13 @@ def arena_bot(model: str):
                            "real_size": arena.is_titular(model)}}
 
 
+@router.get("/meme")
+def meme_board():
+    """The meme-coin trench: its bots, their positions and trades, and the tokens on the radar with safety checks."""
+    from src.solana import meme
+    return meme.board()
+
+
 @router.get("/team/chat")
 def team_chat(limit: int = 80, since: int = 0):
     """The bots' group chat: what they did, passed to each other and learned (newest last)."""
