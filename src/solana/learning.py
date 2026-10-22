@@ -45,6 +45,7 @@ def record(ledger, strategy: str | None = None) -> dict[str, dict]:
                **{d["order_id"]: d["signals"].get("tags") for d in ledger.decisions(5000, kind="entry")
                   if d.get("order_id") and d["signals"].get("tags")}}
     out: dict[str, dict] = {}
+    days: dict[str, set] = {}
     for t in ledger.closed_trades():
         if t["exit_ts"] < since or (strategy and t["strategy"] != strategy):
             continue
@@ -54,6 +55,10 @@ def record(ledger, strategy: str | None = None) -> dict[str, dict]:
             r["n"] += 1
             r["wins"] += t["pnl_usd"] > 0
             r["pnl"] = round(r["pnl"] + t["pnl_usd"], 4)
+            if tag.startswith("janela"):
+                days.setdefault(tag, set()).add(t["entry_ts"][:10])
+    for tag, ds in days.items():                                               # a time window is a weak lesson: count its days
+        out[tag]["window"], out[tag]["days"] = True, len(ds)
     _cache[key] = (time.time(), out)
     return out
 
@@ -65,6 +70,8 @@ def _total(rec: dict[str, dict]) -> int:
 def bad(r: dict, total: int | None = None) -> bool:
     """A losing situation — and a specific one: a label on most of the bot's trades ('alta', its own setup) is the
     strategy itself, not a situation to avoid (avoiding it would mean never trading; evolution judges the strategy)."""
+    if r.get("window") and r.get("days", 0) < 2:        # one bad day is not a pattern (35 entries of one afternoon blocked the whole team)
+        return False
     return (r["n"] >= cfg.LEARN_MIN_TRADES and r["wins"] / r["n"] < cfg.LEARN_MAX_WIN_RATE and r["pnl"] < 0
             and (total is None or r["n"] <= total / 2))
 
@@ -73,7 +80,8 @@ def avoid(rec: dict[str, dict], tags: list[str], inherited=()) -> list[str]:
     """The situations in `tags` this bot has learned to stay out of — its own record first; lessons inherited from its
     predecessor count until it has its own LEARN_MIN_TRADES trades in that situation."""
     total = _total(rec)
-    return [t for t in tags if (t in rec and bad(rec[t], total)) or (t in inherited and rec.get(t, {}).get("n", 0) < cfg.LEARN_MIN_TRADES)]
+    return [t for t in tags if (t in rec and bad(rec[t], total))
+            or (t in inherited and not t.startswith("janela") and rec.get(t, {}).get("n", 0) < cfg.LEARN_MIN_TRADES)]
 
 
 def backfill(ledger, interval: str = "1h") -> int:
@@ -131,7 +139,7 @@ def team_avoid(own: dict[str, dict], team: dict[str, dict], tags: list[str]) -> 
     out = []
     for t in tags:
         r, mine = team.get(t), own.get(t)
-        if not r or r["n"] < 2 * cfg.LEARN_MIN_TRADES or not bad(r, total):
+        if t.startswith("janela") or not r or r["n"] < 2 * cfg.LEARN_MIN_TRADES or not bad(r, total):     # time windows: own record only
             continue
         if mine and mine["n"] >= cfg.LEARN_MIN_TRADES and mine["wins"] / mine["n"] >= 0.5:
             continue

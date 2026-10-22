@@ -238,7 +238,14 @@ def test_time_window_is_a_learned_situation_and_older_trades_get_theirs_from_ent
         led.append_fill(dict(order_id=f"exit-o{i}", ts=ts, venue="hyperliquid", side="sell", mint=f"M{i}", symbol=f"C{i}", strategy="s",
                              qty=1, decimals=0, usd_gross=9, fee_usd=0, price=9, quote_price=9, stop_price=None, tp_price=None))
     rec = learning.record(led, "s")
-    assert rec["janela 16-20h UTC"] == {"n": 6, "wins": 0, "pnl": -6.0}
+    r = rec["janela 16-20h UTC"]
+    assert (r["n"], r["wins"], r["pnl"], r["window"], r["days"]) == (6, 0, -6.0, True, 1)
+    assert learning.avoid(rec, ["janela 16-20h UTC"]) == []                       # six losses on ONE afternoon: not a pattern, no veto
+    assert learning.team_avoid(rec, {"janela 16-20h UTC": {**r, "n": 40}}, ["janela 16-20h UTC"]) == []     # and never by the team network
+    rec["janela 16-20h UTC"]["days"] = 2                                            # the same record over two different days
+    rec.update({f"moeda Z{i}": {"n": 1, "wins": 1, "pnl": 0.1} for i in range(20)})   # and the bot trades at other times too (a window on all its trades is just its strategy)
+    assert learning.avoid(rec, ["janela 16-20h UTC"]) == ["janela 16-20h UTC"]
+    assert learning.avoid({}, ["janela 16-20h UTC"], inherited=["janela 16-20h UTC"]) == []   # lessons handed to a successor never carry a time window
 
 
 def test_withdraw_refuses_to_send_the_sol_while_a_meme_token_could_not_be_sold(tmp_path, monkeypatch):
