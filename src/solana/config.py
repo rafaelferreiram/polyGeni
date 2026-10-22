@@ -222,6 +222,13 @@ MEME_REAL_DAILY_LOSS_USD = _f("MEME_REAL_DAILY_LOSS_USD", 5.0)
 MEME_REAL_MAX_IMPACT_PCT = _f("MEME_REAL_MAX_IMPACT_PCT", 2.0)
 MEME_REAL_SLIPPAGE_BPS = _i("MEME_REAL_SLIPPAGE_BPS", 300)
 MEME_REAL_MAX_ENTRY_AGE_S = _i("MEME_REAL_MAX_ENTRY_AGE_S", 180)    # the real account only follows lab entries this fresh
+# real-account shorts (Hyperliquid): OFF. Phase 1 is only the machinery; it stays unreachable until the owner sets
+# LIVE_ALLOW_SHORT=1 (and a short bot has earned the green light in the lab). Small limits for when it is on:
+LIVE_ALLOW_SHORT = os.getenv("LIVE_ALLOW_SHORT", "0") == "1"
+LIVE_SHORT_MAX_OPEN = _i("LIVE_SHORT_MAX_OPEN", 1)
+LIVE_SHORT_MAX_PER_DAY = _i("LIVE_SHORT_MAX_PER_DAY", 3)
+LIVE_SHORT_DAILY_LOSS_USD = _f("LIVE_SHORT_DAILY_LOSS_USD", 1.0)
+LIVE_SHORT_MAX_STOP_PCT = _f("LIVE_SHORT_MAX_STOP_PCT", 0.03)
 MEME_REAL_KILL_PCT = _f("MEME_REAL_KILL_PCT", 0.6)                 # equity below 60% of deposits: sell all and halt
 MEME_REAL_MAX_PRIORITY_LAMPORTS = _i("MEME_REAL_MAX_PRIORITY_LAMPORTS", 200_000)   # ≤ 0.0002 SOL priority fee
 # margin of error before a buy (edge.py): skip only when confident (this much evidence) that even the optimistic odds lose

@@ -135,8 +135,8 @@ def green_light(model: str) -> dict:
     pf = (sum(wins) / sum(losses)) if losses and sum(losses) > 0 else (99.0 if wins else 0.0)
     need = {"trades": n >= cfg.GREEN_LIGHT_TRADES, "vitórias": len(wins) >= cfg.GREEN_LIGHT_WINS, "lucro": net > 0, "acerto": wr >= cfg.GREEN_LIGHT_WIN_RATE,
             "fator": pf >= cfg.GREEN_LIGHT_PROFIT_FACTOR}
-    if model in SHORT_BOTS:      # the real account cannot short: this bot stays in the lab whatever its record
-        need["conta real não faz short"] = False
+    if model in SHORT_BOTS:      # shorts reach the real account only with LIVE_ALLOW_SHORT=1 (the owner's switch)
+        need["conta real não faz short"] = bool(cfg.LIVE_ALLOW_SHORT)
     return {"ok": all(need.values()), "trusted": False, "trades": n, "wins": len(wins), "needed": cfg.GREEN_LIGHT_WINS, "needed_trades": cfg.GREEN_LIGHT_TRADES,
             "win_rate": round(wr, 3), "profit_factor": round(pf, 2), "net_usd": round(net, 4),
             "missing": [k for k, v in need.items() if not v]}
