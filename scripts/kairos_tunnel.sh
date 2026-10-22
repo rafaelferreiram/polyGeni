@@ -21,7 +21,12 @@ sync() {
   local u last token
   u="$(url)"; [ -n "$u" ] || { echo "no tunnel url yet"; exit 1; }
   last="$(cat "$DIR/.tunnel_synced" 2>/dev/null || true)"
-  [ "$u" = "$last" ] && { echo "vercel already points to $u"; return; }
+  if [ "$u" = "$last" ]; then
+    # the site can be replaced behind our back (a git deployment of the repo): trust it only while it answers
+    code="$(curl -s -m 15 -o /dev/null -w '%{http_code}' "https://$VERCEL_PROJECT.vercel.app/login" || true)"
+    [ "$code" = "200" ] && { echo "vercel already points to $u"; return; }
+    echo "vercel answered $code: redeploying the proxy"
+  fi
   token="$(grep -E '^VERCEL_TOKEN=' "$DIR/.env" | cut -d= -f2- || true)"
   [ -n "$token" ] || { echo "tunnel is $u — add VERCEL_TOKEN to .env to update Vercel automatically"; return; }
   python3 - "$u" "$VERCEL_PROJECT" > /tmp/kairos_vercel.json <<'PY'
