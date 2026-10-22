@@ -487,9 +487,12 @@ const look = (m) => {
     const b = MODEL_LOOK[lin.base] || {};
     return { ...b, label: lin.label, ico: b.ico || "🧬", role: `${b.role || "bot"} · geração ${lin.gen}` };
   }
+  const mb = !MODEL_LOOK[m] && memeBots[m];     // evolved meme bot: champion name, its family's look
+  if (mb) return { ...(MODEL_LOOK[mb.base] || {}), label: mb.name, role: `${mb.role} · geração ${mb.gen}` };
   return { role: "IA analisa e decide", ...(MODEL_LOOK[m] || { label: m, color: "#9fe8c7", ico: "🤖" }) };
 };
 let lastArena = null;
+let memeBots = {};                               // meme team roster (from /meme), for names of evolved meme bots
 
 async function loadArena() {
   const a = await api("/arena");
@@ -794,21 +797,92 @@ safe(loadChat);
 setInterval(() => safe(loadChat), 6000);
 
 // ─── 🐸 Trincheira: meme-coin lab bots ───
+// ─── real meme account (Solana): the bot wallet signs its own trades; the user's Phantom deposits and receives withdrawals ───
+const phantom = () => (window.phantom?.solana?.isPhantom ? window.phantom.solana : null);
+async function phantomKey() {
+  const p = phantom();
+  if (!p) { window.open("https://phantom.app/download", "_blank", "noopener"); throw new Error("Phantom não encontrada neste navegador — instale e recarregue"); }
+  return (await p.connect()).publicKey.toString();
+}
+async function connectPhantom(btn) {
+  run(btn, "Conectando…", async () => {
+    const addr = await phantomKey();
+    const { message } = await api(`/meme/wallet/owner-message?address=${encodeURIComponent(addr)}`);
+    const { signature } = await phantom().signMessage(new TextEncoder().encode(message), "utf8");
+    return api("/meme/wallet/owner", "POST", { address: addr, signature: btoa(String.fromCharCode(...signature)) });
+  }, (r) => `👻 Phantom conectada: ${short(r.owner)}. Saques só vão para ela.`).then(() => safe(loadMemeReal));
+}
+function web3lib() {
+  return window.solanaWeb3 ? Promise.resolve(window.solanaWeb3) : new Promise((ok, bad) => {
+    const s = Object.assign(document.createElement("script"), { src: "https://cdn.jsdelivr.net/npm/@solana/web3.js@1.95.3/lib/index.iife.min.js" });
+    s.onload = () => ok(window.solanaWeb3); s.onerror = () => bad(new Error("não carregou a biblioteca da Solana"));
+    document.head.appendChild(s);
+  });
+}
+async function depositPhantom(btn) {
+  const sol = Number((prompt("Quanto SOL depositar na carteira de memes? (ex.: 0.15 ≈ $25)") || "").replace(",", "."));
+  if (!(sol > 0)) return;
+  run(btn, "Aprove na Phantom…", async () => {
+    const W = await web3lib(), from = await phantomKey();
+    const { blockhash, to } = await api("/meme/wallet/blockhash");
+    const tx = new W.Transaction({ feePayer: new W.PublicKey(from), recentBlockhash: blockhash })
+      .add(W.SystemProgram.transfer({ fromPubkey: new W.PublicKey(from), toPubkey: new W.PublicKey(to), lamports: Math.round(sol * 1e9) }));
+    const { signature } = await phantom().signAndSendTransaction(tx);
+    for (let i = 0; i < 20; i++) {                // wait for Solana to confirm, then the server checks it on-chain
+      await new Promise((r) => setTimeout(r, 3000));
+      try { return await api("/meme/wallet/deposit", "POST", { signature }); } catch (e) { if (i === 19) throw e; }
+    }
+  }, (r) => `✅ Depósito confirmado (${usd(r.usd)})`).then(() => safe(loadMemeReal));
+}
+function withdrawMeme(btn) {
+  if (!confirm("Sacar TUDO da carteira de memes?\n\nVende as meme coins abertas e manda todo o SOL para a sua Phantom conectada.")) return;
+  run(btn, "Sacando…", () => api("/meme/wallet/withdraw", "POST"), (r) => `✅ Saque enviado (${short(r.signature)})`).then(() => safe(loadMemeReal));
+}
+function promoteMeme(bot, btn) {
+  if (!confirm(`Promover ${look(bot).label} a TITULAR do time de memes?\n\nEle passa a operar a conta real de meme coins (Solana), com os limites pequenos.`)) return;
+  run(btn, "Promovendo…", () => api("/meme/promote", "POST", { bot }), `⚽ ${look(bot).label} é titular do time de memes`).then(() => safe(loadMeme));
+}
+async function loadMemeReal() {
+  const w = await api("/meme/wallet"), L = w.limits;
+  const real = w.mode === "real";
+  setHTML("meme-real", `<div class="t"><b>💵 Conta real de meme coins <span class="muted">(Solana · separada da conta de cripto)</span></b>
+      <span class="mode ${real ? "real" : "fake"}">${real ? "💵 REAL" : "🧪 ENSAIO · nada é enviado"}</span>${w.halted ? ' <span class="mode real" style="color:var(--red)">🛑 parada (kill switch)</span>' : ""}</div>
+    <div class="nums"><span><b>${w.usd == null ? "–" : usd(w.usd)}</b>na carteira${w.sol != null ? ` (${w.sol.toFixed(4)} SOL)` : ""}</span>
+      <span><b>${pnl(w.pnl)}</b>${real ? "resultado" : "resultado do ensaio"}</span><span><b>${w.trades}</b>trades (${w.wins} ganhos)</span>
+      <span><b>${w.buys_today}/${L.max_buys_day}</b>compras hoje</span></div>
+    <div class="note">Carteira do bot: <code title="${esc(w.address)}">${esc(short(w.address))}</code>
+      <button class="link" onclick="navigator.clipboard.writeText('${esc(w.address)}'); toast('Endereço copiado')">copiar</button>
+      · Dona: ${w.owner ? `<b>👻 ${esc(short(w.owner))}</b>` : '<span class="muted">nenhuma Phantom conectada</span>'}</div>
+    ${REMOTE ? "" : `<div class="bm-actions"><button onclick="connectPhantom(this)">👻 ${w.owner ? "Trocar Phantom" : "Conectar Phantom"}</button>
+      <button onclick="depositPhantom(this)" ${w.owner ? "" : "disabled title='Conecte a Phantom primeiro'"}>⬇️ Depositar</button>
+      <button onclick="withdrawMeme(this)" ${w.owner ? "" : "disabled title='Conecte a Phantom primeiro'"}>⬆️ Sacar tudo</button></div>`}
+    <div class="chips">${w.positions.map((p) => `<span>${esc(p.symbol)} · ${esc(look(p.bot).label)} ${pnl(p.now - p.cost)}</span>`).join("") || '<span class="muted">sem posições</span>'}</div>
+    <p class="note">Limites: $${L.trade_usd} por trade · ${L.max_positions} posições · ${L.max_buys_day} compras/dia · para no dia com −$${L.daily_loss_usd} ·
+      impacto ≤ ${L.max_impact_pct}% · slippage ≤ ${L.slippage_pct}% · abaixo de ${pct0(L.kill_pct)} do depositado vende tudo e para.
+      ${real ? "Só os titulares do time de memes operam aqui." : "No ensaio, toda compra e venda do laboratório é cotada no Jupiter e simulada na Solana, sem enviar."}</p>
+    <details><summary>Últimos passos</summary><div class="bm-rows">${w.log.slice(0, 8).map((d) => `<div><span>${hhmm(d.ts)} ${d.symbol ? esc(d.symbol) + " · " : ""}${esc(d.reason)}</span></div>`).join("") || '<div class="muted">nada ainda</div>'}</div></details>`);
+}
+safe(loadMemeReal);
+setInterval(() => safe(loadMemeReal), 30000);
+
 async function loadMeme() {
   const d = await api("/meme");
+  memeBots = Object.fromEntries(d.bots.map((b) => [b.model, b]));
   const st = d.status || {};
   document.getElementById("meme-head").textContent = st.at ? `última varredura ${hhmm(st.at)} · ${st.candidates} tokens analisados${st.error ? " · erro: " + st.error : ""}` : "aguardando a primeira varredura…";
   setHTML("meme-bots", d.bots.map((b) => {
     const L = look(b.model);
     const m = b.mode || {};
-    const badge = m.real ? '<span class="mode real">💵 REAL · titular</span>' : '<span class="mode fake">🧪 FAKE · reserva</span>';
-    const prog = `Titular: ${m.wins}/${m.need_wins} vitórias · acerto ${b.trades ? pct0(m.win_rate) : "–"} (mín. ${pct0(m.need_win_rate)})`;
+    const badge = m.real ? '<span class="mode real">💵 REAL · titular</span>' : m.titular ? '<span class="mode real">⚽ titular · ensaio</span>' : '<span class="mode fake">🧪 FAKE · reserva</span>';
+    const prog = m.titular ? "Titular do time de memes: opera a conta real" : `Titular: ${m.wins}/${m.need_wins} vitórias · acerto ${b.trades ? pct0(m.win_rate) : "–"} (mín. ${pct0(m.need_win_rate)})`;
+    const cut = m.next_cut ? `<div class="gl" title="${esc(["Se não der lucro no período (ou não operar), é aposentado e nasce um sucessor melhorado.", ...(m.why || [])].join(" · "))}">🧬 ${m.gen > 1 ? `geração ${m.gen}, filho de ${esc(m.parent || "")} · ` : ""}próximo corte ${time(m.next_cut)}: precisa estar no lucro</div>` : "";
+    const promo = m.ready && !m.titular && !REMOTE ? `<div class="bm-actions"><button class="promote" onclick="promoteMeme('${esc(b.model)}', this)">⬆️ Promover a titular</button></div>` : "";
     return `<div class="meme-bot" style="--c:${L.color}"><div class="top">${botFace(L.color, L.ico)}<div><b>${esc(L.label)}</b> ${badge}<div class="muted" style="font-size:12px">${esc(b.role)}</div></div></div>
       <div class="nums"><span><b>${pnl(b.pnl)}</b>resultado</span><span><b>${b.trades}</b>trades</span><span><b>${b.win_rate == null ? "–" : pct0(b.win_rate)}</b>acerto</span><span><b>${b.positions.length}</b>abertas</span></div>
       <div class="chips">${b.positions.map((p) => `<span>${esc(p.symbol)} ${pnl(p.now - p.cost)}</span>`).join("") || '<span class="muted">sem posições</span>'}
         ${b.recent.slice(0, 4).map((t) => `<span title="${esc(t.reason)}">${esc(t.symbol)} ${t.pct > 0 ? "+" : ""}${t.pct}%</span>`).join("")}</div>${learnedLine(b.learned)}
-      <div class="gl${m.ready ? " ok" : ""}" title="${m.ready ? "Já cumpre a regra de titular. Meme coin com dinheiro real ainda não existe: precisa de uma carteira Solana com saldo." : "Treinando no laboratório com $" + "100 de mentira."}">🎓 ${prog}${m.ready ? " · ✅ pronto" : ""}</div></div>`;
-  }).join(""));
+      <div class="gl${m.ready || m.titular ? " ok" : ""}" title="${m.titular ? "Opera a conta real de memes (Solana), ao mesmo tempo que os titulares de cripto operam a Hyperliquid." : "Treinando no laboratório com $" + "100 de mentira."}">🎓 ${prog}${m.ready && !m.titular ? " · ✅ pronto" : ""}</div>${cut}${promo}</div>`;
+  }).join("") + (d.retired?.length ? `<p class="note" style="grid-column:1/-1;margin:0">🪦 Saíram por não fazer dinheiro: ${d.retired.map((r) => `${esc(r.name)} (${esc(r.verdict)}) → ${esc(r.successor_name)}`).join(" · ")}</p>` : ""));
   const r = d.radar || [];
   document.getElementById("meme-radar-note").textContent = r.length ? `· ${r.filter((x) => x.safe).length} de ${r.length} passam na segurança` : "";
   const f = (v, d2 = 0) => (v == null ? "–" : Number(v).toLocaleString("pt-BR", { maximumFractionDigits: d2 }));

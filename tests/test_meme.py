@@ -75,3 +75,49 @@ def test_whale_flow_rony_and_learning(tmp_path, monkeypatch):
     learning._cache.clear()
     rec = learning.record(led, "meme_whale")
     assert rec["baleias comprando"]["n"] == 3 and rec["baleias comprando"]["wins"] == 0
+
+
+def test_meme_reserve_without_profit_is_replaced_by_a_tuned_successor(tmp_path, monkeypatch):
+    monkeypatch.setattr(meme.cfg, "MEME_LINEAGE_PATH", str(tmp_path / "meme_lineage.json"))
+    monkeypatch.setattr(meme, "ROSTER", {"active": {"meme_grad": {**meme.FOUNDERS["meme_grad"], "base": "meme_grad", "gen": 1, "params": {}}}, "retired": []})
+    monkeypatch.setattr(meme, "BOTS", meme.ROSTER["active"])
+    monkeypatch.setattr(meme, "_ledgers", {})
+    monkeypatch.setattr(meme.teamchat, "post", lambda *a, **k: True)
+    monkeypatch.chdir(tmp_path)
+    led = meme.ledger("meme_grad")
+    born = datetime.now(timezone.utc) - timedelta(hours=13)
+    led.set_state("born_at", born.isoformat())
+    for i in range(3):                                            # three stop-outs inside the first 12h
+        meme.enter("meme_grad", [_token(id=f"M{i}", symbol=f"T{i}")], {f"M{i}": {"price": 1.0, "liq": 1_000_000}})
+        meme.manage("meme_grad", {f"M{i}": {"price": 0.7, "liq": 1_000_000}})
+    [ev] = meme.evolve(now=datetime.now(timezone.utc) + timedelta(hours=11))   # trades fall inside the judged window
+    assert ev["retired"] == "meme_grad" and "meme_grad" not in meme.BOTS
+    child = meme.BOTS[ev["born"]]
+    assert child["base"] == "meme_grad" and child["gen"] == 2 and child["params"]["stop_pct"] > meme.cfg.MEME_STOP_PCT
+    assert meme.signal(ev["born"], _token())                      # same family's rules
+    assert meme.evolve(now=datetime.now(timezone.utc) + timedelta(hours=11)) == []   # the newborn is not judged yet
+
+
+def test_real_meme_account_dry_run_limits(tmp_path, monkeypatch):
+    from src.solana import meme_wallet as mw
+    monkeypatch.setattr(mw.cfg, "MEME_WALLET_PATH", str(tmp_path / "w.json"))
+    monkeypatch.setattr(mw.cfg, "MEME_REAL_DB_PATH", str(tmp_path / "real.db"))
+    monkeypatch.setattr(mw, "_kp", None)
+    monkeypatch.setattr(mw, "_led", None)
+    assert mw.address() and (tmp_path / "w.json").stat().st_mode & 0o777 == 0o600   # key readable only by this user
+    monkeypatch.setattr(mw, "mint_info", lambda m: (6, 0))
+    monkeypatch.setattr(mw, "sol_usd", lambda: 200.0)
+    monkeypatch.setattr(mw, "quote", lambda i, o, a: {"outAmount": str(int(a * 1000)) if o != mw.SOL else str(int(a / 1000)),
+                                                       "priceImpactPct": "0.001", "routePlan": []})
+    monkeypatch.setattr(mw, "swap_tx", lambda q: b"tx")
+    monkeypatch.setattr(mw, "simulate", lambda tx: None)
+    monkeypatch.setattr(mw, "send", lambda tx: (_ for _ in ()).throw(AssertionError("dry run must not send")))
+    mw.mirror({"meme_grad": {}}, set(), {})                       # first round only primes: no late buys of old positions
+    mw.mirror({"meme_grad": {"A": "AAA", "B": "BBB", "C": "CCC"}}, set(), {})
+    led = mw.ledger()
+    assert {p["mint"] for p in led.positions()} == {"A", "B"}      # 2 positions max
+    assert any("2 posições" in d["reason"] for d in led.decisions(20, kind="veto"))
+    mw.mirror({"meme_grad": {"B": "BBB"}}, set(), {})               # the lab sold A: the real account sells A
+    assert {p["mint"] for p in led.positions()} == {"B"} and len(led.closed_trades()) == 1
+    monkeypatch.setattr(mw, "quote", lambda i, o, a: {"outAmount": "0", "priceImpactPct": "0.05", "routePlan": []})
+    assert mw.buy("meme_grad", "Z", "ZZZ") is None                 # 5% price impact: no

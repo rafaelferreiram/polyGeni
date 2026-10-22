@@ -210,7 +210,7 @@ class PaperEngine:
             who = strat.name if strat.name in (arena._bots or {}) or strat.name in cfg.REAL_TRUSTED_BOTS else (model or strat.name)
             rule = getattr(strat, "_rules", None) or strat
             if not arena.is_titular(who):
-                rule.relax = 0
+                rule.relax = cfg.RESERVE_RELAX      # reserves train aggressively (looser entries: more trades to learn from)
                 continue
             done = sum(t["strategy"] == strat.name for t in closed)
             behind = expected - done

@@ -15,3 +15,4 @@ scipy==1.14.1
 anthropic==1.17.0
 pytest==9.1.1
 hyperliquid-python-sdk==0.24.0
+solders==0.29.0

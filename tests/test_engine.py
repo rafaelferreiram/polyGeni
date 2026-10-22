@@ -417,8 +417,8 @@ def test_titular_behind_its_daily_quota_loosens_a_notch_and_aims_closer(ledger, 
     entry = ledger.decisions(kind="entry")[0]
     assert "cota do dia (nível 2)" in entry["reason"] and eng.strategies[0].relax == 2
     assert ledger.decisions(kind="quota")
-    monkeypatch.setattr(arena, "is_titular", lambda m: False)        # reserves never get the quota
-    assert eng._quota_levels() == {} and eng.strategies[0].relax == 0
+    monkeypatch.setattr(arena, "is_titular", lambda m: False)        # reserves: no quota, but they train aggressively
+    assert eng._quota_levels() == {} and eng.strategies[0].relax == cfg.RESERVE_RELAX
 
 
 def test_a_manual_order_makes_a_running_cycle_stop_early(ledger):
