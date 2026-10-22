@@ -415,7 +415,7 @@ _fast_cache: dict[str, tuple[float, bool]] = {}
 
 
 def is_fast(name: str) -> bool:
-    """A 15-minute twin (or an evolved successor of one): long-side fast bots only, never the shorts. The lineage file
+    """A 15-minute twin (or an evolved successor of one) the owner listed in LIVE_FAST_BOTS: long-side only, never the shorts. The lineage file
     is re-read at most once a minute per name (this runs for every candidate of every cycle)."""
     import time
     hit = _fast_cache.get(name)
@@ -423,7 +423,8 @@ def is_fast(name: str) -> bool:
         return hit[1]
     from src.solana import evolution
     base = evolution.base_of(name.removeprefix("llm:"))
-    out = base in FAST_BOTS and base not in SHORT_BOTS
+    from src.solana import config as cfg
+    out = base in FAST_BOTS and base not in SHORT_BOTS and base in cfg.LIVE_FAST_BOTS
     _fast_cache[name] = (time.time(), out)
     return out
 

@@ -240,6 +240,7 @@ SCALP_TP_PCT = _f("SCALP_TP_PCT", 0.01)
 # the 15-minute bots may trade the REAL account even while BTC is below its 50h average (owner's decision 2026-10-22):
 # long only, LIVE_FAST_USD per trade, at most LIVE_FAST_MAX_OPEN open at once. 0 turns it off.
 LIVE_FAST_ALLOW = os.getenv("LIVE_FAST_ALLOW", "1") == "1"
+LIVE_FAST_BOTS = {m.strip() for m in os.getenv("LIVE_FAST_BOTS", "whales_15m,copy_15m,trend4h_15m").split(",") if m.strip()}   # explicit list: a new fast bot never gets real money by default
 LIVE_FAST_USD = _f("LIVE_FAST_USD", 10.0)
 LIVE_FAST_MAX_OPEN = _i("LIVE_FAST_MAX_OPEN", 1)
 LIVE_ALLOW_SHORT = os.getenv("LIVE_ALLOW_SHORT", "0") == "1"
