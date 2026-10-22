@@ -1,0 +1,4 @@
+{
+  "$comment": "The Vercel site (kairos-bots) is only a proxy to the Mac's tunnel, deployed by scripts/kairos_tunnel.sh. Git must not deploy this repo: a git deployment replaced the proxy with a 404 once.",
+  "git": { "deploymentEnabled": false }
+}
