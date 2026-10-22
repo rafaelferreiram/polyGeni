@@ -47,7 +47,9 @@ def build(ledger, price, fire=True, debate=None, risk=None):
                        candles_fn=lambda pool: flat_candles(60), profiles={})
 
 
-def test_entry_then_take_profit_exit(ledger):
+def test_entry_then_take_profit_exit(ledger, monkeypatch):
+    from src.solana import config as cfg
+    monkeypatch.setattr(cfg, "SCALP_TP_PCT", 0)                       # this test is about the strategy's own target
     price = Price(1.0)
     eng = build(ledger, price)
     s = eng.run_cycle()
@@ -548,9 +550,9 @@ def test_a_position_that_goes_nowhere_is_closed_after_an_hour_but_a_winner_keeps
     with ledger._lock:
         ledger.conn.execute("UPDATE positions SET opened_at=?", (old,))
     eng.strategies[0].fire = False
-    price.p = 1.01
+    price.p = 1.005
     eng.mark_and_exit()
-    assert len(ledger.positions()) == 1              # in profit: not stale, it keeps going to its stop/target/cap
+    assert len(ledger.positions()) == 1              # +0.5%: not stale and under the +1% scalp exit, it keeps going to its stop/target/cap
 
 
 def test_short_candidates_go_only_to_short_bots_and_the_real_gate_can_close_them(ledger, monkeypatch):
@@ -583,3 +585,30 @@ def test_short_candidates_go_only_to_short_bots_and_the_real_gate_can_close_them
     eng2.short_gate = lambda btc_ok: "short desligado na conta real"                           # what the real engine installs
     eng2.run_cycle()
     assert ledger2.decisions(kind="entry") == []
+
+
+def test_a_small_profit_is_sold_at_once_and_a_lab_reserve_trades_through_the_btc_filter(ledger, monkeypatch):
+    from src.solana import arena, config as cfg2
+    monkeypatch.setattr(cfg2, "SCALP_TP_PCT", 0.01)
+    price = Price(1.0)
+    eng = build(ledger, price)
+    eng.run_cycle()
+    eng.strategies[0].fire = False
+    price.p = 1.015                                                    # +1.5% over the cost basis: "see a profit and sell"
+    eng.mark_and_exit()
+    [t] = ledger.closed_trades()
+    assert "lucro curto" in t["reason"] and t["pnl_usd"] > 0
+    # BTC under its 50h average: longs are blocked for titulars (and the real account), but a lab reserve keeps learning
+    monkeypatch.setattr(cfg2, "BTC_FILTER", True)
+    monkeypatch.setattr(PaperEngine, "_btc_ok", lambda self: False)
+    eng.strategies[0].fire = True
+    eng.__dict__.pop("_entered", None)
+    eng.run_cycle()
+    assert len(ledger.positions()) == 0                                # a plain engine: filter holds
+    eng.lab_model = "whales2_g2_5"
+    monkeypatch.setattr(arena, "is_titular", lambda m: True)           # a titular's lab twin keeps the filter
+    eng.run_cycle()
+    assert len(ledger.positions()) == 0
+    monkeypatch.setattr(arena, "is_titular", lambda m: False)          # a reserve in the lab keeps learning
+    eng.run_cycle()
+    assert len(ledger.positions()) == 1

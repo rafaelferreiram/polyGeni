@@ -398,15 +398,16 @@ def fast(cls, label: str, hold_h: float = 6):
 
 Trend4h15 = fast(type("Trend15", (TrendFollow,), {"__init__": lambda s: TrendFollow.__init__(s, fast=20, slow=50, breakout=6, stop_atr=2.0, tp_atr=3.0)}),
                  "trend4h_15m")
+ShortBreak15 = fast(ShortBreak, "short_break_15m", hold_h=1)          # the same breakdown short on 15m bars: 4x more chances a day
 WhaleFollow15 = fast(WhaleFollow, "whales_15m")
 CopyTop15 = fast(CopyTop, "copy_15m")
 
 
 # deterministic bots (no LLM, no API cost): model name -> strategy
 RULE_BOTS = {"rules": MeanReversionATR, "trend": TrendStrong, "trend4h": Trend4h, "whales": WhaleFollow, "whales2": WhaleFollowClone, "copy": CopyTop,
-             "short": ShortFade, "short_break": ShortBreak, "trend4h_15m": Trend4h15, "whales_15m": WhaleFollow15, "copy_15m": CopyTop15}
-SHORT_BOTS = {"short", "short_break"}          # lab only: the real account (and its simulation) never short
-FAST_BOTS = {"trend4h_15m", "whales_15m", "copy_15m"}      # 15-minute twins: quick trades, they decide on 15m candles
+             "short": ShortFade, "short_break": ShortBreak, "short_break_15m": ShortBreak15, "trend4h_15m": Trend4h15, "whales_15m": WhaleFollow15, "copy_15m": CopyTop15}
+SHORT_BOTS = {"short", "short_break", "short_break_15m"}          # lab only: the real account (and its simulation) never short
+FAST_BOTS = {"trend4h_15m", "whales_15m", "copy_15m", "short_break_15m"}      # 15-minute twins: quick trades, they decide on 15m candles
 LAB_ONLY_BOTS = SHORT_BOTS
 
 

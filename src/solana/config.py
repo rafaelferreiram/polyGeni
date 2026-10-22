@@ -121,7 +121,7 @@ HL_LIVE_MARKETS = [m for m in os.getenv("HL_LIVE_MARKETS", HL_BROAD).split(",") 
 # ─── Model arena: one paper bot per LLM, same markets and risk limits, separate portfolios ───
 # "rules" = deterministic baseline bot (no LLM, no API cost) that every model must beat
 # default: free rules bot + the cheap Haiku; add Sonnet/Opus/Fable when capital makes their cost worthwhile
-ARENA_MODELS = [m for m in os.getenv("ARENA_MODELS", "rules,trend,trend4h,whales,copy,whales2,whales_15m,copy_15m,short,short_break").split(",") if m]
+ARENA_MODELS = [m for m in os.getenv("ARENA_MODELS", "rules,trend,trend4h,whales,copy,whales2,whales_15m,copy_15m,short,short_break,short_break_15m").split(",") if m]
 TOP_TRADERS_ENABLED = os.getenv("TOP_TRADERS_ENABLED", "1") == "1"   # follow the top 10 Hyperliquid traders (read-only)
 WHALES_ENABLED = os.getenv("WHALES_ENABLED", "1") == "1"      # live whale-trade feed (WebSocket, read-only)
 WHALE_MIN_USD = float(os.getenv("WHALE_MIN_USD", "25000"))    # whale = ≥ this and ≥ 0.02% of the coin's daily volume
@@ -233,6 +233,10 @@ X_DAILY_BUDGET_USD = _f("X_DAILY_BUDGET_USD", 0.25)
 X_POLL_MIN = _i("X_POLL_MIN", 120)
 X_MAX_RESULTS = _i("X_MAX_RESULTS", 10)
 X_STATE_PATH = os.getenv("X_STATE_PATH", "x_feed.json")
+# small-profit exit ("see a bit of profit and sell"): a position up SCALP_TP_PCT over its cost basis (fees included) is
+# closed at once. 0 disables. Reserves in the lab also skip the BTC-below-average buy filter: they must trade to learn
+# (titulars, and everything on the real account, keep the filter).
+SCALP_TP_PCT = _f("SCALP_TP_PCT", 0.01)
 LIVE_ALLOW_SHORT = os.getenv("LIVE_ALLOW_SHORT", "0") == "1"
 LIVE_SHORT_MAX_OPEN = _i("LIVE_SHORT_MAX_OPEN", 1)
 LIVE_SHORT_MAX_PER_DAY = _i("LIVE_SHORT_MAX_PER_DAY", 3)

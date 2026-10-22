@@ -256,6 +256,8 @@ class PaperEngine:
                 pos = {**pos, "stop_price": new}
             if pos["stop_price"] and price <= pos["stop_price"]:
                 reason = f"stop-loss hit ({price:.6g} <= {pos['stop_price']:.6g})"
+            elif cfg.SCALP_TP_PCT and price >= pos["cost_usd"] / pos["qty"] * (1 + cfg.SCALP_TP_PCT):
+                reason = f"💰 lucro curto: +{cfg.SCALP_TP_PCT:.1%} sobre o custo, já vende"
             elif pos["tp_price"] and price >= pos["tp_price"]:
                 reason = f"take-profit hit ({price:.6g} >= {pos['tp_price']:.6g})"
             elif held_h >= cfg.STALE_EXIT_H and price < pos["cost_usd"] / pos["qty"] * (1 + cfg.STALE_EXIT_PCT):
@@ -552,6 +554,10 @@ class PaperEngine:
         held = {x["mint"] for x in self.ledger.positions()}
         quota = self._quota_levels()
         btc_ok = self._btc_ok()                      # BTC below its 50h average: no new longs (shorts are for that)
+        lab_bot = self.__dict__.get("lab_model")
+        if lab_bot and not btc_ok:                   # a reserve in the lab must trade to learn; only titulars keep the filter
+            from src.solana import arena
+            btc_ok = not arena.is_titular(lab_bot)
         per_bot = {}
         if not self.__dict__.get("lab_model") and cfg.BURST_MAX_ENTRIES:
             since = (datetime.now(timezone.utc) - timedelta(minutes=cfg.BURST_WINDOW_MIN)).isoformat()
