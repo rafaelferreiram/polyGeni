@@ -110,7 +110,7 @@ _candle_lock = threading.Lock()
 
 def candles(coin: str, interval: str = "1h", start_ms: int | None = None, end_ms: int | None = None,
             url: str | None = None) -> list[dict]:
-    # Live use (default window): every engine (real, simulation, lab bots) asks for the same 29 coins each cycle.
+    # Live use (default window): every engine (real, simulation, lab bots) asks for the same 30 coins each cycle.
     # Closed 1h candles only change once an hour, so one fetch per coin per hour is shared by all of them —
     # without this, ~150 heavy candleSnapshot calls per round exceed Hyperliquid's 1200 weight/min and return 429.
     step = INTERVAL_S.get(interval, 3600)

@@ -92,6 +92,8 @@ the others must first show ≥ 10 profitable lab trades.
 - **AI turbo** (`POST /api/paper/arena/boost`, dashboard "🚀 Turbo da IA"): run the AI bot with Sonnet, Opus or
   Fable for N cycles (1 cycle = 5 min), then it returns to Haiku. It re-decides every market of the current candle with
   the stronger model; cost still counts against the bot's reward and the profit-linked AI allowance.
+- **PUMP (pump.fun) added (2026-10-22)**: the 30th coin for the lab and the real account, same rules and limits. It is one
+  of Hyperliquid's most liquid perps ($90M/day, $176M open interest). News mentioning pump.fun are tagged PUMP.
 - **Removed (2026-10-22)**: the original Polymarket bot (`src/bot`, `src/analysis`, `src/feeds`, `src/polymarket`, its
   `/api` routes; the app no longer creates `polygeni.db`), the old Solana/Jupiter paper engine and its ~40 endpoints, the demo, the
   "Como uma decisão é feita" panel and the training-center job and panel (it only fed the retired AI bot; `trainer.py`
