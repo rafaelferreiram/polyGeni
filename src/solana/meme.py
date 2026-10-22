@@ -476,7 +476,7 @@ def _mirror(prices: dict[str, dict]):
     """The real meme account follows the lab (dry run, or the titulars for real)."""
     try:
         from src.solana import meme_wallet
-        meme_wallet.mirror({b: {p["mint"]: p["symbol"] for p in ledger(b).positions()} for b in BOTS},
+        meme_wallet.mirror({b: {p["mint"]: {"symbol": p["symbol"], "opened_at": p["opened_at"]} for p in ledger(b).positions()} for b in BOTS},
                            {b for b in BOTS if is_titular(b)}, {m: q["price"] for m, q in prices.items()})
     except Exception as e:
         logger.warning(f"meme real account: {e}")

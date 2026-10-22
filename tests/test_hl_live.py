@@ -324,3 +324,30 @@ def test_live_snapshot_maps_exchange_state(monkeypatch):
     [p] = d["positions"]
     assert p["mark"] == 100000 and p["upnl"] == 0.1 and p["funding"] == -0.001 and d["upnl"] == 0.1
     assert d["fills"][0]["side"] == "compra" and d["available"] == 30.0 and "@1" not in d["prices"]
+
+
+def test_raised_stop_moves_the_exchange_stop_new_first_then_cancel_old(live):
+    ledger, info, ex, br = live
+    entry = buy(br)
+    meta = json.loads(entry["meta"])
+    pos = ledger.positions_from_fills()["hl:BTC"]
+    n = len(ex.calls)
+    br.move_stop(pos, 80_000.0)
+    new_calls = ex.calls[n:]
+    assert [c[0] for c in new_calls] == ["trigger", "cancel"]                      # placed first, old one cancelled after
+    assert new_calls[0][3] == 80_000.0 and new_calls[0][4] == "sl" and new_calls[0][5] is True and new_calls[1][2] == meta["sl_oid"]
+    new_oid = ledger.get_state(f"sl:{entry['order_id']}")
+    assert new_oid and new_oid != meta["sl_oid"]
+    br.sell("exit-o1", "hl:BTC", "BTC", entry["qty"], strategy="mean_reversion", meta={"reason": "tp"})
+    cancels = {c[2] for c in ex.calls if c[0] == "cancel"}
+    assert new_oid in cancels and meta["tp_oid"] in cancels                        # the exit cancels the MOVED stop, not the first one
+
+
+def test_failed_stop_move_keeps_the_old_exchange_stop(live):
+    ledger, info, ex, br = live
+    entry = buy(br)
+    pos = ledger.positions_from_fills()["hl:BTC"]
+    ex.fail_trigger = True
+    with pytest.raises(RuntimeError, match="trigger rejected"):
+        br.move_stop(pos, 80_000.0)
+    assert not any(c[0] == "cancel" for c in ex.calls) and ledger.get_state(f"sl:{entry['order_id']}") is None

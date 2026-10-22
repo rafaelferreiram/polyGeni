@@ -244,8 +244,15 @@ class PaperEngine:
             reason = None
             if cfg.PROTECT_PROFIT and (new := protected_stop(pos, price)):
                 self.ledger.set_stop(pos["mint"], new)
+                try:
+                    self.executor.move_stop(pos, new)                # the exchange's own stop must follow the ledger's
+                    where = " (na corretora também)" if hasattr(self.executor._b(pos["venue"]), "move_stop") else ""
+                except Exception as e:
+                    where = ""
+                    self.ledger.log_decision("error", cycle=self.cycle, mint=pos["mint"], symbol=pos["symbol"], strategy=pos["strategy"],
+                                             reason=f"stop na corretora NÃO subiu (segue o antigo; o ledger vigia): {e}")
                 self.ledger.log_decision("hold", cycle=self.cycle, mint=pos["mint"], symbol=pos["symbol"],
-                                         strategy=pos["strategy"], reason=f"lucro protegido: stop sobe para {new:.6g}")
+                                         strategy=pos["strategy"], reason=f"lucro protegido: stop sobe para {new:.6g}{where}")
                 pos = {**pos, "stop_price": new}
             if pos["stop_price"] and price <= pos["stop_price"]:
                 reason = f"stop-loss hit ({price:.6g} <= {pos['stop_price']:.6g})"

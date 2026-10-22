@@ -220,9 +220,11 @@ def _execute(led, bot, side, mint, symbol, q, decimals, sol_px, usd=0.0, qty=0.0
     return fill
 
 
-def mirror(holdings: dict[str, dict[str, str]], titulars: set[str], marks: dict[str, float]):
-    """Once per meme round. holdings = {bot: {mint: symbol}} of the lab. Buys what an eligible bot just bought, sells
-    what its bot sold; then the kill switch. Eligible: every meme bot in the dry run, only the titulars for real."""
+def mirror(holdings: dict[str, dict[str, dict]], titulars: set[str], marks: dict[str, float]):
+    """Once per meme round. holdings = {bot: {mint: {"symbol", "opened_at"}}} of the lab. Buys what an eligible bot bought
+    in the last MEME_REAL_MAX_ENTRY_AGE_S seconds, sells what its bot sold; then the kill switch. Eligible: every meme
+    bot in the dry run, only the titulars for real. A lab position older than that is never bought (after a restart or
+    a pause the lab may already be +30% on it: that is chasing, not following)."""
     if not cfg.MEME_REAL_ENABLED or (not dry() and not ledger().get_state("owner")):
         return
     led = ledger()
@@ -236,14 +238,17 @@ def mirror(holdings: dict[str, dict[str, str]], titulars: set[str], marks: dict[
     for bot, mints in holdings.items():
         if not dry() and bot not in titulars:
             continue
-        for mint, sym in mints.items():
+        for mint, h in mints.items():
             key = f"{bot}:{mint}"
-            if key not in seen:                           # only fresh entries: never buy a lab position hours late
+            if key not in seen:
                 seen[key] = now_iso()
-                if led.get_state("primed"):
-                    _safe(buy, bot, mint, sym)
+                age = (datetime.now(timezone.utc) - datetime.fromisoformat(h["opened_at"])).total_seconds()
+                if age <= cfg.MEME_REAL_MAX_ENTRY_AGE_S:
+                    _safe(buy, bot, mint, h["symbol"])
+                else:
+                    led.log_decision("veto", mint=mint, symbol=h["symbol"], strategy=bot,
+                                     reason=f"posição do laboratório com {age / 60:.0f} min: não persigo entrada atrasada")
     led.set_state("seen", {k: v for k, v in seen.items() if k.split(":", 1)[1] in {m for ms in holdings.values() for m in ms}})
-    led.set_state("primed", True)
     eq = equity(led)
     if not led.get_state("halted") and led.contributed() and eq < cfg.MEME_REAL_KILL_PCT * led.contributed():
         led.set_state("halted", True)
@@ -309,8 +314,15 @@ def withdraw() -> str:
     led, owner = ledger(), ledger().get_state("owner")
     if not owner:
         raise ValueError("conecte a Phantom primeiro")
+    failed = []
     for p in led.positions():
-        _safe(sell, p["strategy"], p["mint"], p["symbol"], "saque")
+        try:
+            sell(p["strategy"], p["mint"], p["symbol"], "saque")
+        except Exception as e:
+            failed.append(f"{p['symbol']}: {str(e)[:80]}")
+    if failed:                                            # never say "sacado" while meme tokens are still in the wallet
+        led.log_decision("veto", reason="saque parado: não vendeu " + "; ".join(failed))
+        raise ValueError("saque parado, ainda há meme coins na carteira do bot que não venderam: " + "; ".join(failed))
     lamports = rpc("getBalance", [address()])["value"] - FEE_LAMPORTS
     if lamports <= 0:
         raise ValueError("carteira de memes sem saldo")
