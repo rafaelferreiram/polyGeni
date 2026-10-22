@@ -100,12 +100,13 @@ the others must first show ≥ 10 profitable lab trades.
   later the outcome of a long and a short with the bots' stop (2 ATR) / target (3 ATR) is recorded. Seeded from the
   candle history on first run (~4,800 samples). Lessons (hit rate per situation) are given to the AI bot. Separate from
   the lab, which keeps proving each bot with its real rules.
-- **Shorts, lab only** (`ShortFade`, bot **Estêvão**): sells an overshooting rally (RSI > 70 above the upper band) in a
+- **Shorts, lab only** (`ShortFade`, bot **Gustavo Gómez**, back on the bench at the user's request): sells an overshooting rally (RSI > 70 above the upper band) in a
   downtrend, stop 2 ATR, target 3 ATR, 12h. Paper shorts are held as longs on the mirror price `2*entry - price`
   (exact short P&L, funding sign flipped). Backtest: about break-even (every other short variant lost over 208 days), so
   it is measured live in the lab only; it is excluded from the real/simulation team, can never get a green light, and
-  the live broker refuses any short instrument. Removed from the team at the user's request (enable with `short` in
-  `ARENA_MODELS`).
+  the live broker refuses any short instrument. It trains in the lab with the same 12h cut and analysis; the BTC filter does
+  not block it (weak markets are its job). The real account still refuses shorts: if it proves profitable, short
+  execution on the exchange gets built before it can be promoted.
 - **15-minute bots** (`whales_15m`, `copy_15m`: "Evair/Veiga 15m"): the same rules on 15m candles, positions closed
   within 6h (1h with turbo) — quick trades. They need the same green light as every bot to reach real money, and on the
   real/simulation account they decide on 15m candles too. (Gabriel Jesus 15m was retired; no 15m AI twin: 4x the AI cost.)

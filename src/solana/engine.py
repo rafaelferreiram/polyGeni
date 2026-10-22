@@ -545,8 +545,7 @@ class PaperEngine:
         trainer.set_breadth(breadth)
         held = {x["mint"] for x in self.ledger.positions()}
         quota = self._quota_levels()
-        if not self._btc_ok():                       # BTC below its 50h average: no new buys this cycle
-            ready = []
+        btc_ok = self._btc_ok()                      # BTC below its 50h average: no new longs (shorts are for that)
         per_bot = {}
         for x in self.ledger.positions():
             per_bot[x["strategy"]] = per_bot.get(x["strategy"], 0) + 1
@@ -556,6 +555,8 @@ class PaperEngine:
             if c.mint in held:          # already holding it: its stop/target and exit review handle it — no AI tokens
                 continue
             for strat in self._ordered(c):
+                if not btc_ok and not c.mint.endswith("~short"):
+                    continue
                 if not self.__dict__.get("lab_model") and per_bot.get(strat.name, 0) >= cfg.MAX_POSITIONS_PER_BOT:
                     self._agent(strat.name, last_reason=f"{c.symbol}: já tem {cfg.MAX_POSITIONS_PER_BOT} posições abertas")
                     continue

@@ -384,3 +384,17 @@ def test_bots_talk_in_the_group_chat(tmp_path):
     teamchat.team_lessons([{"tag": "RSI alto", "n": 12, "wins": 2, "pnl": -0.8}])
     teamchat.team_lessons([{"tag": "RSI alto", "n": 12, "wins": 2, "pnl": -0.8}])        # said once
     assert sum(m["kind"] == "network" for m in teamchat.recent()) == 1
+
+
+def test_short_successor_stays_lab_only(tmp_path, monkeypatch):
+    from src.solana import evolution, strategies as st
+    monkeypatch.setattr(evolution, "PATH", str(tmp_path / "lineage.json"))
+    monkeypatch.setattr(st, "RULE_BOTS", dict(st.RULE_BOTS))
+    monkeypatch.setattr(st, "SHORT_BOTS", st.SHORT_BOTS)
+    monkeypatch.setattr(arena, "_bots", {})                    # never load the real lab bots in a test
+    evolution.register({"active": [], "bots": {"short_g2_1": {"label": "Rony", "base": "short", "params": {}}}})
+    try:
+        assert "short_g2_1" in st.SHORT_BOTS and "short_g2_1" in st.LAB_ONLY_BOTS
+        assert not arena.can_promote("short_g2_1")["ok"]
+    finally:
+        st.SHORT_BOTS.discard("short_g2_1")

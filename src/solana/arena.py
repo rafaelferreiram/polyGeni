@@ -307,6 +307,8 @@ def advise(model: str, now: datetime | None = None) -> dict | None:
     else:
         flag, label = "watch", "👀 Em observação"
         reasons.append("poucos trades ou resultado misto — ainda sem conclusão")
+    if model in LAB_ONLY_BOTS:
+        reasons.append("bot de short: a conta real ainda não executa short — se provar lucro, construímos a execução antes de promover")
     if c["ok"] and flag != "promote":
         reasons.append("bate a sua regra (12 vitórias, ≥35%), mas ainda não recomendo: " +
                        ("está no prejuízo" if net <= 0 else f"fator de lucro {pf:.2f} < 1,2" if pf < 1.2 else "menos de 20 trades"))

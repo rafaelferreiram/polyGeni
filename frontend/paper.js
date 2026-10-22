@@ -584,7 +584,7 @@ const MODEL_LOOK = {
   "whales": { label: "Evair", color: "#60a5fa", ico: "🐋", role: "segue as baleias quando compram forte" },
   "whales2": { label: "Dudu", color: "#38bdf8", ico: "🐳", role: "clone do Evair: mesmas regras, segue as baleias" },
   "copy": { label: "Veiga", color: "#f472b6", ico: "👑", role: "copia os 10 melhores traders da Hyperliquid" },
-  "short": { label: "Estêvão", color: "#f87171", ico: "📉", role: "short: lucra quando o preço cai (só laboratório)" },
+  "short": { label: "Gustavo Gómez", color: "#f87171", ico: "📉", role: "zagueiro do short: lucra quando o preço cai (laboratório)" },
   "trend4h_15m": { label: "Gabriel Jesus 15m", color: "#fbbf24", ico: "⏱", role: "trades rápidos: tendências em velas de 15 min" },
   "whales_15m": { label: "Evair 15m", color: "#60a5fa", ico: "⏱", role: "trades rápidos: segue baleias em velas de 15 min" },
   "copy_15m": { label: "Veiga 15m", color: "#f472b6", ico: "⏱", role: "trades rápidos: copia top traders em velas de 15 min" },
