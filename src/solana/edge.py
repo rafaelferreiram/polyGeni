@@ -27,6 +27,8 @@ def estimate(tags: list[str], own: dict, team: dict, avg_win: float, avg_loss: f
         total = _total(rec)
         for t in tags:
             r = rec.get(t)
+            if t.startswith("janela") and (src == "time" or r and r.get("days", 0) < 2):      # a time window only counts from the bot's own multi-day record
+                continue
             if r and r.get("n") and r["n"] <= total / 2:
                 rates.append((r["wins"], r["n"]))
                 used.add(src)

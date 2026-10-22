@@ -178,7 +178,8 @@ def replace(model: str, verdict: dict, trades: list[dict], record: dict, data: d
     seen = learning.summary(record)["seen"] or 1
     # only specific situations: a tag on most of the parent's trades ("alta", its own setup) would mean never trading
     avoid = sorted(set(parent.get("inherited_avoid", [])) | {t for t, r in record.items()
-                   if r["n"] >= 3 and r["n"] <= seen / 2 and r["wins"] / r["n"] < cfg.LEARN_MAX_WIN_RATE and r["pnl"] < 0})
+                   if r["n"] >= 3 and r["n"] <= seen / 2 and r["wins"] / r["n"] < cfg.LEARN_MAX_WIN_RATE and r["pnl"] < 0
+                   and not t.startswith("janela")})
     data["bots"][new] = {"label": label, "base": base, "gen": gen, "parent": model, "parent_label": parent.get("label"),
                          "born_at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "params": params,
                          "why": why, "inherited_avoid": avoid}
