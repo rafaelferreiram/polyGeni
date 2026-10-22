@@ -35,6 +35,7 @@ def local_only(request: Request, x_paper_token: str | None = Header(default=None
 
 
 LOCAL = [Depends(local_only)]
+LOOPBACK = [Depends(_require_loopback)]          # read-only helpers the page calls with GET (no token: only POST needs it)
 
 
 @router.get("/token")
@@ -762,7 +763,7 @@ def meme_wallet_status():
     return meme_wallet.status()
 
 
-@router.get("/meme/wallet/blockhash", dependencies=LOCAL)
+@router.get("/meme/wallet/blockhash", dependencies=LOOPBACK)
 def meme_wallet_blockhash():
     from src.solana import meme_wallet
     return {"blockhash": meme_wallet.latest_blockhash(), "to": meme_wallet.address()}
@@ -773,7 +774,7 @@ class MemeOwner(BaseModel):
     signature: str          # base64 of Phantom's signature over meme_wallet.owner_message(address)
 
 
-@router.get("/meme/wallet/owner-message", dependencies=LOCAL)
+@router.get("/meme/wallet/owner-message", dependencies=LOOPBACK)
 def meme_owner_message(address: str):
     from src.solana import meme_wallet
     return {"message": meme_wallet.owner_message(address)}

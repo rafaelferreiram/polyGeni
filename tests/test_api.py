@@ -110,3 +110,18 @@ def test_dashboard_script_does_not_redeclare_globals_that_wallet_extensions_defi
     taken = {"phantom", "solana", "ethereum", "solflare", "backpack", "coinbaseSolana", "okxwallet", "trustwallet", "web3", "keplr"}
     declared = set(re.findall(r"^(?:const|let|var|class|function)\s+([A-Za-z_$][\w$]*)", src, re.M))
     assert not declared & taken, f"global name collides with a wallet extension: {declared & taken}"
+
+
+def test_phantom_connect_helpers_are_get_without_token_but_loopback_only(client, local, monkeypatch, tmp_path):
+    """The page calls these two with GET (it only sends the anti-CSRF token on POST): they must not ask for it,
+    yet still refuse anything that is not this machine."""
+    from src.solana import meme_wallet as mw
+    monkeypatch.setattr(mw.cfg, "MEME_WALLET_PATH", str(tmp_path / "w.json"))
+    monkeypatch.setattr(mw, "_kp", None)
+    monkeypatch.setattr(mw, "latest_blockhash", lambda: "HASH")
+    r = client.get("/api/paper/meme/wallet/owner-message", params={"address": "ABC"})          # no token header
+    assert r.status_code == 200 and "ABC" in r.json()["message"] and mw.address() in r.json()["message"]
+    assert client.get("/api/paper/meme/wallet/blockhash").json() == {"blockhash": "HASH", "to": mw.address()}
+    monkeypatch.setattr(pr, "LOCAL_CLIENTS", {"127.0.0.1"})                                      # not loopback any more
+    assert client.get("/api/paper/meme/wallet/blockhash").status_code == 403
+    assert client.post("/api/paper/meme/wallet/withdraw").status_code == 403                    # POSTs still need the token too
