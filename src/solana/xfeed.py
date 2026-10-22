@@ -88,8 +88,8 @@ def poll(now: float | None = None) -> dict:
             return {"ok": False, "skipped": "consulta trocada para palavras; tenta na próxima"}
         if r.status_code != 200:
             st["error"] = f"HTTP {r.status_code}: {r.text[:120]}"
-            if r.status_code in (402, 403, 429):
-                st["blocked_until"] = now + 6 * 3600
+            if r.status_code in (402, 403, 429):                        # no credits: look again soon (the owner may be topping up)
+                st["blocked_until"] = now + (1800 if r.status_code == 402 else 6 * 3600)
             _save(st)
             return {"ok": False, "error": st["error"]}
         data = r.json().get("data") or []

@@ -68,5 +68,7 @@ def test_errors_back_off_instead_of_hammering_and_cashtag_rejection_falls_back_t
     assert "palavras" in xfeed.poll(now=1_000_000)["skipped"] and xfeed.status()["query"] == "palavras"
     x.reply = Resp(402, text="payment required")
     assert "402" in xfeed.poll(now=1_000_000 + 4000)["error"]
-    assert "pausado" in xfeed.poll(now=1_000_000 + 8000)["skipped"] and len(x.calls) == 2           # blocked 6h after a payment/limit error
-    assert xfeed.status()["spent_usd"] == 0
+    assert "pausado" in xfeed.poll(now=1_000_000 + 4000 + 600)["skipped"] and len(x.calls) == 2    # paused after a payment error...
+    x.reply = Resp(data=_posts(2))
+    assert xfeed.poll(now=1_000_000 + 4000 + 1900 + 7200)["ok"]                                    # ...and back 30 min later, once credits are added
+    assert xfeed.status()["spent_usd"] == 0.01
