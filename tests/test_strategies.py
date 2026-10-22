@@ -95,3 +95,15 @@ def test_atr_stop_adapts_within_half_and_one_and_a_half_times_the_strategy_stop(
     calm, mid, wild = [bar(0.1)] * 30, [bar(2)] * 30, [bar(5)] * 30     # ATR 0.2 / 4 / 10 -> 1.5 ATR = 0.3% / 6% / 15%
     assert [round(atr_stop(c, 0.05), 6) for c in (calm, mid, wild)] == [0.025, 0.06, 0.075]
     assert atr_stop(mid[:10], 0.05) == 0.05                              # too few candles: the strategy's stop
+
+
+def test_short_break_sells_a_breakdown_in_a_downtrend_and_ignores_uptrends_and_flat_markets():
+    from src.solana.strategies import SHORT_BOTS, ShortBreak
+    assert "short_break" in SHORT_BOTS                                      # lab only: the real account never shorts
+    down = [dict(t=i, open=100 - 0.25 * i, high=100 - 0.25 * i + 0.6, low=100 - 0.25 * i - 0.6, close=100 - 0.25 * i + (0.3 if i % 2 else -0.3), volume=100) for i in range(70)]
+    px = down[-1]["close"] - 1.5                                             # closes under the lowest low of the last 20 bars
+    down.append(dict(t=71, open=down[-1]["close"], high=down[-1]["close"], low=px - 0.2, close=px, volume=300))
+    sig = ShortBreak().signal(down)
+    assert sig and sig.indicators["side"] == "short" and sig.stop_price < sig.ref_price < sig.tp_price      # mirror convention, like ShortFade
+    up = [dict(c, close=200 - c["close"], low=200 - c["high"], high=200 - c["low"], open=200 - c["open"]) for c in down]
+    assert ShortBreak().signal(up) is None and ShortBreak().signal(flat_candles(80)) is None

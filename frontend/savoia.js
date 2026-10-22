@@ -247,7 +247,7 @@ async function refresh() {
 
 // ─── open positions: how each trade is doing between its stop and its target ───
 const fmtPx = (v) => (v == null ? "–" : `$${Number(v) >= 100 ? Number(v).toFixed(2) : Number(v).toPrecision(4)}`);
-const STRAT_MODEL = { trend: "trend", trend4h: "trend4h", whales: "whales", copy: "copy", short: "short", rules: "rules", mean_reversion_atr: "rules",
+const STRAT_MODEL = { trend: "trend", trend4h: "trend4h", whales: "whales", copy: "copy", short: "short", short_break: "short_break", rules: "rules", mean_reversion_atr: "rules",
   trend4h_15m: "trend4h_15m", whales_15m: "whales_15m", copy_15m: "copy_15m" };
 const botName = (s) => (s === "manual" ? "Manual" : look(s?.startsWith("llm:") ? s.slice(4) : STRAT_MODEL[s] || "rules").label);
 function renderPositions(a) {
@@ -475,6 +475,7 @@ const MODEL_LOOK = {
   "meme_whale": { label: "Rony", color: "#22d3ee", ico: "🦈", role: "trincheira: segue as baleias das meme coins" },
   "whales2": { label: "Dudu", color: "#38bdf8", ico: "🐳", role: "clone do Evair: mesmas regras, segue as baleias" },
   "copy": { label: "Veiga", color: "#f472b6", ico: "👑", role: "copia os 10 melhores traders da Hyperliquid" },
+  "short_break": { label: "Edmundo", color: "#fb7185", ico: "📉", role: "short de rompimento: lucra quando o preço perde a mínima (laboratório)" },
   "short": { label: "Gustavo Gómez", color: "#f87171", ico: "📉", role: "zagueiro do short: lucra quando o preço cai (laboratório)" },
   "trend4h_15m": { label: "Gabriel Jesus 15m", color: "#fbbf24", ico: "⏱", role: "trades rápidos: tendências em velas de 15 min" },
   "whales_15m": { label: "Evair 15m", color: "#60a5fa", ico: "⏱", role: "trades rápidos: segue baleias em velas de 15 min" },
@@ -487,7 +488,7 @@ const MODEL_LOOK = {
 };
 const ACTION_PT = { BUY: "🟢 comprar", HOLD: "⏸ esperar", SELL: "🔵 vender", sleep: "😴 dormindo", wake: "⏰ acordou",
                     entry: "🟢 comprou", exit: "🔵 vendeu", veto: "🟡 bloqueado" };
-const FREE = new Set(["rules", "trend", "trend4h", "whales", "copy", "short", "trend4h_15m", "whales_15m", "copy_15m"]);   // deterministic bots: no AI cost
+const FREE = new Set(["rules", "trend", "trend4h", "whales", "copy", "short", "short_break", "trend4h_15m", "whales_15m", "copy_15m"]);   // deterministic bots: no AI cost
 const look = (m) => {
   let lin = null;
   try { lin = lastArena?.leaderboard?.find((r) => r.model === m)?.lineage; } catch (e) { /* arena not loaded yet */ }

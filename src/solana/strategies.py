@@ -363,6 +363,30 @@ class ShortFade:
                       {"rsi": r, "atr": a, "upper_band": upper, "side": "short"})
 
 
+class ShortBreak:
+    """Lab-only short #2, for falling markets (the long bots sit out when BTC is under its 50h average and ShortFade
+    needs a 70+ RSI rally, so on 2026-10-22 nothing traded for 12 hours): below the 50-bar EMA and closing under the
+    lowest low of the last 20 bars while RSI is still 25-45 (not oversold yet). Quick: stop 1.5 ATR, target 2.5 ATR,
+    held at most 2h. Paper money only, so it is measured live before it could ever touch the real account (which
+    never shorts)."""
+    name = "short_break"
+    capital_pct = 1.0
+    max_hold_h = 2
+
+    def signal(self, candles: list[dict]) -> Signal | None:
+        closes = [c["close"] for c in candles]
+        if len(closes) < 60:
+            return None
+        relax = getattr(self, "relax", 0)
+        r = rsi(closes)
+        if not (closes[-1] < ema(closes[-150:], 50) and closes[-1] < min(c["low"] for c in candles[-21:-1]) and 25 - 5 * relax <= r <= 45 + 5 * relax):
+            return None
+        stop, tp, a = _atr_stops(candles, 1.5, 2.5)
+        # same mirror convention as ShortFade: the engine holds a short as a long on the mirror price
+        return Signal(self.name, closes[-1], stop, tp, f"short: rompeu a mínima das últimas 20 barras numa baixa (RSI {r:.0f})",
+                      {"rsi": r, "atr": a, "side": "short"})
+
+
 def fast(cls, label: str, hold_h: float = 6):
     """A 15-minute twin of a rule bot for the lab: same rules counted in 15m bars (so EMAs, breakouts and ATR stops
     are 4x shorter), positions closed within hold_h. Same green light as every bot to reach real money."""
@@ -380,8 +404,8 @@ CopyTop15 = fast(CopyTop, "copy_15m")
 
 # deterministic bots (no LLM, no API cost): model name -> strategy
 RULE_BOTS = {"rules": MeanReversionATR, "trend": TrendStrong, "trend4h": Trend4h, "whales": WhaleFollow, "whales2": WhaleFollowClone, "copy": CopyTop,
-             "short": ShortFade, "trend4h_15m": Trend4h15, "whales_15m": WhaleFollow15, "copy_15m": CopyTop15}
-SHORT_BOTS = {"short"}          # lab only: the real account (and its simulation) never short
+             "short": ShortFade, "short_break": ShortBreak, "trend4h_15m": Trend4h15, "whales_15m": WhaleFollow15, "copy_15m": CopyTop15}
+SHORT_BOTS = {"short", "short_break"}          # lab only: the real account (and its simulation) never short
 FAST_BOTS = {"trend4h_15m", "whales_15m", "copy_15m"}      # 15-minute twins: quick trades, they decide on 15m candles
 LAB_ONLY_BOTS = SHORT_BOTS
 
