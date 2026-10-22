@@ -114,12 +114,15 @@ def test_real_meme_account_dry_run_limits(tmp_path, monkeypatch):
     monkeypatch.setattr(mw, "swap_tx", lambda q: b"tx")
     monkeypatch.setattr(mw, "simulate", lambda tx: None)
     monkeypatch.setattr(mw, "send", lambda tx: (_ for _ in ()).throw(AssertionError("dry run must not send")))
-    mw.mirror({"meme_grad": {}}, set(), {})                       # first round only primes: no late buys of old positions
-    mw.mirror({"meme_grad": {"A": "AAA", "B": "BBB", "C": "CCC"}}, set(), {})
+    fresh = lambda sym: {"symbol": sym, "opened_at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+    old = {"symbol": "OLD", "opened_at": (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(timespec="seconds")}
+    mw.mirror({"meme_grad": {"OLD": old}}, set(), {})                                    # a lab position from before a restart: never chased
+    assert mw.ledger().positions() == [] and any("atrasada" in d["reason"] for d in mw.ledger().decisions(5, kind="veto"))
+    mw.mirror({"meme_grad": {"OLD": old, "A": fresh("AAA"), "B": fresh("BBB"), "C": fresh("CCC")}}, set(), {})
     led = mw.ledger()
     assert {p["mint"] for p in led.positions()} == {"A", "B"}      # 2 positions max
     assert any("2 posições" in d["reason"] for d in led.decisions(20, kind="veto"))
-    mw.mirror({"meme_grad": {"B": "BBB"}}, set(), {})               # the lab sold A: the real account sells A
+    mw.mirror({"meme_grad": {"B": fresh("BBB")}}, set(), {})        # the lab sold A: the real account sells A
     assert {p["mint"] for p in led.positions()} == {"B"} and len(led.closed_trades()) == 1
     monkeypatch.setattr(mw, "quote", lambda i, o, a: {"outAmount": "0", "priceImpactPct": "0.05", "routePlan": []})
     assert mw.buy("meme_grad", "Z", "ZZZ") is None                 # 5% price impact: no
@@ -228,3 +231,21 @@ def test_time_window_is_a_learned_situation_and_older_trades_get_theirs_from_ent
                              qty=1, decimals=0, usd_gross=9, fee_usd=0, price=9, quote_price=9, stop_price=None, tp_price=None))
     rec = learning.record(led, "s")
     assert rec["janela 16-20h UTC"] == {"n": 6, "wins": 0, "pnl": -6.0}
+
+
+def test_withdraw_refuses_to_send_the_sol_while_a_meme_token_could_not_be_sold(tmp_path, monkeypatch):
+    from src.solana import meme_wallet as mw
+    monkeypatch.setattr(mw.cfg, "MEME_WALLET_PATH", str(tmp_path / "w.json"))
+    monkeypatch.setattr(mw.cfg, "MEME_REAL_DB_PATH", str(tmp_path / "real.db"))
+    monkeypatch.setattr(mw, "_kp", None)
+    monkeypatch.setattr(mw, "_led", None)
+    led = mw.ledger()
+    led.set_state("owner", "OwnerPubkey")
+    led.append_fill(dict(order_id="b1", ts=datetime.now(timezone.utc).isoformat(timespec="seconds"), venue="solana", side="buy", mint="A", symbol="AAA",
+                         strategy="meme_grad", qty=100, decimals=6, usd_gross=5, fee_usd=0, price=0.05, quote_price=0.05, stop_price=None, tp_price=None))
+    led.upsert_position({**led.positions_from_fills()["A"], "mark_price": None, "mark_value": None})
+    monkeypatch.setattr(mw, "sell", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("no route")))
+    monkeypatch.setattr(mw, "send", lambda tx: (_ for _ in ()).throw(AssertionError("the SOL must not be sent")))
+    import pytest
+    with pytest.raises(ValueError, match="AAA: no route"):
+        mw.withdraw()

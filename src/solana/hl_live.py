@@ -244,16 +244,37 @@ class HyperliquidLiveBroker(Broker):
         ))
         return fill
 
+    def _stop_oid(self, entry_order_id: str, meta: dict):
+        """The stop resting on the exchange for this entry: the latest one moved by move_stop, else the one placed at buy."""
+        return self.ledger.get_state(f"sl:{entry_order_id}") or meta.get("sl_oid")
+
+    def move_stop(self, pos: dict, new_stop: float):
+        """The ledger raised the stop (quick win, trailing): move the exchange's reduce-only stop too. Without this the
+        exchange keeps the original stop and a gain the bot 'locked' can still turn into a loss between two cycles.
+        The new stop is placed BEFORE the old one is cancelled, so the position is never unprotected."""
+        entry_id, coin = pos["entry_order_id"], hl.coin_of(pos["mint"])
+        ex, _ = self._connect()
+        meta = json.loads((self.ledger.get_fill(entry_id) or {}).get("meta") or "{}")
+        old = self._stop_oid(entry_id, meta)
+        trig = _round_px(new_stop, self._sz_decimals(coin))
+        resp = ex.order(coin, False, pos["qty"], trig, {"trigger": {"triggerPx": trig, "isMarket": True, "tpsl": "sl"}}, reduce_only=True)
+        self.ledger.set_state(f"sl:{entry_id}", _resting_oid(resp))
+        if old:
+            try:
+                ex.cancel(coin, old)
+            except Exception as e:                           # already triggered/cancelled is fine
+                logger.info(f"cancel old stop {old}: {e}")
+
     def _cancel_protection(self, coin: str, entry_order_id: str):
         ex, _ = self._connect()
         entry = self.ledger.get_fill(entry_order_id) or {}
         m = json.loads(entry.get("meta") or "{}")
-        for k in ("sl_oid", "tp_oid"):
-            if m.get(k):
+        for k, oid in (("sl_oid", self._stop_oid(entry_order_id, m)), ("tp_oid", m.get("tp_oid"))):
+            if oid:
                 try:
-                    ex.cancel(coin, m[k])
+                    ex.cancel(coin, oid)
                 except Exception as e:                       # already triggered/cancelled is fine
-                    logger.info(f"cancel {k} {m[k]}: {e}")
+                    logger.info(f"cancel {k} {oid}: {e}")
 
     def sell(self, order_id, instrument, symbol, qty, decimals=0, *, strategy, meta=None):
         if (existing := self.ledger.get_fill(order_id)):

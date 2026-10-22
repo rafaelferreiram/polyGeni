@@ -343,6 +343,11 @@ class ExecutorAgent:
     def mark(self, pos: dict) -> float:
         return self._b(pos["venue"]).quote_sell_value(pos["mint"], pos["qty"], pos["decimals"])[0]
 
+    def move_stop(self, pos: dict, new_stop: float):
+        """Venues with a resting exchange stop (the live broker) move it; paper brokers have nothing to move."""
+        if move := getattr(self._b(pos["venue"]), "move_stop", None):
+            move(pos, new_stop)
+
     def accrue(self, positions: list[dict]) -> float:
         return sum(b.accrue(positions) for b in self._brokers.values())
 
