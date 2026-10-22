@@ -735,6 +735,71 @@ def meme_board():
     return meme.board()
 
 
+@router.post("/meme/promote", dependencies=LOCAL)
+def meme_promote(req: Promote):
+    """A meme bot joins the meme team's titulars (12+ lab wins, ≥ 35%): it trades the real meme account."""
+    from src.solana import meme
+    try:
+        return meme.promote(req.bot)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.get("/meme/wallet")
+def meme_wallet_status():
+    """The real meme account: bot wallet, owner's Phantom, mode (dry run / real), limits, positions and log."""
+    from src.solana import meme_wallet
+    return meme_wallet.status()
+
+
+@router.get("/meme/wallet/blockhash", dependencies=LOCAL)
+def meme_wallet_blockhash():
+    from src.solana import meme_wallet
+    return {"blockhash": meme_wallet.latest_blockhash(), "to": meme_wallet.address()}
+
+
+class MemeOwner(BaseModel):
+    address: str
+    signature: str          # base64 of Phantom's signature over meme_wallet.owner_message(address)
+
+
+@router.get("/meme/wallet/owner-message", dependencies=LOCAL)
+def meme_owner_message(address: str):
+    from src.solana import meme_wallet
+    return {"message": meme_wallet.owner_message(address)}
+
+
+@router.post("/meme/wallet/owner", dependencies=LOCAL)
+def meme_set_owner(req: MemeOwner):
+    from src.solana import meme_wallet
+    try:
+        return {"owner": meme_wallet.set_owner(req.address, req.signature)}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+class MemeDeposit(BaseModel):
+    signature: str
+
+
+@router.post("/meme/wallet/deposit", dependencies=LOCAL)
+def meme_deposit(req: MemeDeposit):
+    from src.solana import meme_wallet
+    try:
+        return {"usd": meme_wallet.record_deposit(req.signature)}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.post("/meme/wallet/withdraw", dependencies=LOCAL)
+def meme_withdraw():
+    from src.solana import meme_wallet
+    try:
+        return {"signature": meme_wallet.withdraw()}
+    except (ValueError, RuntimeError) as e:
+        raise HTTPException(400, str(e))
+
+
 @router.get("/team/chat")
 def team_chat(limit: int = 80, since: int = 0):
     """The bots' group chat: what they did, passed to each other and learned (newest last)."""

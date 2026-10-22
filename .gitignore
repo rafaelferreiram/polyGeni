@@ -17,3 +17,6 @@ build/
 .tunnel_synced
 lineage.json
 lineage.json.tmp
+meme_lineage.json
+meme_lineage.json.tmp
+meme_wallet.json

@@ -169,6 +169,27 @@ MEME_TP_PCT = _f("MEME_TP_PCT", 0.40)
 MEME_MAX_HOLD_H = _f("MEME_MAX_HOLD_H", 4)
 MEME_WHALE_TOKENS = _i("MEME_WHALE_TOKENS", 12)       # tokens whose big trades are watched (GeckoTerminal)
 MEME_WHALE_PER_ROUND = _i("MEME_WHALE_PER_ROUND", 4)  # of those, how many are re-read each round (rate limit)
+# reserves (lab, fake money) train aggressively to learn faster: crypto reserves use the loosest entry level (the one a
+# titular only gets when behind its daily quota); meme reserves get wider signal windows and more open positions.
+RESERVE_RELAX = _i("RESERVE_RELAX", 2)
+MEME_RESERVE_MAX_POSITIONS = _i("MEME_RESERVE_MAX_POSITIONS", 6)
+MEME_LINEAGE_PATH =os.getenv("MEME_LINEAGE_PATH", "meme_lineage.json")   # the meme team's roster and its retired bots
+# real meme account (meme_wallet.py): the bot wallet on Solana, separate from Hyperliquid. "ensaio" = dry run (quotes and
+# transactions simulated, nothing sent); "real" sends — only for the meme titulars, and only with the owner's Phantom set.
+MEME_REAL_ENABLED = os.getenv("MEME_REAL_ENABLED", "1") == "1"
+MEME_REAL_MODE = os.getenv("MEME_REAL_MODE", "ensaio")
+# bot wallet key, mode 0600, outside the repo: a worktree cleanup must never take the key (and the money) with it
+MEME_WALLET_PATH = os.getenv("MEME_WALLET_PATH", os.path.expanduser("~/.kairos/meme_wallet.json"))
+MEME_REAL_DB_PATH = os.getenv("MEME_REAL_DB_PATH", "meme_real.db")
+MEME_REAL_DRY_CAPITAL_USD = _f("MEME_REAL_DRY_CAPITAL_USD", 25.0)
+MEME_REAL_TRADE_USD = _f("MEME_REAL_TRADE_USD", 5.0)
+MEME_REAL_MAX_POSITIONS = _i("MEME_REAL_MAX_POSITIONS", 2)
+MEME_REAL_MAX_BUYS_DAY = _i("MEME_REAL_MAX_BUYS_DAY", 6)
+MEME_REAL_DAILY_LOSS_USD = _f("MEME_REAL_DAILY_LOSS_USD", 5.0)
+MEME_REAL_MAX_IMPACT_PCT = _f("MEME_REAL_MAX_IMPACT_PCT", 2.0)
+MEME_REAL_SLIPPAGE_BPS = _i("MEME_REAL_SLIPPAGE_BPS", 300)
+MEME_REAL_KILL_PCT = _f("MEME_REAL_KILL_PCT", 0.6)                 # equity below 60% of deposits: sell all and halt
+MEME_REAL_MAX_PRIORITY_LAMPORTS = _i("MEME_REAL_MAX_PRIORITY_LAMPORTS", 200_000)   # ≤ 0.0002 SOL priority fee
 # margin of error before a buy (edge.py): skip only when confident (this much evidence) that even the optimistic odds lose
 EDGE_CHECK = os.getenv("EDGE_CHECK", "1") == "1"
 EDGE_MIN_EVIDENCE = _i("EDGE_MIN_EVIDENCE", 30)

@@ -94,6 +94,9 @@ def name(model: str) -> str:
         lab = evolution.load()["bots"].get(model)
         if lab:
             return lab["label"]
+        from src.solana import meme
+        if model in meme.BOTS or any(r["model"] == model for r in meme.ROSTER["retired"]):
+            return (meme.BOTS.get(model) or next(r for r in meme.ROSTER["retired"] if r["model"] == model))["name"]
     except Exception:
         pass
     return NAMES.get(model, model)

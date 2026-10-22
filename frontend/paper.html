@@ -383,6 +383,8 @@
     .tb { cursor: pointer; }
     .mode { font-size: 10.5px; font-weight: 700; padding: 2px 6px; border-radius: 6px; margin-left: 4px; white-space: nowrap; }
     .mode.fake { background: rgba(251,191,36,.14); color: #fbbf24; } .mode.real { background: rgba(52,211,153,.16); color: var(--green); }
+    .meme-real { margin-bottom: 12px; border-color: rgba(52,211,153,.35); } .meme-real .t { display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; align-items: center; }
+    .meme-real .note { margin: 10px 0 0; } .meme-real code { font-size: 12px; } .meme-real details { margin-top: 8px; font-size: 12px; }
     .meme-bots { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
     .meme-bot { background: var(--surface-2); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; min-width: 0; }
     .meme-bot .top { display: flex; gap: 12px; align-items: center; } .meme-bot .top .bot2 { width: 44px; height: 44px; flex: none; }
@@ -656,7 +658,8 @@
     </section>
     <h3 class="band" id="g-meme">Meme coins</h3>
     <section class="panel" id="trincheira">
-      <h2><span>🐸 Trincheira — bots de meme coins <span class="tag">todos no banco de reservas · laboratório · dinheiro falso ($100 cada)</span></span><span class="note" id="meme-head"></span></h2>
+      <h2><span>🐸 Trincheira — bots de meme coins <span class="tag">time separado do de cripto · reservas no laboratório ($100 de mentira) · titulares na conta real de memes</span></span><span class="note" id="meme-head"></span></h2>
+      <div class="meme-bot meme-real" id="meme-real"></div>
       <div class="meme-bots" id="meme-bots"></div>
       <h4 class="meme-h">No radar agora <span class="muted" id="meme-radar-note"></span></h4>
       <p class="note" id="meme-whales" style="margin:0 0 8px"></p>
@@ -738,6 +741,6 @@
 
   <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <script src="https://unpkg.com/qrcode-generator@1.4.4/qrcode.js"></script>
-  <script src="/static/paper.js?v=112"></script>
+  <script src="/static/paper.js?v=113"></script>
 </body>
 </html>

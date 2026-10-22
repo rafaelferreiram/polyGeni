@@ -15,18 +15,22 @@ The trench: lab bots dedicated to Solana meme coins (paper money, real prices). 
       bot keeps losing in is skipped, and the margin of error (edge.py) skips situations clearly worse than its usual.
   exits: stop −18%, target +40%, the stop rises with the gain (+20% locks +8%, +30% locks 60% of the gain), out after
       MEME_MAX_HOLD_H, and out at once if liquidity collapses (rug alarm).
-Fills: $10 per trade at the DexScreener price, plus 0.5% fees per side and price impact against the pool's liquidity.
-Never real money: there is no wallet and no swap here.
+  team: separate from the crypto team, with its own titulars (promoted at 12 wins and ≥ 35%), who trade the real meme
+      account (meme_wallet.py) at the same time the crypto titulars trade Hyperliquid.
+  evolution: the goal is money. Every EVOLVE_PERIOD_H of a reserve's life, a period with no profit (or no trade) retires
+      it; a successor of the same family is born with exits tuned to how the parent lost and its losing situations to
+      avoid, named after a Libertadores champion. Titulars are not judged. Roster in MEME_LINEAGE_PATH.
+Lab fills: $10 per trade at the DexScreener price, plus 0.5% fees per side and price impact against the pool's liquidity.
 """
+import json
 import logging
-
-from src.solana import teamchat
+import os
 import threading
 import time
 from datetime import datetime, timedelta, timezone
 
 from src.solana import config as cfg
-from src.solana import edge, learning
+from src.solana import edge, learning, teamchat
 from src.solana.ledger import Ledger, now_iso
 from src.solana.market_data import request_json
 
@@ -36,11 +40,38 @@ DEX = "https://api.dexscreener.com"
 FEE = 0.005                     # per side: swap fee + priority fee, as a fraction of the trade
 SKIP = {"SOL", "USDC", "USDT", "WSOL", "JUP", "PUMP"}          # majors and PUMP itself (traded on Hyperliquid)
 
-BOTS = {
+FOUNDERS = {
     "meme_grad": {"name": "Breno Lopes", "role": "formatura: tokens que acabaram de se formar na pump.fun"},
     "meme_momo": {"name": "Deyverson", "role": "momentum de meme: sobe com mais compradores e volume real"},
     "meme_whale": {"name": "Rony", "role": "segue as baleias das meme coins: compra pesada de várias carteiras grandes"},
 }
+
+
+def _load_roster() -> dict:
+    try:
+        with open(cfg.MEME_LINEAGE_PATH) as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {"active": {m: {**v, "base": m, "gen": 1, "params": {}} for m, v in FOUNDERS.items()}, "retired": []}
+
+
+def _save_roster():
+    tmp = cfg.MEME_LINEAGE_PATH + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(ROSTER, f, indent=1, ensure_ascii=False)
+    os.replace(tmp, cfg.MEME_LINEAGE_PATH)
+
+
+ROSTER = _load_roster()
+BOTS = ROSTER["active"]                 # model -> {name, role, base (family), gen, params, parent, inherited_avoid}
+
+
+def fam(bot: str) -> str:
+    return BOTS.get(bot, {}).get("base", bot)
+
+
+def param(bot: str, key: str, default: float) -> float:
+    return BOTS.get(bot, {}).get("params", {}).get(key, default)
 GECKO = "https://api.geckoterminal.com/api/v2/networks/solana/pools"
 WHALE_MIN_USD = 1000
 _flows: dict[str, dict] = {}
@@ -122,16 +153,21 @@ def signal(bot: str, t: dict) -> str | None:
     ch1, ch5 = s1.get("priceChange") or 0, s5.get("priceChange") or 0
     buyers = (s1.get("numBuys") or 0) > 1.2 * (s1.get("numSells") or 0) and (s1.get("numNetBuyers") or 0) > 0
     organic = (s1.get("buyOrganicVolume") or 0) >= 8_000
+    agg = 0 if is_titular(bot) else 1               # reserves train aggressively: wider windows (titulars stay strict)
+    bot = fam(bot)
+    if agg:
+        buyers = (s1.get("numBuys") or 0) > (s1.get("numSells") or 0)
+        organic = (s1.get("buyOrganicVolume") or 0) >= 4_000
     if bot == "meme_grad":
         grad = _age_h(t.get("graduatedAt"))
-        if grad is not None and grad <= 6 and -15 <= ch1 <= 120 and ch5 > -5 and buyers:
+        if grad is not None and grad <= 6 + 6 * agg and -15 - 10 * agg <= ch1 <= 120 + 80 * agg and ch5 > -5 - 3 * agg and buyers:
             return f"formou na pump.fun há {grad:.1f}h, {ch1:+.0f}% em 1h, mais compradores que vendedores"
     w = t.get("whale") or {}
     if bot == "meme_momo":
-        if 5 <= ch1 <= 150 and 0 < ch5 <= 25 and buyers and organic and w.get("net_1h", 0) >= 0:
+        if 5 - 3 * agg <= ch1 <= 150 + 50 * agg and 0 < ch5 <= 25 + 10 * agg and buyers and organic and w.get("net_1h", 0) >= 0:
             return f"{ch1:+.0f}% em 1h e {ch5:+.1f}% em 5 min, compra orgânica ${s1.get('buyOrganicVolume', 0):,.0f}/h"
     if bot == "meme_whale":
-        need = max(3000, 0.03 * (t.get("liquidity") or 0))
+        need = max(3000 - 1500 * agg, (0.03 - 0.015 * agg) * (t.get("liquidity") or 0))
         if w.get("net_1h", 0) >= need and w.get("buyers", 0) >= 2 and -10 <= ch1 <= 150 and ch5 > -5:
             return f"baleias compraram ${w['net_1h']:,.0f} líquidos em 1h ({w['buyers']} carteiras grandes)"
     return None
@@ -248,7 +284,7 @@ def manage(bot: str, prices: dict[str, dict]):
         led.set_mark(p["mint"], px, px * p["qty"])
         meta = led.get_state(f"pos:{p['mint']}") or {}
         peak, liq0 = max(meta.get("peak", entry), px), meta.get("liq0", q["liq"])
-        stop = entry * (1 - cfg.MEME_STOP_PCT)
+        stop = entry * (1 - param(bot, "stop_pct", cfg.MEME_STOP_PCT))
         gain = peak / entry - 1
         if gain >= 0.30:
             stop = max(stop, entry * (1 + 0.6 * gain))
@@ -256,9 +292,9 @@ def manage(bot: str, prices: dict[str, dict]):
             stop = max(stop, entry * 1.08)
         held_h = (datetime.now(timezone.utc) - datetime.fromisoformat(p["opened_at"])).total_seconds() / 3600
         reason = ("🚨 liquidez desabou (possível rug)" if q["liq"] < 0.6 * liq0 else
-                  "🎯 alvo" if px >= entry * (1 + cfg.MEME_TP_PCT) else
+                  "🎯 alvo" if px >= entry * (1 + param(bot, "tp_pct", cfg.MEME_TP_PCT)) else
                   "🛑 stop" if px <= stop else
-                  "⏱ tempo máximo" if held_h >= cfg.MEME_MAX_HOLD_H else None)
+                  "⏱ tempo máximo" if held_h >= param(bot, "max_hold_h", cfg.MEME_MAX_HOLD_H) else None)
         led.set_state(f"pos:{p['mint']}", {"peak": peak, "liq0": liq0})
         if not reason:
             continue
@@ -277,7 +313,7 @@ def enter(bot: str, cands: list[dict], prices: dict[str, dict]):
     recent = {d["mint"] for d in led.decisions(200, kind="exit")
               if d["ts"] >= (datetime.now(timezone.utc) - timedelta(hours=6)).isoformat()}
     for t in cands:
-        if len(held) >= cfg.MEME_MAX_POSITIONS or led.cash() < cfg.MEME_TRADE_USD:
+        if len(held) >= (cfg.MEME_MAX_POSITIONS if is_titular(bot) else cfg.MEME_RESERVE_MAX_POSITIONS) or led.cash() < cfg.MEME_TRADE_USD:
             return
         mint = t["id"]
         if mint in held or mint in recent or mint not in prices:
@@ -285,9 +321,11 @@ def enter(bot: str, cands: list[dict], prices: dict[str, dict]):
         why = signal(bot, t)
         if not why or not all(ok for ok, _ in safety(t).values()):
             continue
+        if (t.get("liquidity") or 0) < param(bot, "min_liq", 0):
+            continue
         tags = situation(t)
         rec = learning.record(led, bot)
-        if avoided := learning.avoid(rec, tags):
+        if avoided := learning.avoid(rec, tags, BOTS.get(bot, {}).get("inherited_avoid", [])):
             led.log_decision("veto", mint=mint, symbol=t.get("symbol"), strategy=bot, signals={"tags": tags},
                              reason="aprendizado: evita " + ", ".join(f"'{x}' ({rec[x]['wins']}/{rec[x]['n']} ganhos)" for x in avoided))
             continue
@@ -299,7 +337,7 @@ def enter(bot: str, cands: list[dict], prices: dict[str, dict]):
             continue
         q = prices[mint]
         buy = _fill(led, bot, "buy", mint, t.get("symbol", "?"), q["price"], q["liq"], usd=cfg.MEME_TRADE_USD, reason=why,
-              stop=q["price"] * (1 - cfg.MEME_STOP_PCT), tp=q["price"] * (1 + cfg.MEME_TP_PCT))
+              stop=q["price"] * (1 - param(bot, "stop_pct", cfg.MEME_STOP_PCT)), tp=q["price"] * (1 + param(bot, "tp_pct", cfg.MEME_TP_PCT)))
         led.set_state(f"pos:{mint}", {"peak": q["price"], "liq0": q["liq"]})
         _sync_positions(led)
         led.log_decision("entry", mint=mint, symbol=t.get("symbol"), strategy=bot, signals={"tags": tags, "edge": est},
@@ -333,9 +371,16 @@ def run_round() -> dict:
             if t["whale"].get("net_1h", 0) >= max(3000, 0.03 * (t.get("liquidity") or 0)) and t["whale"].get("buyers", 0) >= 2:
                 teamchat.post("meme_whale", "tip", f"🐋 Baleias compraram ${t['whale']['net_1h']:,.0f} líquidos de {t.get('symbol')} "
                                                    f"na última hora ({t['whale']['buyers']} carteiras grandes)", t.get("symbol"))
-        for b in BOTS:
+        for b in list(BOTS):
             manage(b, prices)
             enter(b, cands, prices)
+        try:                                              # the real meme account mirrors the lab (dry run or titulars)
+            from src.solana import meme_wallet
+            meme_wallet.mirror({b: {p["mint"]: p["symbol"] for p in ledger(b).positions()} for b in BOTS},
+                               {b for b in BOTS if is_titular(b)}, {m: q["price"] for m, q in prices.items()})
+        except Exception as e:
+            logger.warning(f"meme real account: {e}")
+        evolve()
         rows = []
         for t in cands:
             checks = safety(t)
@@ -368,9 +413,11 @@ def board() -> dict:
         eq = led.cash() + sum((p["mark_value"] if p["mark_value"] is not None else p["cost_usd"]) for p in pos)
         wins = sum(t["pnl_usd"] > 0 for t in trades)
         wr = wins / len(trades) if trades else 0.0
-        # meme bots only trade in the lab: a real meme account needs a funded Solana wallet (Jupiter swaps), not built yet
-        mode = {"real": False, "titular": False, "wins": wins, "need_wins": cfg.PROMOTE_MIN_WINS, "win_rate": round(wr, 3),
-                "need_win_rate": cfg.PROMOTE_MIN_WIN_RATE, "ready": wins >= cfg.PROMOTE_MIN_WINS and wr >= cfg.PROMOTE_MIN_WIN_RATE}
+        tit = is_titular(b)
+        mode = {"real": tit and cfg.MEME_REAL_MODE == "real", "titular": tit, "wins": wins, "need_wins": cfg.PROMOTE_MIN_WINS,
+                "win_rate": round(wr, 3), "need_win_rate": cfg.PROMOTE_MIN_WIN_RATE, "ready": can_promote(b),
+                "gen": meta.get("gen", 1), "parent": meta.get("parent_name"), "why": meta.get("why", []),
+                "next_cut": None if tit else _next_cut(led)}
         bots.append({"model": b, **meta, "mode": mode, "learned": learning.summary(learning.record(led, b)), "equity": round(eq, 2), "pnl": round(eq - led.contributed(), 4),
                      "trades": len(trades), "wins": wins, "win_rate": round(wins / len(trades), 3) if trades else None,
                      "positions": [{"symbol": p["symbol"], "mint": p["mint"], "cost": round(p["cost_usd"], 2),
@@ -379,7 +426,109 @@ def board() -> dict:
                                  "exit_ts": t["exit_ts"], "reason": t["reason"]} for t in trades[:8]]})
     with _lock:
         radar = list(_radar)
-    return {"status": dict(_status), "bots": bots, "radar": radar, "hot_wallets": hot_wallets()}
+    return {"status": dict(_status), "bots": bots, "radar": radar, "hot_wallets": hot_wallets(),
+            "retired": ROSTER["retired"][-6:][::-1]}
+
+
+# ─── the meme team: titulars and natural selection ───
+def is_titular(bot: str) -> bool:
+    return bool(ledger(bot).get_state("titular"))
+
+
+def can_promote(bot: str) -> bool:
+    trades = ledger(bot).closed_trades()
+    wins = sum(t["pnl_usd"] > 0 for t in trades)
+    return wins >= cfg.PROMOTE_MIN_WINS and wins / max(len(trades), 1) >= cfg.PROMOTE_MIN_WIN_RATE
+
+
+def promote(bot: str) -> dict:
+    if bot not in BOTS or not can_promote(bot):
+        raise ValueError(f"precisa de {cfg.PROMOTE_MIN_WINS} vitórias e acerto ≥ {cfg.PROMOTE_MIN_WIN_RATE:.0%} no laboratório")
+    ledger(bot).set_state("titular", True)
+    teamchat.post(bot, "event", f"⚽ {BOTS[bot]['name']} subiu para titular do time de memes: agora opera a conta real de meme coins", throttle=False)
+    return {"ok": True, "bot": bot}
+
+
+def _born(led: Ledger) -> datetime:
+    s = led.get_state("born_at")
+    if not s:
+        s = min((t["entry_ts"] for t in led.closed_trades()), default=now_iso())
+        led.set_state("born_at", s)
+    return datetime.fromisoformat(s)
+
+
+def _next_cut(led: Ledger) -> str:
+    born, period = _born(led), timedelta(hours=cfg.EVOLVE_PERIOD_H)
+    k = int((datetime.now(timezone.utc) - born) / period) + 1
+    return (born + k * period).isoformat(timespec="seconds")
+
+
+def mutate(trades: list[dict], params: dict) -> tuple[dict, list[str]]:
+    """The successor's exits, from how the parent lost money (in plain words)."""
+    p, why, n = dict(params), [], len(trades) or 1
+    by = lambda k: [t for t in trades if k in (t.get("reason") or "")]
+    pnl = lambda ts: sum(t["pnl_usd"] for t in ts)
+    stops, tps, times, rugs = by("stop"), by("alvo"), by("tempo"), by("rug")
+    if len(stops) / n >= 0.4 and pnl(stops) < 0:
+        p["stop_pct"] = round(min(p.get("stop_pct", cfg.MEME_STOP_PCT) * 1.25, 0.35), 3)
+        why.append(f"stop mais largo ({p['stop_pct']:.0%}): o pai era stopado demais")
+    if trades and len(tps) / n < 0.15:
+        p["tp_pct"] = round(max(p.get("tp_pct", cfg.MEME_TP_PCT) * 0.8, 0.15), 3)
+        why.append(f"alvo mais perto (+{p['tp_pct']:.0%}): o pai quase nunca chegava ao alvo")
+    if len(times) / n >= 0.4 and pnl(times) < 0:
+        p["max_hold_h"] = round(min(p.get("max_hold_h", cfg.MEME_MAX_HOLD_H) * 1.5, 12), 1)
+        why.append(f"segura mais ({p['max_hold_h']:.0f}h): o pai perdia saindo por tempo")
+    if rugs:
+        p["min_liq"] = round(max(p.get("min_liq", 30_000) * 1.5, 45_000))
+        why.append(f"só entra com liquidez ≥ ${p['min_liq']:,.0f}: o pai pegou {len(rugs)} rug(s)")
+    if not trades:
+        why.append("o pai não fez nenhum trade: herda tudo e tenta de novo")
+    return p, why or ["mesmas saídas do pai; herda o que ele aprendeu"]
+
+
+def evolve(now: datetime | None = None) -> list[dict]:
+    """At each EVOLVE_PERIOD_H checkpoint of a reserve's life: no profit in the period (or no trade) -> retired, and a
+    better-tuned successor of the same family takes the slot. A bot holding positions is judged once they close."""
+    from src.solana import evolution
+    now = now or datetime.now(timezone.utc)
+    events = []
+    for bot in list(BOTS):
+        led = ledger(bot)
+        if is_titular(bot) or led.positions():
+            continue
+        born, period = _born(led), timedelta(hours=cfg.EVOLVE_PERIOD_H)
+        k = int((now - born) / period)
+        if k < 1 or led.get_state("judged_checkpoint") == k:
+            continue
+        start, end = (born + (k - 1) * period).isoformat(), (born + k * period).isoformat()
+        window = [t for t in led.closed_trades() if start <= t["exit_ts"] < end]
+        pnl = sum(t["pnl_usd"] for t in window)
+        led.set_state("judged_checkpoint", k)
+        if window and pnl > 0:
+            led.log_decision("evolution", reason=f"✅ passou no corte de {cfg.EVOLVE_PERIOD_H:.0f}h: lucro ${pnl:+.2f} em {len(window)} trades")
+            continue
+        parent = BOTS.pop(bot)
+        used = {b.get("name") for b in BOTS.values()} | {r.get("name") for r in ROSTER["retired"]} | \
+               {b.get("label") for b in evolution.load()["bots"].values()}
+        name = next((c for c in evolution.CHAMPIONS if c not in used), f"{parent['name']} II")
+        params, why = mutate(led.closed_trades(), parent.get("params", {}))
+        rec = learning.record(led, bot)
+        seen = learning.summary(rec)["seen"] or 1
+        avoid = sorted(set(parent.get("inherited_avoid", [])) | {t for t, r in rec.items() if learning.bad(r, seen) and not t.startswith("moeda ")})
+        gen = parent.get("gen", 1) + 1
+        new = f"{parent['base']}_g{gen}_{len(ROSTER['retired']) + 1}"
+        BOTS[new] = {"name": name, "role": parent["role"], "base": parent["base"], "gen": gen, "params": params, "why": why,
+                     "parent": bot, "parent_name": parent["name"], "inherited_avoid": avoid}
+        verdict = f"{len(window)} trades, ${pnl:+.2f}"
+        ROSTER["retired"].append({"model": bot, "name": parent["name"], "at": end, "verdict": verdict, "successor": new, "successor_name": name})
+        _save_roster()
+        led.log_decision("evolution", reason=f"❌ aposentado no corte de {cfg.EVOLVE_PERIOD_H:.0f}h ({verdict}): não fez dinheiro; sucessor: {name}")
+        ledger(new).set_state("born_at", now.isoformat(timespec="seconds"))
+        ledger(new).log_decision("evolution", reason=f"🐣 nasceu {name} (geração {gen}, filho de {parent['name']}): " + "; ".join(why))
+        teamchat.post(new, "event", f"🐣 {parent['name']} não fez dinheiro em {cfg.EVOLVE_PERIOD_H:.0f}h e saiu. Eu sou {name}, "
+                                    f"geração {gen}: {why[0]}", throttle=False)
+        events.append({"retired": bot, "born": new, "name": name, "why": why})
+    return events
 
 
 def start():
