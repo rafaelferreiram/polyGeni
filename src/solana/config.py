@@ -258,9 +258,11 @@ MEME_REAL_MAX_PRIORITY_LAMPORTS = _i("MEME_REAL_MAX_PRIORITY_LAMPORTS", 60_000) 
 # margin of error before a buy (edge.py): skip only when confident (this much evidence) that even the optimistic odds lose
 EDGE_CHECK = os.getenv("EDGE_CHECK", "1") == "1"
 EDGE_MIN_EVIDENCE = _i("EDGE_MIN_EVIDENCE", 30)
-# daily quota: a titular behind DAILY_MIN_TRADES completed trades (Lisbon day, pro rata) loosens its entry a notch or two
-# and aims at a closer target, so it completes buy+sell round trips; size, stops and the account limits do not change
+# daily quota: a titular behind DAILY_MIN_TRADES completed trades (Lisbon day, pro rata). Observational by default
+# (logged and shown, never changes entries): forcing trades to hit a count is an incentive against profitability.
+# QUOTA_RELAX_ENTRIES=1 restores the old behaviour (looser entry + closer target) as a rollback switch.
 DAILY_MIN_TRADES = _i("DAILY_MIN_TRADES", 5)
+QUOTA_RELAX_ENTRIES = os.getenv("QUOTA_RELAX_ENTRIES", "0") == "1"
 # manual promotion from the bot's modal (the user's rule): this many lab wins and at least this win rate
 PROMOTE_MIN_WINS = _i("PROMOTE_MIN_WINS", 12)
 PROMOTE_MIN_WIN_RATE = _f("PROMOTE_MIN_WIN_RATE", 0.35)
@@ -313,6 +315,9 @@ LLM_MONTHLY_BUDGET_USD = _f("LLM_MONTHLY_BUDGET_USD", 5.0)      # hard cap on AI
 # real account's trading profit this month, never more than LLM_MONTHLY_BUDGET_USD. Over it, only rule bots trade.
 AI_BASE_MONTHLY_USD = _f("AI_BASE_MONTHLY_USD", 1.5)
 AI_PROFIT_SHARE = _f("AI_PROFIT_SHARE", 0.25)
+# daily brake on top of the monthly allowance: on 2026-10-21 one day burnt $1.77 (889 calls), 79% of the month.
+# 0 = off. The rules bots keep trading for free when AI is paused.
+AI_DAILY_BUDGET_USD = _f("AI_DAILY_BUDGET_USD", 0.25)
 # web search inflates every call (search results + $0.01/search); off unless it proves worth it
 LLM_WEB_SEARCHES = _i("LLM_WEB_SEARCHES", 0)
 LLM_PREFILTER = os.getenv("LLM_PREFILTER", "1") == "1"           # ask the AI only when there is a real setup
