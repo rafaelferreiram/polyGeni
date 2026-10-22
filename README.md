@@ -92,6 +92,13 @@ the others must first show ≥ 10 profitable lab trades.
 - **AI turbo** (`POST /api/paper/arena/boost`, dashboard "🚀 Turbo da IA"): run the AI bot with Sonnet, Opus or
   Fable for N cycles (1 cycle = 5 min), then it returns to Haiku. It re-decides every market of the current candle with
   the stronger model; cost still counts against the bot's reward and the profit-linked AI allowance.
+- **🐸 Trincheira — meme-coin lab** (`meme.py`, `GET /api/paper/meme`, lab only, paper money, real Solana prices): two
+  dedicated bots, **Breno Lopes** (tokens that just graduated from pump.fun) and **Deyverson** (momentum with more buyers
+  than sellers and organic volume). Discovery every minute from Jupiter's trending / top-organic lists and DexScreener's
+  newest profiles; every buy must pass a safety gate from Jupiter's audit (mint/freeze revoked, dev ≤ 5%, top holders ≤
+  30%, 300+ holders, liquidity ≥ $30k, organic score ≥ 40). $10 paper trades with 0.5% fees per side and price impact
+  against the pool; stop −18%, target +40%, stop rising with the gain, out after 4h, out at once if liquidity collapses.
+  No X API yet (socials are only checked to exist); Kolscan has no public API. They talk in the Vestiário too.
 - **PUMP (pump.fun) added (2026-10-22)**: the 30th coin for the lab and the real account, same rules and limits. It is one
   of Hyperliquid's most liquid perps ($90M/day, $176M open interest). News mentioning pump.fun are tagged PUMP.
 - **Removed (2026-10-22)**: the original Polymarket bot (`src/bot`, `src/analysis`, `src/feeds`, `src/polymarket`, its

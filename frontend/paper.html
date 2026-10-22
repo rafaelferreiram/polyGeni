@@ -381,6 +381,15 @@
     #rank-sort, #rank-who { margin-left: 10px; text-transform: none; letter-spacing: 0; vertical-align: middle; }
     #rank-table td.pos { font-size: 18px; width: 36px; text-align: center; } #rank-table tr.me1 td { background: rgba(111,211,160,.06); }
     .tb { cursor: pointer; }
+    .meme-bots { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .meme-bot { background: var(--surface-2); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; min-width: 0; }
+    .meme-bot .top { display: flex; gap: 12px; align-items: center; } .meme-bot .top .bot2 { width: 44px; height: 44px; flex: none; }
+    .meme-bot .nums { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 10px; text-align: center; font-size: 12px; color: var(--muted); }
+    .meme-bot .nums b { display: block; font-size: 16px; color: var(--text); }
+    .meme-bot .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; } .meme-bot .chips span { font-size: 12px; border: 1px solid var(--border); border-radius: 99px; padding: 2px 8px; }
+    .meme-h { margin: 16px 0 8px; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+    #meme-radar img.ti { width: 20px; height: 20px; border-radius: 50%; vertical-align: -5px; margin-right: 6px; }
+    @media (max-width: 760px) { .meme-bots { grid-template-columns: 1fr; } }
     .mention { color: #7dd3fc; font-weight: 700; }
     .chat { height: 380px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: 12px;
       background: linear-gradient(180deg, rgba(0,100,55,.10), transparent 120px), var(--bg); border: 1px solid var(--border); }
@@ -482,7 +491,7 @@
     .tcoffee { margin-top: 6px; width: 100%; } .tcoffee.on { color: var(--yellow); }
     body.ro .tcoffee:not(.on) { display: none !important; } body.ro .tb.boostable { cursor: default; }
     #view-seg button { min-width: 52px; } .logout { color: var(--muted); font-size: 13px; padding: 4px 10px; }
-    body.lite :is(#termometro, #metas, #lucro, #confianca, #logs, #g-oport, #radar, #baleias,
+    body.lite :is(#trincheira .tbl, #trincheira .meme-h, #trincheira > .note, #termometro, #metas, #lucro, #confianca, #logs, #g-oport, #radar, #baleias,
       #toptraders, #g-hist, #analise, #transacoes, #relatorio, #g-sist, #fundos, #conexoes, #avancado,
       #mode-seg, .boost, .legend, .panel h2 .note, .kpi .s, .sb-nav, .logo small) { display: none !important; }
     body.lite .kpi .v { font-size: 30px; }
@@ -520,7 +529,7 @@
     </div>
   </header>
   <div class="statusbar"><div class="sb-items" id="statusbar-items"></div>
-    <nav class="sb-nav" aria-label="Seções"><a href="#g-visao">Visão geral</a><a href="#posicoes">Posições</a><a href="#g-bots">Bots</a><a href="#ecg">Sinais vitais</a><a href="#g-oport">Mercado</a><a href="#g-hist">Histórico</a><a href="#g-sist">Sistema</a><a href="/admin">📊 Admin</a></nav><a class="logout" id="logout" href="/logout" hidden>Sair</a></div>
+    <nav class="sb-nav" aria-label="Seções"><a href="#g-visao">Visão geral</a><a href="#posicoes">Posições</a><a href="#g-bots">Bots</a><a href="#ecg">Sinais vitais</a><a href="#g-oport">Mercado</a><a href="#g-hist">Histórico</a><a href="#g-meme">Memes</a><a href="#g-sist">Sistema</a><a href="/admin">📊 Admin</a></nav><a class="logout" id="logout" href="/logout" hidden>Sair</a></div>
   <div class="alert" id="alert" hidden><span>🛑 <span id="alert-text"></span></span><button onclick="killReset(this)">Rearmar</button></div>
   <div class="scanbar" id="scanbar" hidden><span class="spin"></span><span id="scan-text">Analisando o mercado…</span></div>
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
@@ -643,6 +652,14 @@
         </span></h2>
       <div class="term" id="term" role="log" aria-live="off"></div>
     </section>
+    <h3 class="band" id="g-meme">Meme coins</h3>
+    <section class="panel" id="trincheira">
+      <h2><span>🐸 Trincheira — bots de meme coins <span class="tag">laboratório · dinheiro falso</span></span><span class="note" id="meme-head"></span></h2>
+      <div class="meme-bots" id="meme-bots"></div>
+      <h4 class="meme-h">No radar agora <span class="muted" id="meme-radar-note"></span></h4>
+      <div class="tbl"><table id="meme-radar"></table></div>
+      <p class="note" style="margin:10px 0 0">Tokens da Solana em alta (Jupiter) e novos perfis da DexScreener. Só compra se passar em todas as checagens de segurança: mint/freeze revogados, dev ≤ 5%, top holders ≤ 30%, 300+ holders, liquidez ≥ $30k e volume orgânico. Saída: stop −18%, alvo +40%, stop sobe com o ganho, máximo 4h, sai na hora se a liquidez desabar.</p>
+    </section>
     <h3 class="band" id="g-oport">Mercado</h3>
     <section class="panel" id="radar">
       <h2><span>Radar de oportunidades <span class="tag">o que os bots estão vigiando</span></span>
@@ -718,6 +735,6 @@
 
   <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <script src="https://unpkg.com/qrcode-generator@1.4.4/qrcode.js"></script>
-  <script src="/static/paper.js?v=108"></script>
+  <script src="/static/paper.js?v=109"></script>
 </body>
 </html>

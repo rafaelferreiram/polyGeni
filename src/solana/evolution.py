@@ -17,9 +17,9 @@ from datetime import datetime, timedelta, timezone
 from src.solana import config as cfg
 
 logger = logging.getLogger("solana.evolution")
-CHAMPIONS = ["Weverton", "Rony", "Zé Rafael", "Danilo", "Marcos Rocha", "Luan", "Breno Lopes", "Alex",
+CHAMPIONS = ["Weverton", "Rony", "Zé Rafael", "Danilo", "Marcos Rocha", "Luan", "Alex",
              "Arce", "Zinho", "Paulo Nunes", "Oséas", "Júnior Baiano", "Roque Júnior", "César Sampaio", "Felipe Melo",
-             "Gabriel Menino", "Patrick de Paula", "Deyverson", "Scarpa", "Piquerez", "Mayke", "Viña", "Willian"]
+             "Gabriel Menino", "Patrick de Paula", "Scarpa", "Piquerez", "Mayke", "Viña", "Willian"]
 PATH = os.getenv("LINEAGE_PATH", "lineage.json")
 
 

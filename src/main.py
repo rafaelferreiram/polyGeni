@@ -59,4 +59,6 @@ def startup():
     whales.start()      # read-only WebSocket of big trades on the coins the bots watch
     news.start()        # crypto news RSS, tagged by coin, every 5 min
     from src.solana import toptraders
-    toptraders.start()  # top 10 Hyperliquid traders: leaderboard every 6h, their positions every 2 min
+    toptraders.start()
+    from src.solana import meme
+    meme.start()        # the meme-coin trench: lab bots on Solana meme coins (paper money, real prices)  # top 10 Hyperliquid traders: leaderboard every 6h, their positions every 2 min
