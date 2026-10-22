@@ -75,6 +75,7 @@ def test_whale_flow_rony_and_learning(tmp_path, monkeypatch):
         led.set_state(f"pos:M{i}", None)
         meme.enter("meme_whale", [_token(id=f"M{i}", symbol=f"T{i}", whale=w)], {f"M{i}": {"price": 1.0, "liq": 1_000_000}})
         meme.manage("meme_whale", {f"M{i}": {"price": 0.7, "liq": 1_000_000}})            # stopped out
+        meme.manage("meme_whale", {f"M{i}": {"price": 0.7, "liq": 1_000_000}})             # confirmed on the next tick (bad-tick guard)
     from src.solana import learning
     learning._cache.clear()
     rec = learning.record(led, "meme_whale")
@@ -94,6 +95,7 @@ def test_meme_reserve_without_profit_is_replaced_by_a_tuned_successor(tmp_path, 
     for i in range(3):                                            # three stop-outs inside the first 12h
         meme.enter("meme_grad", [_token(id=f"M{i}", symbol=f"T{i}")], {f"M{i}": {"price": 1.0, "liq": 1_000_000}})
         meme.manage("meme_grad", {f"M{i}": {"price": 0.7, "liq": 1_000_000}})
+        meme.manage("meme_grad", {f"M{i}": {"price": 0.7, "liq": 1_000_000}})   # confirmed on the next tick (bad-tick guard)
     [ev] = meme.evolve(now=datetime.now(timezone.utc) + timedelta(hours=11))   # trades fall inside the judged window
     assert ev["retired"] == "meme_grad" and "meme_grad" not in meme.BOTS
     child = meme.BOTS[ev["born"]]
@@ -155,6 +157,7 @@ def test_fast_watch_reprices_only_open_positions_and_rony_skips_dumping_whales(t
     asked = []
     monkeypatch.setattr(meme, "pair_prices", lambda mints: asked.append(mints) or {"MINT1": {"price": 0.5, "liq": 1_000_000}})
     assert meme.watch() == 1 and asked == [["MINT1"]]
+    meme.watch()                                                                 # a −50% tick is only believed once confirmed
     assert meme.ledger("meme_momo").positions() == []                            # the −50% gap was caught by the watch
     whales = {"net_1h": 6000, "buy_1h": 10000, "sell_1h": 4000, "buyers": 3}     # sells already 40% of buys: the dump
     assert meme.signal("meme_whale", _token(whale=whales)) is None
@@ -167,6 +170,7 @@ def test_stop_guard_pauses_a_bot_after_three_stops(tmp_path, monkeypatch):
     for i in range(3):
         meme.enter("meme_momo", [_token(id=f"M{i}", symbol=f"T{i}")], {f"M{i}": {"price": 1.0, "liq": 1_000_000}})
         meme.manage("meme_momo", {f"M{i}": {"price": 0.7, "liq": 1_000_000}})
+        meme.manage("meme_momo", {f"M{i}": {"price": 0.7, "liq": 1_000_000}})   # confirmed on the next tick (bad-tick guard)
     assert len(led.closed_trades()) == 3
     meme.enter("meme_momo", [_token(id="M9", symbol="T9")], {"M9": {"price": 1.0, "liq": 1_000_000}})
     assert led.positions() == [] and any("guarda de stops" in d["reason"] for d in led.decisions(10, kind="veto"))
@@ -295,3 +299,24 @@ def test_solana_discovery_keeps_crypto_and_drops_stables_shares_memes_and_launch
     monkeypatch.setattr(meme, "request_json", lambda *a, **k: rows)
     monkeypatch.setattr(meme, "_sol_cache", {"at": 0.0, "rows": []})
     assert [t["symbol"] for t in meme.discover_sol()] == ["JUP"]
+
+
+def test_a_single_bad_price_tick_cannot_close_a_position_but_a_confirmed_move_can(tmp_path, monkeypatch):
+    """WBTC was bought at $81.8k and 'sold' at $40.8k because one DexScreener quote was half the real price."""
+    monkeypatch.setattr(meme, "_ledgers", {b: Ledger(str(tmp_path / f"arena_{b}.db"), 100.0) for b in meme.BOTS})
+    monkeypatch.setattr(meme, "_regime", {"ok": True, "size_mult": 1.0, "why": ""})
+    px = {"SOLX": {"price": 100.0, "liq": 8_000_000}}
+    meme.enter("sol_break", [_major()], px)
+    led = meme.ledger("sol_break")
+    assert led.positions()
+    meme.manage("sol_break", {"SOLX": {"price": 100.2, "liq": 8_000_000}})                  # normal tick: mark follows
+    meme.manage("sol_break", {"SOLX": {"price": 50.0, "liq": 8_000_000}})                    # −50% in one tick: a bad quote
+    assert led.positions() and led.closed_trades() == []                                       # not believed yet, mark untouched
+    assert led.positions()[0]["mark_price"] == pytest.approx(100.2)
+    meme.manage("sol_break", {"SOLX": {"price": 100.1, "liq": 8_000_000}})                   # the next tick is normal again: false alarm cleared
+    assert led.positions() and led.get_state("suspect:SOLX") is None
+    meme.manage("sol_break", {"SOLX": {"price": 80.0, "liq": 8_000_000}})                    # a real crash shows up twice...
+    assert led.positions()
+    meme.manage("sol_break", {"SOLX": {"price": 80.2, "liq": 8_000_000}})                    # ...and is then acted on (stop)
+    [t] = led.closed_trades()
+    assert "stop" in t["reason"] and t["pnl_usd"] < -1.5

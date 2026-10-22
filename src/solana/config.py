@@ -165,6 +165,9 @@ MEME_CYCLE_SEC = _i("MEME_CYCLE_SEC", 60)
 # (data: every winner was +3% inside 10 min; the six stop-outs lived 7–120 min and ended −12…−56%)
 MEME_TRACTION_MIN = _f("MEME_TRACTION_MIN", 15)
 MEME_TRACTION_PCT = _f("MEME_TRACTION_PCT", 0.03)
+# bad-tick guard: a price that jumps more than this (fraction) from the last mark in one tick is only believed once the
+# next tick shows it again (a single wrong DexScreener quote halved WBTC and booked a fake −50% stop on 2026-10-22)
+MEME_JUMP_GUARD = _f("MEME_JUMP_GUARD", 0.30)
 MEME_WATCH_SEC = _i("MEME_WATCH_SEC", 15)             # open meme positions are re-priced this often (memes gap in minutes)
 MEME_SAFE_ROUNDS = _i("MEME_SAFE_ROUNDS", 2)          # a token must pass the safety checks on this many consecutive rounds
 # stop-loss guard (Freqtrade's most-used protection): a bot stopped out STOPLOSS_GUARD_N times within
