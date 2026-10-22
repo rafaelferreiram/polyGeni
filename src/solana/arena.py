@@ -250,17 +250,45 @@ def take_handoff(model: str, symbol: str, strategy: str):
     return sig
 
 
+_sig_cache: dict[str, tuple[int, dict]] = {}
+
+
+def significance(model: str) -> dict | None:
+    """Is the bot's lab record skill or luck? p-value vs random entries (significance.py), from 10 closed trades on,
+    recomputed only when a trade closes (200 random books of every trade is real work for an API call)."""
+    from src.solana import significance as sg
+    eng = (_bots or {}).get(model)
+    n = len(eng.ledger.closed_trades()) if eng else 0
+    if n < 10:
+        return None
+    hit = _sig_cache.get(model)
+    if hit and hit[0] == n:
+        return hit[1]
+    try:
+        out = sg.p_value(eng.ledger, "15m" if model in FAST_BOTS else "1h")
+    except Exception as e:                           # candles unavailable right now: not cached, next call retries
+        logger.warning(f"significance {model}: {e}")
+        return {"p": None, "error": str(e)[:80]}
+    _sig_cache[model] = (n, out)
+    return out
+
+
 def can_promote(model: str) -> dict:
     """The user's manual promotion rule: a reserve with ≥ PROMOTE_MIN_WINS winning lab trades and win rate ≥
-    PROMOTE_MIN_WIN_RATE may be made titular from its modal (the automatic green light stays stricter)."""
+    PROMOTE_MIN_WIN_RATE may be made titular from its modal (the automatic green light stays stricter) — provided the
+    record beats random entries with the same exits (significance.p_value < P_MAX), so luck is not promoted."""
+    from src.solana.significance import P_MAX
     eng = bots().get(model)
     trades = eng.ledger.closed_trades() if eng else []
     wins = sum(t["pnl_usd"] > 0 for t in trades)
     wr = wins / len(trades) if trades else 0.0
+    sig = significance(model)
+    p = (sig or {}).get("p")
     ok = (bool(eng) and not is_titular(model) and model not in LAB_ONLY_BOTS
-          and wins >= cfg.PROMOTE_MIN_WINS and wr >= cfg.PROMOTE_MIN_WIN_RATE)
+          and wins >= cfg.PROMOTE_MIN_WINS and wr >= cfg.PROMOTE_MIN_WIN_RATE and p is not None and p < P_MAX)
     return {"ok": ok, "wins": wins, "trades": len(trades), "win_rate": round(wr, 3),
-            "need_wins": cfg.PROMOTE_MIN_WINS, "need_win_rate": cfg.PROMOTE_MIN_WIN_RATE}
+            "need_wins": cfg.PROMOTE_MIN_WINS, "need_win_rate": cfg.PROMOTE_MIN_WIN_RATE, "p_value": p, "p_max": P_MAX,
+            "significance": sig}
 
 
 def advise(model: str, now: datetime | None = None) -> dict | None:
@@ -309,6 +337,8 @@ def advise(model: str, now: datetime | None = None) -> dict | None:
         reasons.append("poucos trades ou resultado misto — ainda sem conclusão")
     if model in LAB_ONLY_BOTS:
         reasons.append("bot de short: a conta real ainda não executa short — se provar lucro, construímos a execução antes de promover")
+    if c["p_value"] is not None and c["p_value"] >= c["p_max"] and c["wins"] >= cfg.PROMOTE_MIN_WINS:
+        reasons.append(f"🎲 teste de sorte: p = {c['p_value']:.2f} — o resultado ainda não se distingue de entradas aleatórias com as mesmas saídas (precisa p < {c['p_max']:.2f})")
     if c["ok"] and flag != "promote":
         reasons.append("bate a sua regra (12 vitórias, ≥35%), mas ainda não recomendo: " +
                        ("está no prejuízo" if net <= 0 else f"fator de lucro {pf:.2f} < 1,2" if pf < 1.2 else "menos de 20 trades"))
@@ -318,8 +348,8 @@ def advise(model: str, now: datetime | None = None) -> dict | None:
 def promote(model: str) -> dict:
     c = can_promote(model)
     if not c["ok"]:
-        raise ValueError(f"ainda não dá: precisa de {c['need_wins']} vitórias e acerto ≥ {c['need_win_rate']:.0%} "
-                         f"(tem {c['wins']} e {c['win_rate']:.0%})")
+        raise ValueError(f"ainda não dá: precisa de {c['need_wins']} vitórias, acerto ≥ {c['need_win_rate']:.0%} e p < {c['p_max']:.2f} "
+                         f"no teste de sorte (tem {c['wins']}, {c['win_rate']:.0%} e p = {c['p_value'] if c['p_value'] is not None else '?'})")
     data = evolution.load()
     data.setdefault("promoted", []).append(model)
     evolution.save(data)

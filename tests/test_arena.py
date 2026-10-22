@@ -311,6 +311,7 @@ def test_user_can_promote_a_reserve_with_12_wins_and_35pct(tmp_path, monkeypatch
     led = bots["claude-haiku-5-5"].ledger
     fake = [{"pnl_usd": 0.1 if i < 12 else -0.1} for i in range(30)]          # 12 wins of 30 = 40%
     monkeypatch.setattr(type(led), "closed_trades", lambda self: fake)
+    monkeypatch.setattr(arena, "significance", lambda m: {"p": 0.01})       # the luck test has its own tests
     assert arena.can_promote("claude-haiku-5-5")["ok"]
     arena.promote("claude-haiku-5-5")
     assert arena.is_titular("claude-haiku-5-5") and arena.green_light("claude-haiku-5-5").get("promoted")
@@ -333,6 +334,7 @@ def test_advisor_flags_promotion_potential_and_cut_risk(tmp_path, monkeypatch):
     trades = [{"pnl_usd": 0.3, "exit_ts": ts}] * 16 + [{"pnl_usd": -0.1, "exit_ts": ts}] * 8
     monkeypatch.setattr(type(led), "closed_trades", lambda self: trades)
     monkeypatch.setattr(arena, "net_of_cost", lambda m: (4.0, 0.0, 4.0))
+    monkeypatch.setattr(arena, "significance", lambda m: {"p": 0.01})       # the luck test has its own tests
     assert arena.advise("claude-haiku-5-5", now)["flag"] == "promote"
     trades[:] = [{"pnl_usd": 0.05, "exit_ts": ts}] * 13 + [{"pnl_usd": -0.2, "exit_ts": ts}] * 20     # 39%: user's rule, but loses
     monkeypatch.setattr(arena, "net_of_cost", lambda m: (-3.35, 0.0, -3.35))

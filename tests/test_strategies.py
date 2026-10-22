@@ -87,3 +87,11 @@ def test_whale_follower_buys_only_on_strong_whale_buying_in_an_uptrend():
     assert w.decide(up, {"symbol": "X", "whale_flow": {**buying, "1h": {"net_usd": 30_000}}}) is None   # not 2x size
     down = [dict(c, close=c["close"] * (0.99 ** i)) for i, c in enumerate(up)]
     assert w.decide(down, {"symbol": "X", "whale_flow": buying}) is None                            # no uptrend
+
+
+def test_atr_stop_adapts_within_half_and_one_and_a_half_times_the_strategy_stop():
+    from src.solana.strategies import atr_stop
+    bar = lambda rng: {"open": 100, "high": 100 + rng, "low": 100 - rng, "close": 100, "volume": 1}
+    calm, mid, wild = [bar(0.1)] * 30, [bar(2)] * 30, [bar(5)] * 30     # ATR 0.2 / 4 / 10 -> 1.5 ATR = 0.3% / 6% / 15%
+    assert [round(atr_stop(c, 0.05), 6) for c in (calm, mid, wild)] == [0.025, 0.06, 0.075]
+    assert atr_stop(mid[:10], 0.05) == 0.05                              # too few candles: the strategy's stop

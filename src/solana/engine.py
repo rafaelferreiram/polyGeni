@@ -531,8 +531,12 @@ class PaperEngine:
             ready.append((c, candles, safety, profile))
         # best opportunity first: with one slot, the deepest dip inside an uptrend gets it, not the first coin listed
         ready.sort(key=lambda r: (r[0].symbol.upper().removeprefix("K") not in cfg.FOCUS_COINS, _setup_rank(r[1])))   # focus coins first
-        mt = _market_temp(ready)
+        mt = _market_temp(ready)                 # the radar and the market thermometer still see every coin
         self.ledger.set_state("market_temp", mt)
+        if uni := universe(ready):               # the bots only scan the hour's most liquid and volatile coins
+            held_syms = {x["symbol"] for x in self.ledger.positions()}
+            ready = [r for r in ready if r[0].symbol in uni or r[0].symbol in held_syms
+                     or r[0].symbol.upper().removeprefix("K") in cfg.FOCUS_COINS]
         breadth = {k: mt.get(k) for k in ("n", "uptrend", "avg_rsi", "avg_ch24")}   # whole-market context for the AI
         from src.solana import trainer
         trainer.set_breadth(breadth)
@@ -577,6 +581,9 @@ class PaperEngine:
                     self._agent("llm", last_reason=f"{strat.name} → {msg}"[:200], approved=int(sig is not None))
                 else:
                     sig = strat.signal(candles)
+                if sig is not None:                      # stop sized by this coin's ATR, within the strategy's bounds
+                    from src.solana.strategies import atr_stop
+                    sig.stop_pct = atr_stop(candles, sig.stop_pct)
                 if sig is not None and profile.get("stop_mult", 1) != 1:
                     sig.stop_pct = min(sig.stop_pct * profile["stop_mult"], 0.5)
                     sig.tp_pct *= profile["stop_mult"]
@@ -740,6 +747,33 @@ def _market_temp(ready: list) -> dict:
             # the radar: closest to a buy first
             "watch": sorted(rows, key=lambda r: (["pronto", "perto", "aguardando", "sem tendência"].index(r["status"]),
                                                  min(-r["dip_pct"], r["break_pct"] if r["strong"] else 99)))}
+
+
+_universe: dict = {}      # the hour's active universe, shared by every engine (they all scan the same coins)
+
+
+def universe(ready: list) -> list[str]:
+    """The UNIVERSE_SIZE coins with the most 24h volume × 1h log-range volatility (mean ln(high/low) of the last 24
+    closed bars): where a day trade can both move and be filled. Computed once per hour per market list (candles only
+    change hourly); the engine adds FOCUS_COINS and held coins on top. [] = filter off."""
+    import math
+    if not cfg.UNIVERSE_SIZE:
+        return []
+    key = (int(time.time()) // 3600, tuple(sorted(r[0].symbol for r in ready)))
+    if _universe.get("key") != key:
+        scores = {}
+        for c, candles, *_ in ready:
+            bars = [k for k in candles[-24:] if k.get("high") and k.get("low")]
+            vol = sum(math.log(k["high"] / k["low"]) for k in bars) / len(bars) if bars else 0.0
+            scores[c.symbol] = c.volume_h24 * vol
+        coins = sorted(scores, key=lambda s: -scores[s])[:cfg.UNIVERSE_SIZE]
+        _universe.update(key=key, ts=now_iso(), coins=coins, size=cfg.UNIVERSE_SIZE, focus=list(cfg.FOCUS_COINS),
+                         scores={s: round(v) for s, v in scores.items()})
+    return _universe["coins"]
+
+
+def current_universe() -> dict:
+    return {k: v for k, v in _universe.items() if k != "key"}
 
 
 def _setup_rank(candles: list[dict]) -> tuple:

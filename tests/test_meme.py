@@ -178,3 +178,23 @@ def test_safety_must_hold_on_consecutive_rounds(tmp_path, monkeypatch):
     assert meme.ledger("meme_momo").positions() == []                            # safe once: not yet
     meme.run_round()
     assert meme.ledger("meme_momo").positions()                                  # safe twice in a row: buy
+
+
+def test_market_regime_gate_blocks_meme_buys_and_halves_size(tmp_path, monkeypatch):
+    monkeypatch.setattr(meme, "_ledgers", {b: Ledger(str(tmp_path / f"arena_{b}.db"), 100.0) for b in meme.BOTS})
+    flat = [{"close": 100.0}] * 10
+    sol_fell = lambda coin: flat[:-2] + [{"close": 97.0}] * 2 if coin == "SOL" else flat     # last closed hour −3%
+    reg = meme.regime(sol_fell)
+    assert not reg["ok"] and "SOL" in reg["why"] and reg["size_mult"] == 1.0
+    prices = {"MINT1": {"price": 1.0, "liq": 1_000_000}}
+    led = meme.ledger("meme_momo")
+    for _ in range(2):                                                   # two rounds in the same hour: one veto logged
+        meme.enter("meme_momo", [_token()], prices, regime=reg)
+    assert led.positions() == [] and len(led.decisions(kind="veto")) == 1
+    btc_4h_down = lambda coin: flat[:-5] + [{"close": 95.0}] * 5 if coin == "BTC" else flat    # 1h flat, 4h −5%
+    reg = meme.regime(btc_4h_down)
+    assert reg["ok"] and reg["size_mult"] == 0.5
+    meme.enter("meme_momo", [_token()], prices, regime=reg)
+    [pos] = led.positions()
+    assert abs(pos["cost_usd"] - 5) < 1e-9                               # half of MEME_TRADE_USD
+    assert meme.regime(lambda coin: 1 / 0)["ok"]                         # data errors never block

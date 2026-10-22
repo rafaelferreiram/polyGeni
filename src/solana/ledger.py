@@ -272,7 +272,7 @@ class Ledger:
                             "proceeds_usd": proceeds, "pnl_usd": proceeds - cost,
                             "pnl_pct": (proceeds - cost) / cost if cost else 0,
                             "reason": json.loads(f["meta"] or "{}").get("reason", ""),
-                            "order_id": f["order_id"]})
+                            "order_id": f["order_id"], "entry_order_id": o["entry_id"]})
                 o["qty"] -= f["qty"]
                 o["cost"] -= cost
                 if o["qty"] <= 1e-12:

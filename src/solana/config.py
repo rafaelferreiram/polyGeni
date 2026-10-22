@@ -178,10 +178,20 @@ MEME_MAX_HOLD_H = _f("MEME_MAX_HOLD_H", 2)
 # buy-and-hold); the quick-win locks bank the fast moves before that. FOCUS_COINS are scanned first each cycle.
 MAX_HOLD_CAP_H = _f("MAX_HOLD_CAP_H", 2)
 FOCUS_COINS = tuple(c.strip().upper() for c in os.getenv("FOCUS_COINS", "ZEC,PUMP").split(",") if c.strip())
+# universe filter (passivbot forager / Freqtrade VolumePairList): each hour the rule bots scan only the UNIVERSE_SIZE
+# coins with the most 24h volume × 1h log-range volatility (plus FOCUS_COINS and any coin already held). 0 = all 30.
+UNIVERSE_SIZE = _i("UNIVERSE_SIZE", 12)
+# stop distance = ATR_STOP_MULT × ATR(14) of the signal's candles, bounded to [0.5×, 1.5×] the strategy's own stop
+# (strategies.atr_stop). 0 = the strategy's stop as is.
+ATR_STOP_MULT = _f("ATR_STOP_MULT", 1.5)
 # meme quick wins: memes spike and dump in minutes, so any sudden gain is banked — the stop locks a share of the peak gain
 # as soon as it clears the round trip's cost (0.5% fee per side + impact): +4% locks 50%, +8% locks 65%, +15% locks 75%,
 # +30% locks 80%. The lock never sits below entry + fees, so a locked exit is always a net gain.
 MEME_QUICK_WINS = [(0.04, 0.5), (0.08, 0.65), (0.15, 0.75), (0.30, 0.8)]
+# market regime for memes (memes are high-beta SOL): no meme buys while SOL or BTC fell more than MEME_REGIME_1H_PCT
+# in the last closed hour; half the trade size while either is down more than MEME_REGIME_4H_PCT in 4h
+MEME_REGIME_1H_PCT = _f("MEME_REGIME_1H_PCT", -0.02)
+MEME_REGIME_4H_PCT = _f("MEME_REGIME_4H_PCT", -0.04)
 MEME_WHALE_TOKENS = _i("MEME_WHALE_TOKENS", 12)       # tokens whose big trades are watched (GeckoTerminal)
 MEME_WHALE_PER_ROUND = _i("MEME_WHALE_PER_ROUND", 4)  # of those, how many are re-read each round (rate limit)
 # reserves (lab, fake money) train aggressively to learn faster: crypto reserves use the loosest entry level (the one a

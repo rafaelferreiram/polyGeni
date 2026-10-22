@@ -360,7 +360,12 @@ function renderRadar(a) {
   document.getElementById("radar-all").textContent = radarAll ? "Ver só as melhores" : `Ver todas (${w.length})`;
   const near = w.filter((r) => r.status === "pronto" || r.status === "perto").length;
   document.getElementById("radar-head").textContent = a.market_temp?.ts ? `${near} perto de compra · atualizado há ${ago(a.market_temp.ts)}` : "aguardando a primeira análise";
-  const rows = (radarAll ? w : w.slice(0, 8)).map((r) => `<tr>
+  const u = lastArena?.universe;
+  const inUni = (s) => !u?.coins?.length || u.coins.includes(s) || (u.focus || []).includes(s.toUpperCase().replace(/^K/, ""));
+  document.getElementById("radar-universe").textContent = u?.coins?.length
+    ? `🎯 Universo desta hora (as ${u.size} moedas com mais volume × volatilidade): ${u.coins.join(", ")} · os bots só entram nelas, nas moedas-foco (${(u.focus || []).join(", ")}) e nas que já têm posição`
+    : "";
+  const rows = (radarAll ? w : w.slice(0, 8)).map((r) => `<tr${inUni(r.symbol) ? "" : ' style="opacity:.55"'}>
     <td>${coin(r.symbol)}<br><span class="muted">${r.ch24 >= 0 ? "+" : ""}${r.ch24}% 24h</span></td>
     <td>${fmtPx(r.price)}</td>
     <td>${r.strong ? "⬆⬆ forte" : r.up ? "⬆ alta" : "⬇ baixa"}<br><span class="muted">RSI ${r.rsi}</span></td>
@@ -369,7 +374,7 @@ function renderRadar(a) {
     <td>${(() => { const s = lastWhales?.coins?.[r.symbol]; return s && s["1h"].n ? `${WHALE_PT[s.pressure]}<br><span class="muted">${kusd(s["1h"].net_usd)} líquido 1h</span>` : '<span class="muted">—</span>'; })()}</td>
     <td>${(() => { const c = lastTop?.consensus?.[r.symbol]; return c && (c.long || c.short) ? `${c.long ? `<span class="green">▲ ${c.long}</span>` : ""} ${c.short ? `<span class="red">▼ ${c.short}</span>` : ""}${c.new_longs_1h ? `<br><span class="muted">${c.new_longs_1h} entraram 1h</span>` : ""}` : '<span class="muted">—</span>'; })()}</td>
     <td>${radarVerdict(r)}</td>
-    <td><span class="st-chip ${r.status === "pronto" ? "pronto" : r.status === "perto" ? "perto" : ""}">${STATUS_PT[r.status] || esc(r.status)}</span>${r.ready_by ? `<br><span class="muted">sinal do bot ${esc(r.ready_by === "quedas" ? "São Marcos" : "Endrick")}</span>` : ""}</td></tr>`);
+    <td><span class="st-chip ${r.status === "pronto" ? "pronto" : r.status === "perto" ? "perto" : ""}">${STATUS_PT[r.status] || esc(r.status)}</span>${inUni(r.symbol) ? "" : '<br><span class="muted">fora do universo da hora</span>'}${r.ready_by ? `<br><span class="muted">sinal do bot ${esc(r.ready_by === "quedas" ? "São Marcos" : "Endrick")}</span>` : ""}</td></tr>`);
   table("radar-table", ["Moeda", "Preço", "Tendência", "📐 Compra na queda", "📈 Compra no rompimento", "🐋 Baleias 1h", "👑 Top 10", "Vai comprar?", "Status"], rows);
 }
 
@@ -1036,8 +1041,12 @@ function promoteCard(d, r) {
   const c = r.can_promote;
   if (d.titular || !c) return "";
   const why = `${c.wins} de ${c.need_wins} vitórias · acerto ${pct0(c.win_rate)} (mínimo ${pct0(c.need_win_rate)})`;
+  const sg = c.significance;
+  const luck = sg?.p != null
+    ? `🎲 Teste de sorte: p = ${sg.p.toFixed(2)} ${sg.p < c.p_max ? "✅ não é sorte" : `❌ pode ser sorte (precisa < ${c.p_max.toFixed(2)})`} · média real ${sg.real_pct >= 0 ? "+" : ""}${sg.real_pct.toFixed(2)}% por trade vs ${sg.random_pct >= 0 ? "+" : ""}${sg.random_pct.toFixed(2)}% em ${sg.samples} livros de entradas aleatórias com as mesmas saídas`
+    : `🎲 Teste de sorte: ${sg?.error ? "sem dados agora" : "a partir de 10 trades fechados"} (precisa p < 0,05)`;
   return `<h4>⬆️ Subir para titular</h4><div class="bm-card"><div class="t"><span>${c.ok ? "✅ Pode subir para o time titular" : "Ainda não pode subir"}</span></div>
-    <span class="muted">${why}. Titular opera dinheiro real (posição de $10, mesmos limites).</span>
+    <span class="muted">${why}. Titular opera dinheiro real (posição de $10, mesmos limites).</span><br><span class="muted">${luck}</span>
     ${c.ok && (d.stats?.pnl_usd ?? 0) < 0 ? `<div class="bm-card" style="margin-top:10px;border-color:rgba(251,191,36,.45)">⚠️ <b>Atenção:</b> no laboratório ele está no prejuízo
       (${pnl(d.stats.pnl_usd)}, fator de lucro ${d.stats.profit_factor ?? "–"}): perde mais nas derrotas do que ganha nas vitórias. Promovido, deve perder dinheiro real.</div>` : ""}
     ${c.ok && !REMOTE ? `<div class="bm-actions"><button class="promote" onclick="promoteBot('${esc(d.model)}', this)">⬆️ Promover ${esc(look(d.model).label)} a titular</button></div>` : ""}</div>`;

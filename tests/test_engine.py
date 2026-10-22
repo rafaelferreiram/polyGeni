@@ -150,7 +150,7 @@ def test_market_profile_caps_size_and_widens_stops(ledger):
     eng.run_cycle()
     fill = ledger.fills()[0]
     assert fill["usd_gross"] == pytest.approx(5.0)                 # 5% slice, not the default 10%
-    assert fill["stop_price"] == pytest.approx(0.90)               # 5% stop widened x2
+    assert fill["stop_price"] == pytest.approx(0.95)               # flat candles: ATR stop at its 2.5% floor, widened x2
     assert fill["tp_price"] == pytest.approx(1.20)
 
 
@@ -498,3 +498,30 @@ def test_account_waits_after_a_burst_of_buys(ledger, monkeypatch):
     assert ledger.positions() == [] and eng.run_cycle()["entries"] == 0     # one buy in the last 30 min already
     monkeypatch.setattr(cfg, "BURST_MAX_ENTRIES", 2)
     assert eng.run_cycle()["entries"] == 1
+
+
+def test_universe_filter_keeps_the_most_liquid_and_volatile_coins_plus_focus_and_held(ledger, monkeypatch):
+    from src.solana import config as cfg, engine as E
+    from tests.conftest import candidate
+    monkeypatch.setattr(cfg, "UNIVERSE_SIZE", 1)
+    monkeypatch.setattr(cfg, "FOCUS_COINS", ("FOC",))
+    monkeypatch.setattr(E, "_universe", {})
+    cands = [candidate(mint=f"M{s}", symbol=s, volume_h24=v) for s, v in (("SMALL", 1e6), ("BIG", 3e6), ("FOC", 1.0))]
+    ready = [(c, flat_candles(30)) for c in cands]
+    assert E.universe(ready) == ["BIG"] and E.current_universe()["scores"]["BIG"] > E.current_universe()["scores"]["SMALL"]
+
+    class Scout:
+        def candidates(self):
+            return cands
+    eng = build(ledger, Price(1.0))
+    eng.scouts = [Scout()]
+    assert eng.run_cycle()["entries"] == 2                               # BIG (universe) and FOC (focus coin), not SMALL
+    assert {p["symbol"] for p in ledger.positions()} == {"BIG", "FOC"}
+
+
+def test_entry_stop_is_atr_sized_and_size_stays_the_minimum_order(ledger):
+    eng = build(ledger, Price(1.0))
+    eng.run_cycle()
+    [pos] = ledger.positions()
+    assert pos["stop_price"] == pytest.approx(0.975)      # flat candles: 1.5 ATR ≈ 0.3% -> floor of half the 5% stop
+    assert pos["tp_price"] == pytest.approx(1.10)         # the target is the strategy's
