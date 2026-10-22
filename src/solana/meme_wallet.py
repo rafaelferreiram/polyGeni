@@ -6,7 +6,7 @@ Real meme-coin account on Solana — separate from the crypto account (Hyperliqu
       are signed in Phantom; withdrawals can only go back to that address.
   Modes (MEME_REAL_MODE): "ensaio" — every lab meme entry/exit is mirrored with real Jupiter quotes and a transaction
       built, signed and simulated on Solana, never sent; "real" — the same for the meme titulars only, sent for real.
-  Small limits: $5 a trade, 2 open positions, 6 buys a day, −$5 a day stops buying, price impact ≤ 2%, slippage ≤ 3%,
+  Small limits: $5 a trade, 3 open positions, 12 buys a day, −$5 a day stops buying, price impact ≤ 2%, slippage ≤ 3%,
       no token Jupiter can't sell back or that charges a transfer fee, and equity below 60% of deposits sells all and halts.
 """
 import base64

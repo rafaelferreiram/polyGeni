@@ -108,6 +108,8 @@ def test_real_meme_account_dry_run_limits(tmp_path, monkeypatch):
     monkeypatch.setattr(mw.cfg, "MEME_REAL_DB_PATH", str(tmp_path / "real.db"))
     monkeypatch.setattr(mw, "_kp", None)
     monkeypatch.setattr(mw, "_led", None)
+    assert (mw.cfg.MEME_REAL_MAX_POSITIONS, mw.cfg.MEME_REAL_MAX_BUYS_DAY, mw.cfg.MEME_REAL_TRADE_USD) == (3, 12, 5.0)   # the agreed small limits
+    monkeypatch.setattr(mw.cfg, "MEME_REAL_MAX_POSITIONS", 2)                      # this test exercises the cap itself
     assert mw.address() and (tmp_path / "w.json").stat().st_mode & 0o777 == 0o600   # key readable only by this user
     monkeypatch.setattr(mw, "mint_info", lambda m: (6, 0))
     monkeypatch.setattr(mw, "sol_usd", lambda: 200.0)
