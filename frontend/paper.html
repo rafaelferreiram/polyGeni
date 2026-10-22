@@ -557,12 +557,16 @@
   <noscript><div class="strip" style="background:#7f1d1d;color:#fff">⚠️ O JavaScript está bloqueado neste navegador — o painel não consegue carregar os dados. No Brave: clique no leão (Shields) ao lado do endereço e desative "Bloquear scripts" para 127.0.0.1, depois recarregue.</div></noscript>
   <script>
     // any script crash or blocked request shows up on the page itself (no need to open the console)
-    window.addEventListener("error", (e) => { const s = document.getElementById("strip"); if (!s) return; s.style.background = "#7f1d1d"; s.style.color = "#fff";
-      const src = e.target && e.target.src;      // a script/stylesheet the browser (or an extension) refused to load
-      s.textContent = src ? "⚠️ O navegador bloqueou um arquivo do painel: " + src.split("/").pop().split("?")[0] + " — desative extensões/Shields para 127.0.0.1 e recarregue."
-        : "⚠️ Erro no painel: " + (e.message || e.error || "desconhecido") + (e.filename ? " (" + e.filename.split("/").pop() + ":" + e.lineno + ")" : ""); }, true);
-    window.addEventListener("unhandledrejection", (e) => { const s = document.getElementById("strip"); if (s && /Failed to fetch|NetworkError|blocked/i.test(String(e.reason))) {
-      s.style.background = "#7f1d1d"; s.style.color = "#fff"; s.textContent = "⚠️ O navegador está bloqueando as chamadas do painel (" + String(e.reason).slice(0, 80) + "). No Brave, desative os Shields para 127.0.0.1."; } });
+    // the FIRST problem is kept (later errors, e.g. clicking a button whose script never loaded, must not hide the cause)
+    const warn = (msg) => { const s = document.getElementById("strip"); if (!s || s.dataset.warned) return; s.dataset.warned = "1";
+      s.style.background = "#7f1d1d"; s.style.color = "#fff"; s.textContent = msg; };
+    window.addEventListener("error", (e) => { const src = e.target && e.target.src;      // a script the browser (or an extension) refused to load
+      if (src && !src.includes("/static/")) return;                                       // charts/QR from unpkg are optional
+      warn(src ? "⚠️ O navegador bloqueou um arquivo do painel: " + src.split("/").pop().split("?")[0] + " — desative extensões/Shields para 127.0.0.1 e recarregue."
+        : "⚠️ Erro no painel: " + (e.message || e.error || "desconhecido") + (e.filename ? " (" + e.filename.split("/").pop() + ":" + e.lineno + ")" : "")); }, true);
+    window.addEventListener("unhandledrejection", (e) => { if (/Failed to fetch|NetworkError|blocked/i.test(String(e.reason)))
+      warn("⚠️ O navegador está bloqueando as chamadas do painel (" + String(e.reason).slice(0, 80) + "). No Brave, desative os Shields para 127.0.0.1."); });
+    window.addEventListener("load", () => { if (typeof setKind !== "function") warn("⚠️ O arquivo savoia.js não carregou (bloqueado por extensão ou Shields do navegador). Desative extensões para 127.0.0.1 e recarregue."); });
   </script>
   <div class="strip sim" id="strip">SIMULAÇÃO — dinheiro falso, preços e order books reais da Hyperliquid</div>
   <header>
@@ -808,6 +812,6 @@
 
   <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <script src="https://unpkg.com/qrcode-generator@1.4.4/qrcode.js"></script>
-  <script src="/static/paper.js?v=117"></script>
+  <script src="/static/savoia.js?v=119"></script>
 </body>
 </html>
