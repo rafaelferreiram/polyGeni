@@ -88,14 +88,19 @@ def test_real_wallet_only_trusts_bots_with_lab_evidence(tmp_path, monkeypatch):
         led.append_fill(dict(order_id=f"s{i}", ts=f"2026-10-0{i + 1}T01:00:00+00:00", venue="hyperliquid", side="sell", mint="hl:BTC",
                              symbol="BTC", strategy="x", qty=10, decimals=0, usd_gross=10 * px, fee_usd=0, price=px, quote_price=px))
     team = [TeamMember("rules"), TeamMember("claude-opus-5"), TeamMember("claude-haiku-5-5")]
-    assert [m.model for m in arena.eligible_for_real(team)] == ["rules", "claude-opus-5"]
-    monkeypatch.setattr(cfg, "MAX_TITULARES", 1)          # only the best plays: opus has the lab wins
+    # squad floor (owner's rule): two qualified + haiku CALLED UP so the club fields MIN_TITULARES (3)
+    assert [m.model for m in arena.eligible_for_real(team)] == ["rules", "claude-opus-5", "claude-haiku-5-5"]
+    assert any("convocado" in d["reason"] for d in bots["claude-haiku-5-5"].ledger.decisions(kind="evolution"))
+    monkeypatch.setattr(cfg, "MAX_TITULARES", 1)          # only the best plays (the ceiling also caps the floor)
     assert [m.model for m in arena.eligible_for_real(team)] == ["claude-opus-5"]
     monkeypatch.setattr(cfg, "MAX_TITULARES", 6)
-    # trusted rule bots trade real money from day one; untrusted ones need lab evidence
+    # trusted rule bots trade real money from day one; an untrusted one still gets fielded by the floor, small
     assert "trend" in [m.model for m in arena.eligible_for_real([TeamMember("trend")])]
     monkeypatch.setattr(cfg, "REAL_TRUSTED_BOTS", ["rules"])
+    assert "trend" in [m.model for m in arena.eligible_for_real([TeamMember("trend")])]   # convocado (floor)
+    monkeypatch.setattr(cfg, "MIN_TITULARES", 0)                                          # floor off: evidence only
     assert "trend" not in [m.model for m in arena.eligible_for_real([TeamMember("trend")])]
+    monkeypatch.setattr(cfg, "MIN_TITULARES", 3)
     # the Coordinator follows RECENT results: those 2026-10-0x trades are older than a 1-day window
     monkeypatch.setattr(cfg, "LAB_SCORE_DAYS", 1)
     assert arena.score("claude-opus-5", "BTC", 1) == (0.0, 0) and arena.score("claude-opus-5", "BTC")[1] == 2
@@ -449,3 +454,56 @@ def test_a_patient_reserve_is_not_cut_for_waiting_but_a_blind_one_is(tmp_path, m
                         lambda self: t2 if self is eng2.ledger else (team_trades if self is busy.ledger else []))
     evolution.check(now)
     assert eng2.ledger.get_state("idle_checkpoints") == 0
+
+
+def test_squad_rule_bench_rehab_and_death(tmp_path, monkeypatch):
+    """The owner's squad rule: bad REAL-money form sends a titular to the bench (even a trusted one) where it keeps
+    learning; good bench form brings it back; bad bench form — and only bench form — kills it."""
+    from datetime import datetime, timedelta, timezone
+    from src.solana import evolution
+    monkeypatch.setattr(evolution, "PATH", str(tmp_path / "lineage.json"))
+    monkeypatch.setattr(cfg, "ARENA_MODELS", ["trend4h", "whales"])
+    monkeypatch.setattr(cfg, "REAL_TRUSTED_BOTS", ["trend4h"])
+    monkeypatch.setattr(arena, "build_bot", lambda m, **kw: _fresh(tmp_path, m))
+    monkeypatch.setattr(evolution, "_refresh_accounts", lambda: None)
+    monkeypatch.setattr(arena, "_bots", None)
+    now = datetime.now(timezone.utc)
+    eng = arena.bots()["trend4h"]
+    eng.ledger.set_state("born_at", (now - timedelta(hours=1)).isoformat(timespec="seconds"))
+    arena.bots()["whales"].ledger.set_state("born_at", now.isoformat(timespec="seconds"))
+    assert arena.is_titular("trend4h")                        # trusted: starts on the pitch
+    bad_real = [{"strategy": "trend4h", "pnl_usd": -0.15, "exit_ts": (now - timedelta(hours=5)).isoformat()}] * 8
+    monkeypatch.setattr(evolution, "_real_trades", lambda: bad_real)
+    assert evolution.check(now) == []                         # benched, not killed
+    gl = arena.green_light("trend4h")
+    assert gl["demoted"] and not gl["ok"] and not arena.is_titular("trend4h")
+    assert any("rebaixado ao banco" in d["reason"] for d in eng.ledger.decisions(kind="evolution"))
+    from src.solana.llm_trader import TeamMember
+    assert "trend4h" not in [m.model for m in arena.eligible_for_real([TeamMember("trend4h")])
+                             ] or cfg.MIN_TITULARES == 0     # nem o floor convoca um rebaixado
+    # rehab: good lab form since the demotion brings it back
+    at = evolution.load()["demoted"]["trend4h"]["at"]
+    good_lab = [{"strategy": "trend4h", "pnl_usd": 0.1, "order_id": f"exit-r{i}", "reason": "take-profit hit",
+                 "entry_ts": at, "exit_ts": (now + timedelta(hours=1)).isoformat()} for i in range(12)]
+    monkeypatch.setattr(type(eng.ledger), "closed_trades",
+                        lambda self: good_lab if self is eng.ledger else [])
+    monkeypatch.setattr(evolution, "_real_trades", lambda: [])
+    assert evolution.check(now + timedelta(hours=2)) == []
+    assert "trend4h" not in evolution.load().get("demoted", {}) and arena.is_titular("trend4h")
+    assert any("de volta ao time" in d["reason"] for d in eng.ledger.decisions(kind="evolution"))
+    # benched again, then BAD on the bench: now it dies — judged only on a window that ends after the demotion
+    monkeypatch.setattr(evolution, "_real_trades", lambda: bad_real)
+    later = now + timedelta(hours=3)
+    assert evolution.check(later) == []                       # benched again
+    bench_at = evolution.load()["demoted"]["trend4h"]["at"]
+    bad_bench = [{"strategy": "trend4h", "pnl_usd": -0.1, "order_id": f"exit-x{i}", "reason": "stop-loss hit",
+                  "entry_ts": bench_at, "exit_ts": (later + timedelta(hours=h)).isoformat()}
+                 for i, h in enumerate((1, 2, 3, 4))]
+    monkeypatch.setattr(type(eng.ledger), "closed_trades",
+                        lambda self: bad_bench if self is eng.ledger else [])
+    monkeypatch.setattr(evolution, "_real_trades", lambda: [])
+    [ev] = evolution.check(later + timedelta(hours=13))       # a full 12h bench window has now ended badly
+    assert ev["retired"] == "trend4h"
+    data = evolution.load()
+    assert "trend4h" not in data.get("demoted", {})           # the dead leave the bench
+    assert data["bots"][ev["born"]]["base"] == "trend4h"      # and a successor takes the family forward
