@@ -359,11 +359,20 @@ function refreshBrief(btn) { run(btn, "Pedindo…", async () => { briefAt = 0; a
 // MetaMask (Hyperliquid is an EVM account) and Phantom (Solana): connect, show address and balance. Nothing is ever signed or sent.
 const WC = { mm: null, ph: null, hl: null };
 const EVM_CHAINS = { "0x1": "Ethereum", "0xa4b1": "Arbitrum One", "0x2105": "Base", "0xa": "Optimism", "0x89": "Polygon", "0x38": "BNB Chain" };
+// Coinbase Wallet (and others) also set isMetaMask=true and take over window.ethereum, so MetaMask is found by its EIP-6963
+// identity (rdns io.metamask), never by that flag. Fallback for old builds: a provider that is not Coinbase/Phantom/Brave/Rabby/Trust.
+const EIP6963 = new Map();
+window.addEventListener("eip6963:announceProvider", (e) => { if (e.detail?.info?.rdns) EIP6963.set(e.detail.info.rdns, e.detail.provider); });
+window.dispatchEvent(new Event("eip6963:requestProvider"));
 const metamaskProvider = () => {
+  window.dispatchEvent(new Event("eip6963:requestProvider"));
+  const found = EIP6963.get("io.metamask") || EIP6963.get("io.metamask.flask");
+  if (found) return found;
   const e = window.ethereum;
   if (!e) return null;
-  return (e.providers?.length ? e.providers : [e]).find((p) => p.isMetaMask && !p.isPhantom && !p.isBraveWallet) || null;
+  return (e.providers?.length ? e.providers : [e]).find((p) => p.isMetaMask && !p.isCoinbaseWallet && !p.isPhantom && !p.isBraveWallet && !p.isRabby && !p.isTrust && !p.isTrustWallet && !p.isOkxWallet) || null;
 };
+const walletsSeen = () => [...EIP6963.keys()].join(", ");
 async function readMetamask(prov, accounts) {
   if (!accounts?.length) { WC.mm = null; return; }
   const [chain, hex] = await Promise.all([prov.request({ method: "eth_chainId" }), prov.request({ method: "eth_getBalance", params: [accounts[0], "latest"] })]);
@@ -372,8 +381,9 @@ async function readMetamask(prov, accounts) {
 }
 async function connectMetamask(btn) {
   run(btn, "Aprove na MetaMask…", async () => {
-    const prov = metamaskProvider();
-    if (!prov) throw new Error("MetaMask não encontrada neste navegador (instale/desbloqueie a extensão e recarregue).");
+    let prov = metamaskProvider();
+    for (let i = 0; !prov && i < 10; i++) { await new Promise((r) => setTimeout(r, 200)); prov = metamaskProvider(); }
+    if (!prov) throw new Error(`MetaMask não encontrada neste navegador${walletsSeen() ? ` (carteiras vistas: ${walletsSeen()})` : ""}. Instale/ative a extensão MetaMask e recarregue.`);
     await readMetamask(prov, await prov.request({ method: "eth_requestAccounts" }));
     prov.on?.("accountsChanged", (acs) => readMetamask(prov, acs).then(renderWalletConn));
     prov.on?.("chainChanged", () => prov.request({ method: "eth_accounts" }).then((acs) => readMetamask(prov, acs)).then(renderWalletConn));
