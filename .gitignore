@@ -22,3 +22,4 @@ meme_lineage.json.tmp
 meme_wallet.json
 x_feed.json
 x_feed.json.tmp
+.env.bak-*
