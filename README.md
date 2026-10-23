@@ -51,13 +51,29 @@ Same engine and agents; only the broker is real (`HyperliquidLiveBroker`, offici
   `HL_API_WALLET_KEY_MAINNET` — they can trade but cannot withdraw), `HL_NETWORK=testnet|mainnet`, **and** Start on
   the dashboard's 💰 Real account. Mainnet also needs `LIVE_TRADING=1`.
 - **Unified accounts** are supported: the balance is read from the spot clearinghouse (no Spot→Perps transfer needed).
-- **Hard limits:** 1x isolated, long-only, `LIVE_MAX_CAPITAL_USD` / `LIVE_MAX_POSITION_USD` caps, one position,
+- **Hard limits:** isolated margin (2x on the real account), long by default (real shorts are opt-in, see *Falling-market mode* below), `LIVE_MAX_CAPITAL_USD` / `LIVE_MAX_POSITION_USD` caps, `LIVE_MAX_POSITIONS`,
   daily loss → kill switch, Hyperliquid's $10 minimum respected.
 - **Protection on the exchange:** every entry gets reduce-only stop-loss and take-profit trigger orders; if they
   cannot be placed the position is closed immediately.
 - **Idempotent:** client order ids derived from our order id; a crash after submit is never resubmitted.
 - **Exchange is the truth:** native stop/TP exits are recorded from fills; untracked positions or equity drift trip
   the kill switch. One ledger per network (`live_testnet.db`, `live_mainnet.db`) so test money never mixes with real money. "Fechar tudo" flattens and disarms; testnet has a "test order" button.
+
+### Falling-market mode (`BEAR_MODE`, 2026-10-23) — shorts and rebounds on the real account
+Owner's order: "there is money to be made even in drops". Everything is opt-in in `.env` and `BEAR_MODE=0` restores the strict rules
+(restart the service: `launchctl kickstart -k gui/501/com.kairos.bots`).
+- **Real shorts:** `LIVE_ALLOW_SHORT=1` + the bot in `REAL_TRUSTED_BOTS` (today `short_break_g2_8`, "Zinho"). Hard limits that no flag in this section
+  changes: 1 open short, 3 a day, $1 daily short loss, stop <= `LIVE_SHORT_MAX_STOP_PCT` (3%), only with BTC under its 50h average, $10 per
+  position, exchange-side reduce-only stop/target (if they cannot be placed the position is closed).
+- **Earlier entries:** `BEAR_BREAK_BARS` (8, default rule 20) for ShortBreak's range breakdown and `BEAR_FADE_RSI` (65, default 70) for ShortFade.
+- **`BEAR_OVERRIDE_BOTS`** (comma list, empty by default): with `BEAR_MODE=1` these bots skip the two statistical gates (the team-learning avoid list
+  and the edge/EV check) so a signal can actually be taken and measured live.
+- **Rebound buyer (`BEAR_DIP_*`):** if `rules` ("São Marcos") is in `BEAR_OVERRIDE_BOTS` it buys an oversold flush (below the lower Bollinger band and
+  RSI < `BEAR_DIP_RSI`, 35 by default, 45 in production) **without** the EMA200 uptrend requirement, takes profit at `BEAR_DIP_TP_ATR` (1.5) ATR, passes the
+  weak-BTC filter and keeps at most `BEAR_DIP_MAX_OPEN` (2) positions. Stop, $10 size and the 2h hold cap are unchanged. These are marginal signals picked to
+  keep the bot active: expected value is about zero before fees, risk per trade about $0.2-0.3. Measure before trusting it.
+- **Honest limits:** the strategies' own docstrings record that every short variant was break-even or negative over 208 days of backtest, and a +$2 target on
+  a ~$35 account is not reachable inside the $10 / 2x / 3%-stop limits without raising risk, which needs explicit numbers from the owner.
 
 ### One wallet, a team of bots
 The team (named after Palmeiras players): **São Marcos** (`rules`, buys dips in an uptrend), **Endrick** (`trend`,
@@ -109,9 +125,9 @@ the others must first show ≥ 10 profitable lab trades.
   downtrend, stop 2 ATR, target 3 ATR, 12h. Paper shorts are held as longs on the mirror price `2*entry - price`
   (exact short P&L, funding sign flipped). Backtest: about break-even (every other short variant lost over 208 days), so
   it is measured live in the lab only; it is excluded from the real/simulation team, can never get a green light, and
-  the live broker refuses any short instrument. It trains in the lab with the same 12h cut and analysis; the BTC filter does
-  not block it (weak markets are its job). The real account still refuses shorts: if it proves profitable, short
-  execution on the exchange gets built before it can be promoted.
+  it trains in the lab with the same 12h cut and analysis; the BTC filter does not block it (weak markets are its job).
+  Update 2026-10-23: short execution on the exchange exists and the real account can short with `LIVE_ALLOW_SHORT=1`
+  (see *Falling-market mode*); only `short_break` bots listed in `REAL_TRUSTED_BOTS` may do it.
 - **15-minute bots** (`whales_15m`, `copy_15m`: "Evair/Veiga 15m"): the same rules on 15m candles, positions closed
   within 6h (1h with turbo) — quick trades. They need the same green light as every bot to reach real money, and on the
   real/simulation account they decide on 15m candles too. (Gabriel Jesus 15m was retired; no 15m AI twin: 4x the AI cost.)
@@ -254,6 +270,7 @@ Main settings (env, conservative defaults): `PAPER_START_USDC=100`, `PAPER_CYCLE
 `DEBATE_MODEL`, `DEBATE_MCP_SERVERS` (JSON list of remote MCP servers for fresh market context).
 
 ### Dashboard (`/paper`)
+Open positions carry a red **SHORT** or green **COMPRA** badge (shorts show real market prices, not the internal mirror price), and hovering a position or a bot shows a short summary (side, entry, stop/target with dollar amounts, bot record). Cache-buster: `savoia.js?v=` in `frontend/paper.html`.
 Equity, cash, P&L (realised/unrealised), gains for day / 7d / 30d / all-time as USD and **time-weighted return**
 (deposits/withdrawals never count as profit) next to buy-and-hold SOL and BTC, equity chart with day/week/month
 selector, trades filterable by venue/asset/strategy (entry→exit, fees, funding, slippage, P&L, reason),
@@ -279,6 +296,7 @@ docker-compose publishes `127.0.0.1:1914` only (inside Docker set `PAPER_TRUSTED
   Jupiter only with `LIVE_TRADING=1` **after** 4–8 weeks of 24/7 paper trading that beats hold SOL after costs.
 
 ### Running 24/7 on a Mac (`scripts/kairos_service.sh`)
+Operational note (2026-10-23): the watchdog probes `/api/paper/arena` with a 25 s timeout. The per-bot significance test used to download dozens of candle windows inside that request, so after a restart it took minutes and the watchdog restart-looped the app; it now runs in a background thread (`arena.significance`, PR #67). Never put rate-limited network calls inside a request handler the watchdog probes.
 `make service` installs a launchd user agent (`~/Library/LaunchAgents/com.kairos.bots.plist`): it starts at login,
 restarts the server within ~15 s if it crashes, and wraps it in `caffeinate -i -s` so the Mac does not idle-sleep.
 Logs go to `~/Library/Logs/kairos.log`; `scripts/kairos_service.sh status|restart|logs|uninstall`.
@@ -359,8 +377,9 @@ in this bull window**; mean-reversion beats holding gold/silver. Reports: `repor
   logs and continues, Safety rejects what it cannot verify. A free RPC/Jupiter key improves coverage.
 - Holder concentration comes from Jupiter's audit (third-party) and includes pool vaults.
 - Live candles come from GeckoTerminal (~30 req/min) / Hyperliquid; Solana backtest uses Binance and excludes memecoins.
-- Hyperliquid paper is 1x long-only; short selling and leverage are deliberately off.
-- Live trading exists only on Hyperliquid (1x long-only, small caps); Solana real swaps and withdrawals are not built.
+- Hyperliquid paper holds shorts as longs on the mirror price; real shorts exist but are small and capped (see *Falling-market mode*).
+- Live trading exists only on Hyperliquid (small caps, 2x isolated, $10 per position); Solana real swaps and withdrawals are not built.
+- Hyperliquid's public API rate-limits the app (~1000 `/info` calls/hour): some real cycles are skipped (`exchange unreachable`) and an order can be refused with HTTP 429. A retry/backoff layer is not built yet.
 - Sub-hour timeframes were tested and rejected: on 1–15 min candles the typical move is smaller than the round-trip cost.
 - Paper fills assume the quoted route would fill; no MEV/landing failures beyond the extra slippage bps.
 
