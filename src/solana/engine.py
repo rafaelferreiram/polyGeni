@@ -679,6 +679,11 @@ class PaperEngine:
                         self._agent(strat.name, last_reason=f"{c.symbol}: já há {cfg.LIVE_FAST_MAX_OPEN} posição de bot de 15 min aberta (limite)")
                         continue
                     pass_filter = True                                                              # 15m bots trade through a weak BTC
+                elif cfg.BEAR_MODE and not is_short and strat.name in cfg.BEAR_OVERRIDE_BOTS and not self.__dict__.get("lab_model"):
+                    if sum(1 for x in self.ledger.positions() if x["strategy"] == strat.name) >= cfg.BEAR_DIP_MAX_OPEN:
+                        self._agent(strat.name, last_reason=f"{c.symbol}: já há {cfg.BEAR_DIP_MAX_OPEN} compras de repique abertas (limite)")
+                        continue
+                    pass_filter = True                                                              # the bear-dip buyer trades through a weak BTC
                 else:
                     pass_filter = btc_ok
                 if not pass_filter and not is_short:
@@ -689,6 +694,8 @@ class PaperEngine:
                 if not self.__dict__.get("lab_model") and per_bot.get(strat.name, 0) >= cfg.MAX_POSITIONS_PER_BOT:
                     self._agent(strat.name, last_reason=f"{c.symbol}: já tem {cfg.MAX_POSITIONS_PER_BOT} posições abertas")
                     continue
+                (getattr(strat, "_rules", None) or strat).__dict__["bear_dip"] = bool(
+                    cfg.BEAR_MODE and not is_short and strat.name in cfg.BEAR_OVERRIDE_BOTS and not self.__dict__.get("lab_model"))
                 if hasattr(strat, "decide"):
                     if not strat.enabled:
                         self._agent(strat.name, last_reason="sem ANTHROPIC_API_KEY — este bot não decide", vetoed=1)

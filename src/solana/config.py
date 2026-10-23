@@ -280,6 +280,13 @@ BEAR_FADE_RSI = _f("BEAR_FADE_RSI", 65.0)
 # gates (team-learning avoid list and the edge/EV check) so a breakdown short can actually be taken and measured live.
 # Only those gates: the real-account short limits ($10, 2x, 1 open, 3/day, $1 daily short loss, stop <= 3%, BTC filter) still apply.
 BEAR_OVERRIDE_BOTS = [m for m in os.getenv("BEAR_OVERRIDE_BOTS", "").split(",") if m]
+# BEAR_DIP (owner, 23/10/2026: "São Marcos has made no trade in 2 days, it must trade today"): with BEAR_MODE on, the long dip-buyer
+# (rules) listed in BEAR_OVERRIDE_BOTS buys an oversold flush (below the lower Bollinger band and RSI < BEAR_DIP_RSI) WITHOUT the
+# EMA200 uptrend requirement, takes profit at BEAR_DIP_TP_ATR ATR (a quick bounce, not a trend) and passes the weak-BTC filter,
+# at most BEAR_DIP_MAX_OPEN positions at a time. Stop, $10 size, 2h hold cap and every account limit are unchanged.
+BEAR_DIP_RSI = _f("BEAR_DIP_RSI", 35.0)
+BEAR_DIP_TP_ATR = _f("BEAR_DIP_TP_ATR", 1.5)
+BEAR_DIP_MAX_OPEN = _i("BEAR_DIP_MAX_OPEN", 2)
 LIVE_SHORT_MAX_OPEN = _i("LIVE_SHORT_MAX_OPEN", 1)
 LIVE_SHORT_MAX_PER_DAY = _i("LIVE_SHORT_MAX_PER_DAY", 3)
 LIVE_SHORT_DAILY_LOSS_USD = _f("LIVE_SHORT_DAILY_LOSS_USD", 1.0)

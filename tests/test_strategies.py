@@ -154,3 +154,19 @@ def test_rebound_buys_the_first_green_bar_after_an_oversold_flush_and_nothing_el
     assert sig and sig.indicators["rsi"] <= 30 and sig.stop_price < c[-1]["close"] < sig.tp_price
     red = c[:-1] + [dict(c[-1], close=c[-1]["open"] * 0.998)]                # still falling: no entry
     assert Rebound().signal(red) is None and Rebound().signal(flat_candles(60)) is None
+
+
+def test_bear_dip_buys_an_oversold_flush_in_a_downtrend_only_for_the_flagged_bot(monkeypatch):
+    from src.solana import config as cfg
+    from src.solana.strategies import MeanReversionATR
+    c = [dict(t=i * 3600, open=200 - 0.3 * i, high=200 - 0.3 * i + 0.4, low=200 - 0.3 * i - 0.4, close=200 - 0.3 * i, volume=100) for i in range(260)]
+    for f in (0.985, 0.975, 0.965):                            # sharp flush inside a long downtrend (below EMA200)
+        last = c[-1]["close"]
+        c.append(dict(t=c[-1]["t"] + 3600, open=last, high=last, low=last * f, close=last * f, volume=100))
+    assert MeanReversionATR().signal(c) is None                  # strict rules: no uptrend, no trade
+    monkeypatch.setattr(cfg, "BEAR_MODE", True)
+    assert MeanReversionATR().signal(c) is None                  # BEAR_MODE alone changes nothing: the bot must be flagged
+    dip = MeanReversionATR(bear_dip=True).signal(c)
+    assert dip is not None and dip.tp_pct < MeanReversionATR(trend=False).signal(c).tp_pct   # quick bounce target
+    monkeypatch.setattr(cfg, "BEAR_MODE", False)
+    assert MeanReversionATR(bear_dip=True).signal(c) is None     # rollback switch

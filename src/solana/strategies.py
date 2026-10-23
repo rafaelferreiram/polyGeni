@@ -172,9 +172,12 @@ class MeanReversionATR:
     max_funding: float = 0.0001
     capital_pct: float = 1.0
     name: str = "mean_reversion_atr"
+    bear_dip: bool = False        # set by the engine for the bots in BEAR_OVERRIDE_BOTS while BEAR_MODE is on
 
     def signal(self, candles: list[dict]) -> Signal | None:
-        need = max(self.period, self.rsi_period + 1, self.trend_ema if self.trend else 0) + 1
+        from src.solana import config as cfg
+        dip = self.bear_dip and cfg.BEAR_MODE
+        need = max(self.period, self.rsi_period + 1, self.trend_ema if self.trend and not dip else 0) + 1
         if len(candles) < need:
             return None
         closes = [c["close"] for c in candles]
@@ -182,14 +185,15 @@ class MeanReversionATR:
         relax = getattr(self, "relax", 0)                 # daily quota: titular behind its minimum of trades
         lower = mean(window) - (self.k - 0.25 * relax) * pstdev(window)
         r = rsi(closes, self.rsi_period)
-        if not (closes[-1] < lower and r < self.rsi_max + 5 * relax) or _crowded(candles, self.max_funding):
+        rsi_cap = cfg.BEAR_DIP_RSI if dip else self.rsi_max + 5 * relax
+        if not (closes[-1] < lower and r < rsi_cap) or _crowded(candles, self.max_funding):
             return None
-        trend = ema(closes[-3 * self.trend_ema:], self.trend_ema) if self.trend else None
+        trend = ema(closes[-3 * self.trend_ema:], self.trend_ema) if self.trend and not dip else None
         if trend is not None and closes[-1] <= trend:
             return None
-        stop, tp, a = _atr_stops(candles, self.stop_atr, self.tp_atr)
+        stop, tp, a = _atr_stops(candles, self.stop_atr, cfg.BEAR_DIP_TP_ATR if dip else self.tp_atr)
         return Signal(self.name, closes[-1], stop, tp,
-                      f"dip below band {lower:.6g}, RSI {r:.0f}" + (f", uptrend (EMA{self.trend_ema} {trend:.6g})" if trend else ""),
+                      f"dip below band {lower:.6g}, RSI {r:.0f}" + (" (queda: repique rápido)" if dip else "") + (f", uptrend (EMA{self.trend_ema} {trend:.6g})" if trend else ""),
                       {"rsi": r, "atr": a, "lower_band": lower, "ema_trend": trend})
 
 
