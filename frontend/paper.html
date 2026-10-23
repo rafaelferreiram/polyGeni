@@ -9,22 +9,27 @@
   <style>
     /* graphite + mint, no purple: one brand colour, semantic red/amber only where they mean something */
     :root {
-      --bg: #0b0e0d; --surface: #121715; --surface-2: #171d1a; --border: #222a26;
-      --text: #e8eeeb; --muted: #8a9690;
+      /* Cruz de Savoia palette: deep pitch green, gold trim, cream wordmark; emerald stays the semantic P&L green */
+      --bg: #0a110d; --surface: #101814; --surface-2: #152019; --border: #24352b;
+      --text: #ecf2ee; --muted: #8fa097;
       --accent: #34d399; --accent-ink: #04120b; --green: #34d399; --red: #f87171; --yellow: #fbbf24;
-      --glow: rgba(52,211,153,.35); --floor: #0e1210; --metal: #1f2622; --metal-2: #2a332e;
+      --gold: #d4af37; --gold-dim: #c9a227; --cream: #f2ede0;
+      --glow: rgba(52,211,153,.35); --floor: #0d1410; --metal: #1e2922; --metal-2: #28362e;
       --font: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
     }
     body { min-height: 100vh; background: var(--bg); font-family: var(--font); -webkit-font-smoothing: antialiased; }
-    header { background: var(--bg) !important; border-bottom: 1px solid var(--border) !important; padding: 14px 24px !important; }
+    header { background: var(--bg) !important; border-bottom: 1px solid var(--border) !important; padding: 14px 24px !important;
+             box-shadow: 0 1px 0 rgba(212,175,55,.22); }
     .logo { font-weight: 750; letter-spacing: -.3px; font-size: 19px; display: flex; align-items: center; gap: 10px; }
-    .logo small { display: block; font-size: 11px; font-weight: 500; color: var(--muted); letter-spacing: 0; margin-top: 1px; }
+    .logo > span { color: var(--cream); }
+    .logo small { display: block; font-size: 11px; font-weight: 500; color: var(--gold-dim); letter-spacing: .04em; margin-top: 1px; }
     .panel { background: var(--surface) !important; border: 1px solid var(--border) !important; border-radius: 14px !important; padding: 18px 20px !important; }
-    .panel h2 { font-size: 12px !important; font-weight: 600 !important; letter-spacing: .06em; text-transform: uppercase; color: var(--muted) !important; margin-bottom: 14px !important; }
+    .panel h2 { font-size: 12px !important; font-weight: 650 !important; letter-spacing: .07em; text-transform: uppercase; color: var(--gold-dim) !important; margin-bottom: 14px !important; }
+    .panel h2 .note { color: var(--muted) !important; }
     .tag { background: transparent !important; border: 1px solid var(--border); color: var(--muted) !important; text-transform: none; letter-spacing: 0; font-weight: 500; }
     button { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 7px 12px; font: 500 13px var(--font); }
-    button:hover { border-color: #33403a; }
-    :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    button:hover { border-color: #6d5c1f; }
+    :focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
     .strip { font: 500 12px/1 var(--font); text-align: center; padding: 7px 16px; letter-spacing: .2px; }
     .strip.sim { background: #1d1a0e; color: var(--yellow); border-bottom: 1px solid #3a3213; }
     .strip.real { background: #2a1214; color: var(--red); border-bottom: 1px solid #4a1d21; }

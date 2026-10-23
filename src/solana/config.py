@@ -189,6 +189,10 @@ MEME_MAX_HOLD_H = _f("MEME_MAX_HOLD_H", 2)
 # every trade, crypto or meme, is short: at most MAX_HOLD_CAP_H (the owner's rule — trades can last 30s or 2h, never a
 # buy-and-hold); the quick-win locks bank the fast moves before that. FOCUS_COINS are scanned first each cycle.
 MAX_HOLD_CAP_H = _f("MAX_HOLD_CAP_H", 2)
+# §5.5 holding policy, lab side: slower families (trend 24h, trend4h 48h, copy 12h) run their OWN horizon in the
+# lab up to this cap, building the evidence longer holds need; the 15m family keeps the scalp clock. Real money
+# stays under MAX_HOLD_CAP_H until that evidence exists.
+LAB_HOLD_CAP_H = _f("LAB_HOLD_CAP_H", 48.0)
 # crypto "no traction" exit: 149 time exits lost $9.15 (27% wins); trades held past 2h won 24%, under 1h 57%. After
 # STALE_EXIT_H without clearing +STALE_EXIT_PCT over entry the position is closed instead of waiting for the cap.
 STALE_EXIT_H = _f("STALE_EXIT_H", 1.0)

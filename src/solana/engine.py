@@ -713,8 +713,8 @@ class PaperEngine:
                     sig.stop_pct = min(sig.stop_pct * profile["stop_mult"], 0.5)
                     sig.tp_pct *= profile["stop_mult"]
                 lab_model = self.__dict__.get("lab_model")
-                if sig is not None and lab_model:      # lab scalp mode: tight, near-symmetric stop/target
-                    if cfg.LAB_SCALP_STOP_PCT:
+                if sig is not None and lab_model and _fast_family(lab_model):   # scalp clamps: 15m family only —
+                    if cfg.LAB_SCALP_STOP_PCT:         # a 0.6% stop makes no sense on a 24h trend hold (§5.5)
                         sig.stop_pct = min(sig.stop_pct, cfg.LAB_SCALP_STOP_PCT)
                     if cfg.LAB_SCALP_TP_PCT:
                         sig.tp_pct = min(sig.tp_pct, cfg.LAB_SCALP_TP_PCT)
@@ -857,14 +857,31 @@ def bench_prices() -> dict:
     return {"SOL": float(mids["SOL"]), "BTC": float(mids["BTC"])}
 
 
+def _fast_family(name: str) -> bool:
+    """15-minute twin (or a successor of one): the scalp side of the club."""
+    from src.solana import evolution
+    from src.solana.strategies import FAST_BOTS
+    return evolution.base_of(name.removeprefix("llm:")) in FAST_BOTS
+
+
 def _max_hold(strategy: str, default: float, lab: bool = False) -> float:
-    """Day-trade bots close their positions sooner (e.g. trend: 24h); others use the engine default."""
+    """Each family trades its own horizon (§5.5 holding policy — short AND long trades, by evidence):
+    - accounts (real money): the owner's MAX_HOLD_CAP_H (2h) stays the hard cap until the lab proves longer holds;
+    - lab, fast family (15m twins): the scalp clock (LAB_SCALP_HOLD_H) — the short-trade experiment;
+    - lab, slower families: their strategy's own horizon (trend 24h, trend4h 48h…) up to LAB_HOLD_CAP_H — the
+      evidence longer holds need before the real cap can ever move. Paper money only."""
     from src.solana import arena
     from src.solana.strategies import RULE_BOTS
-    hold = min(getattr(RULE_BOTS.get(strategy), "max_hold_h", None) or default, cfg.MAX_HOLD_CAP_H)   # no buy-and-hold: 2h cap
+    own = getattr(RULE_BOTS.get(strategy), "max_hold_h", None) or default
+    if lab:
+        if _fast_family(strategy) and cfg.LAB_SCALP_HOLD_H:
+            hold = min(own, cfg.LAB_SCALP_HOLD_H)
+        else:
+            hold = min(own, cfg.LAB_HOLD_CAP_H)
+    else:
+        hold = min(own, cfg.MAX_HOLD_CAP_H)               # no buy-and-hold with real money
     fast = arena.fast_exit_hold(strategy)
-    hold = min(hold, fast) if fast else hold
-    return min(hold, cfg.LAB_SCALP_HOLD_H) if lab and cfg.LAB_SCALP_HOLD_H else hold
+    return min(hold, fast) if fast else hold
 
 
 def _market_temp(ready: list) -> dict:
