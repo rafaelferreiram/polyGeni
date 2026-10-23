@@ -79,6 +79,12 @@ class CostBook:
             return self.conn.execute("SELECT COALESCE(SUM(usd),0) FROM costs WHERE ts >= ?",
                                      (start.isoformat(timespec="seconds"),)).fetchone()[0]
 
+    def day_spent(self) -> float:
+        start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        with self._lock:
+            return self.conn.execute("SELECT COALESCE(SUM(usd),0) FROM costs WHERE ts >= ?",
+                                     (start.isoformat(timespec="seconds"),)).fetchone()[0]
+
     def calls(self, days: float = 30) -> int:
         since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat(timespec="seconds")
         with self._lock:
@@ -128,3 +134,6 @@ def check_budget():
     if spent >= cap:
         raise BudgetExceeded(f"IA pausada: gastou ${spent:.2f} de ${cap:.2f} permitidos este mês "
                              f"(base ${cfg.AI_BASE_MONTHLY_USD:.2f} + {cfg.AI_PROFIT_SHARE:.0%} do lucro real)")
+    if cfg.AI_DAILY_BUDGET_USD and (today := book().day_spent()) >= cfg.AI_DAILY_BUDGET_USD:
+        raise BudgetExceeded(f"IA pausada até amanhã: gastou ${today:.2f} hoje, o teto diário é "
+                             f"${cfg.AI_DAILY_BUDGET_USD:.2f} (um dia chegou a queimar 79% do mês)")

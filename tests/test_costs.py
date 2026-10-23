@@ -34,6 +34,18 @@ def test_budget_blocks_calls_once_spent(book, monkeypatch):
         anthropic_llm("hi", model="claude-haiku-5-5")                         # never reaches the API
 
 
+def test_daily_budget_stops_a_one_day_burn(book, monkeypatch):
+    """2026-10-21: $1.77 (889 calls) in ONE day ate 79% of the month. The daily brake stops that under the monthly cap."""
+    monkeypatch.setattr(cfg, "LLM_MONTHLY_BUDGET_USD", 5.0)
+    monkeypatch.setattr(cfg, "AI_BASE_MONTHLY_USD", 5.0)                # month is far from spent
+    monkeypatch.setattr(cfg, "AI_DAILY_BUDGET_USD", 0.25)
+    book.record("claude-haiku-5-5", "x", {"input_tokens": 1_000_000, "output_tokens": 300_000})   # $0.25 today
+    with pytest.raises(costs.BudgetExceeded, match="teto diário"):
+        costs.check_budget()
+    monkeypatch.setattr(cfg, "AI_DAILY_BUDGET_USD", 0.0)                # 0 = the daily brake off
+    costs.check_budget()
+
+
 def test_prefilter_skips_paid_call_without_a_setup(book, monkeypatch):
     monkeypatch.setattr(cfg, "LLM_PREFILTER", True)
     calls = []

@@ -46,8 +46,11 @@ def test_promotion_needs_the_significance_test_besides_wins_and_win_rate(tmp_pat
     monkeypatch.setattr(arena, "_bots", bots)
     fake = [{"pnl_usd": 0.1 if i < 12 else -0.1} for i in range(30)]          # 12 wins of 30 = 40%
     monkeypatch.setattr(type(bots["claude-haiku-5-5"].ledger), "closed_trades", lambda self: fake)
+    monkeypatch.setattr(arena, "net_of_cost", lambda m: (1.0, 0.1, 0.9))     # net positive: not what this test is about
     monkeypatch.setattr(arena, "significance", lambda m: {"p": 0.3})
     c = arena.can_promote("claude-haiku-5-5")
     assert not c["ok"] and c["p_value"] == 0.3 and c["wins"] == 12
     monkeypatch.setattr(arena, "significance", lambda m: {"p": 0.01})
     assert arena.can_promote("claude-haiku-5-5")["ok"]
+    monkeypatch.setattr(arena, "net_of_cost", lambda m: (-0.5, 0.1, -0.6))   # and a net loser never passes
+    assert not arena.can_promote("claude-haiku-5-5")["ok"]

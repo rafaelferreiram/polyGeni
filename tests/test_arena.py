@@ -312,6 +312,9 @@ def test_user_can_promote_a_reserve_with_12_wins_and_35pct(tmp_path, monkeypatch
     fake = [{"pnl_usd": 0.1 if i < 12 else -0.1} for i in range(30)]          # 12 wins of 30 = 40%
     monkeypatch.setattr(type(led), "closed_trades", lambda self: fake)
     monkeypatch.setattr(arena, "significance", lambda m: {"p": 0.01})       # the luck test has its own tests
+    monkeypatch.setattr(arena, "net_of_cost", lambda m: (-0.6, 0.1, -0.7))  # user's rule met, but it loses money
+    assert not arena.can_promote("claude-haiku-5-5")["ok"]                  # a loser is never promoted
+    monkeypatch.setattr(arena, "net_of_cost", lambda m: (1.0, 0.1, 0.9))
     assert arena.can_promote("claude-haiku-5-5")["ok"]
     arena.promote("claude-haiku-5-5")
     assert arena.is_titular("claude-haiku-5-5") and arena.green_light("claude-haiku-5-5").get("promoted")

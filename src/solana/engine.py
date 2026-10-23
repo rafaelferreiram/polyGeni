@@ -215,10 +215,15 @@ class PaperEngine:
                 continue
             done = sum(t["strategy"] == strat.name for t in closed)
             behind = expected - done
-            levels[strat.name] = rule.relax = 0 if behind < 1 else 1 if behind < 2 else 2
+            levels[strat.name] = 0 if behind < 1 else 1 if behind < 2 else 2
+            # observational by default: the count is tracked and shown, but never loosens entries or shrinks targets
+            # (forcing trades to hit a daily number is an incentive against profitability). QUOTA_RELAX_ENTRIES=1 = rollback.
+            rule.relax = levels[strat.name] if cfg.QUOTA_RELAX_ENTRIES else 0
             if levels[strat.name] != prev.get(strat.name, 0):
                 self.ledger.log_decision("quota", strategy=strat.name, reason=(
-                    f"⏱ {who}: cota do dia {done} de {cfg.DAILY_MIN_TRADES} operações completas — entrada um pouco mais solta (nível {levels[strat.name]}) e alvo mais perto"
+                    (f"⏱ {who}: cota do dia {done} de {cfg.DAILY_MIN_TRADES} operações completas — entrada um pouco mais solta (nível {levels[strat.name]}) e alvo mais perto"
+                     if cfg.QUOTA_RELAX_ENTRIES else
+                     f"⏱ {who}: {done} de {cfg.DAILY_MIN_TRADES} operações completas hoje (métrica observacional; as entradas não mudam)")
                     if levels[strat.name] else f"✅ {who}: cota do dia em dia ({done} de {cfg.DAILY_MIN_TRADES})"))
         self.ledger.set_state("quota_levels", levels)
         return levels
@@ -230,18 +235,44 @@ class PaperEngine:
         return eng.ledger if eng else self.ledger
 
     # ─── exits ───
+    def _hold_limit(self, pos: dict) -> float:
+        """The max-hold in force WHEN THE POSITION WAS OPENED (stored at entry). A config change never closes old
+        positions retroactively: on 2026-10-22 01:33 UTC a new 2h cap closed 5 open trades at once (−$0.74)."""
+        stored = self.ledger.get_state(f"hold:{pos['entry_order_id']}")
+        return stored if stored else _max_hold(pos["strategy"], self.max_hold_h, bool(self.__dict__.get("lab_model")))
+
+    def _close(self, pos: dict, reason: str, extra_signals: dict | None = None) -> bool:
+        try:
+            fill = self.executor.close(f"exit-{pos['entry_order_id']}", pos, reason)
+        except Exception as e:
+            self.ledger.log_decision("error", cycle=self.cycle, mint=pos["mint"], symbol=pos["symbol"],
+                                     strategy=pos["strategy"], reason=f"exit failed ({reason}): {e}")
+            return False
+        pnl = fill["usd_gross"] - fill["fee_usd"] - pos["cost_usd"]
+        self.ledger.log_decision("exit", cycle=self.cycle, mint=pos["mint"], symbol=pos["symbol"],
+                                 strategy=pos["strategy"], order_id=fill["order_id"], reason=reason,
+                                 signals={**(extra_signals or {}), "pnl_usd": round(pnl, 4)},
+                                 votes={"risk": {"approve": True, "reason": reason}})
+        self.ledger.delete_position(pos["mint"])
+        self.ledger.delete_state(f"hold:{pos['entry_order_id']}")
+        return True
+
     def mark_and_exit(self):
         now = datetime.now(timezone.utc)
         for pos in self.ledger.positions():
+            held_h = (now - _ts(pos["opened_at"])).total_seconds() / 3600
+            limit = self._hold_limit(pos)
             try:
                 value = self.executor.mark(pos)
             except Exception as e:
                 self.ledger.log_decision("error", cycle=self.cycle, mint=pos["mint"], symbol=pos["symbol"],
                                          reason=f"mark-to-market failed: {e}")
+                if held_h >= limit:      # a time exit needs no fresh price: never let a 429 storm hold it past the cap
+                    self._close(pos, f"max holding time {limit:g}h reached (cotação indisponível; fecho pelo tempo)",
+                                {"held_h": round(held_h, 1)})
                 continue
             price = value / pos["qty"]
             self.ledger.set_mark(pos["mint"], price, value)
-            held_h = (now - _ts(pos["opened_at"])).total_seconds() / 3600
             reason = None
             if cfg.PROTECT_PROFIT and (new := protected_stop(pos, price)):
                 self.ledger.set_stop(pos["mint"], new)
@@ -263,7 +294,7 @@ class PaperEngine:
                 reason = f"take-profit hit ({price:.6g} >= {pos['tp_price']:.6g})"
             elif held_h >= cfg.STALE_EXIT_H and price < pos["cost_usd"] / pos["qty"] * (1 + cfg.STALE_EXIT_PCT):
                 reason = f"sem tração: {held_h:.1f}h sem passar de +{cfg.STALE_EXIT_PCT:.1%} — fecha antes do tempo máximo"
-            elif held_h >= (limit := _max_hold(pos["strategy"], self.max_hold_h, bool(self.__dict__.get("lab_model")))):
+            elif held_h >= limit:
                 reason = f"max holding time {limit:g}h reached"
             elif self.decision_mode() == "llm" and self.team and pos.get("pool_address"):
                 # the bot that opened the position manages its exit
@@ -274,14 +305,7 @@ class PaperEngine:
                 except Exception as e:
                     logger.warning(f"LLM exit review failed: {e}")
             if reason:
-                fill = self.executor.close(f"exit-{pos['entry_order_id']}", pos, reason)
-                pnl = fill["usd_gross"] - fill["fee_usd"] - pos["cost_usd"]
-                self.ledger.log_decision("exit", cycle=self.cycle, mint=pos["mint"], symbol=pos["symbol"],
-                                         strategy=pos["strategy"], order_id=fill["order_id"], reason=reason,
-                                         signals={"mark_price": price, "held_h": round(held_h, 1),
-                                                  "pnl_usd": round(pnl, 4)},
-                                         votes={"risk": {"approve": True, "reason": reason}})
-                self.ledger.delete_position(pos["mint"])
+                self._close(pos, reason, {"mark_price": price, "held_h": round(held_h, 1)})
 
     # ─── one full cycle ───
     def run_cycle(self) -> dict:
@@ -391,6 +415,7 @@ class PaperEngine:
             self.ledger.log_decision("exit", cycle=self.cycle, mint=pos["mint"], symbol=pos["symbol"], strategy=pos["strategy"],
                                      order_id=fill["order_id"], reason=reason, signals={"pnl_usd": round(pnl, 4)})
             self.ledger.delete_position(pos["mint"])
+            self.ledger.delete_state(f"hold:{pos['entry_order_id']}")
             self.reconcile()
         finally:
             self._busy.release()
@@ -638,13 +663,14 @@ class PaperEngine:
                 if sig is None:
                     self._agent(strat.name, last_reason=f"{c.symbol}: no signal")
                     continue
-                # one trade per signal: after an exit, the same candle's signal (and its now-stale target) is spent
-                # shortcut: kept in memory, a restart may allow one repeat of the latest signal
-                entered = self.__dict__.setdefault("_entered", set())
+                # one trade per signal: after an exit, the same candle's signal (and its now-stale target) is spent.
+                # Persisted in the ledger so a restart never repeats the same candle's entry (incident class: 2026-10-21).
+                entered = self.__dict__.setdefault(
+                    "_entered", {tuple(k) for k in self.ledger.get_state("entered", [])})
                 if (c.mint, strat.name, candles[-1]["t"]) in entered:
                     self._agent(strat.name, last_reason=f"{c.symbol}: sinal já usado neste candle")
                     continue
-                if quota.get(strat.name):            # behind its daily minimum: closer target, quicker round trip
+                if cfg.QUOTA_RELAX_ENTRIES and quota.get(strat.name):   # rollback mode only: closer target when behind
                     sig.tp_pct *= 0.6
                     sig.reason = f"{sig.reason} · cota do dia (nível {quota[strat.name]})"
                 tags = learning.situation(candles, c.symbol)
@@ -732,6 +758,10 @@ class PaperEngine:
                                              signals=signals, votes=votes, reason=f"executor refused/failed: {e}")
                     continue
                 entered.add((c.mint, strat.name, candles[-1]["t"]))
+                recent = sorted(entered, key=lambda k: k[2])[-100:]           # the last few candles are enough
+                self.ledger.set_state("entered", [list(k) for k in recent])
+                # the hold cap in force NOW is this trade's contract: a later config change never closes it retroactively
+                self.ledger.set_state(f"hold:{order_id}", _max_hold(strat.name, self.max_hold_h, bool(lab_model)))
                 self.reconcile()
                 stats["entries"] += 1
                 self._agent("executor", last_reason=f"bought {c.symbol} ${fill['usd_gross']:.2f}", approved=1)

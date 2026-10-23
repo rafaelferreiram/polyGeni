@@ -311,6 +311,54 @@ def test_trend_positions_are_day_trades():
     assert _max_hold("trend", 72) == 2 and _max_hold("rules", 72) == 2 and _max_hold("llm:claude-haiku-5-5", 72) == 2   # 2h cap for all
 
 
+def test_a_hold_cap_change_never_closes_old_positions_retroactively(ledger, monkeypatch):
+    """2026-10-22 01:33 UTC: deploying the new 2h cap closed 5 open positions at once (−$0.74). The cap in force at
+    entry is stored with the trade and a later config change only applies to NEW positions."""
+    from datetime import datetime, timedelta, timezone
+    from src.solana import config as cfg
+    price = Price(1.0)
+    eng = build(ledger, price)
+    monkeypatch.setattr(cfg, "MAX_HOLD_CAP_H", 24.0)                  # the rule when the trade was opened
+    eng.run_cycle()
+    [pos] = ledger.positions()
+    assert ledger.get_state(f"hold:{pos['entry_order_id']}") == 24.0  # the trade's contract, persisted
+    old = (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat(timespec="seconds")
+    with ledger._lock:
+        ledger.conn.execute("UPDATE positions SET opened_at=?", (old,))
+    monkeypatch.setattr(cfg, "MAX_HOLD_CAP_H", 2.0)                   # the "deploy": a much tighter cap
+    monkeypatch.setattr(cfg, "STALE_EXIT_H", 100.0)                   # isolate the time-cap behaviour
+    monkeypatch.setattr(cfg, "SCALP_TP_PCT", 0)
+    eng.strategies[0].fire = False
+    eng.mark_and_exit()
+    assert len(ledger.positions()) == 1                               # 3h held, old 24h contract: stays open
+    with ledger._lock:                                                # at 25h even the old contract is over
+        ledger.conn.execute("UPDATE positions SET opened_at=?",
+                            ((datetime.now(timezone.utc) - timedelta(hours=25)).isoformat(timespec="seconds"),))
+    eng.mark_and_exit()
+    assert ledger.positions() == [] and "max holding time 24h" in ledger.closed_trades()[0]["reason"]
+    assert ledger.get_state(f"hold:{ledger.closed_trades()[0]['entry_order_id']}") is None   # cleaned up
+
+
+def test_time_exit_still_fires_when_mark_to_market_fails(ledger, monkeypatch):
+    """2026-10-21 17:12 UTC: 429 storms made executor.mark raise and the old code skipped the whole exit check,
+    holding positions past their cap. A time exit needs no fresh price."""
+    from datetime import datetime, timedelta, timezone
+    from src.solana import config as cfg
+    price = Price(1.0)
+    eng = build(ledger, price)
+    eng.run_cycle()
+    with ledger._lock:
+        ledger.conn.execute("UPDATE positions SET opened_at=?",
+                            ((datetime.now(timezone.utc) - timedelta(hours=3)).isoformat(timespec="seconds"),))
+    monkeypatch.setattr(type(eng.executor), "mark", lambda self, pos: (_ for _ in ()).throw(RuntimeError("429 rate limit")))
+    eng.strategies[0].fire = False
+    eng.mark_and_exit()
+    assert ledger.positions() == []
+    [t] = ledger.closed_trades()
+    assert "fecho pelo tempo" in t["reason"] and any("mark-to-market failed" in d["reason"]
+                                                     for d in ledger.decisions(kind="error"))
+
+
 def test_manual_buy_goes_through_risk_with_stop_and_target(ledger):
     import pytest
     eng = build(ledger, Price(1.0))
@@ -412,17 +460,27 @@ def test_bot_records_situations_and_avoids_specific_losing_ones(ledger, monkeypa
     assert learning.avoid({}, ["RSI alto"], inherited=["RSI alto"]) == ["RSI alto"]      # inherited lesson
 
 
-def test_titular_behind_its_daily_quota_loosens_a_notch_and_aims_closer(ledger, monkeypatch):
+def test_daily_quota_is_observational_by_default_and_rollback_restores_the_relax(ledger, monkeypatch):
+    """Being behind a trade count must never loosen entries (incentive against profitability): the quota is logged
+    and shown, nothing else. QUOTA_RELAX_ENTRIES=1 is the rollback to the old behaviour."""
     from src.solana import arena, config as cfg
     monkeypatch.setattr(arena, "is_titular", lambda m: True)
     monkeypatch.setattr(cfg, "DAILY_MIN_TRADES", 100_000)          # far behind whatever the hour
     eng = build(ledger, Price(1.0))
     eng.run_cycle()
     entry = ledger.decisions(kind="entry")[0]
-    assert "cota do dia (nível 2)" in entry["reason"] and eng.strategies[0].relax == 2
-    assert ledger.decisions(kind="quota")
+    assert "cota do dia" not in entry["reason"] and eng.strategies[0].relax == 0   # entry untouched
+    [q] = ledger.decisions(kind="quota")
+    assert "observacional" in q["reason"]                          # still measured and visible
+    monkeypatch.setattr(cfg, "QUOTA_RELAX_ENTRIES", True)          # rollback switch: the old loosening
+    eng.__dict__.pop("_entered", None); eng.ledger.delete_state("entered")
+    ledger2 = ledger.__class__(":memory:", 100.0)
+    eng2 = build(ledger2, Price(1.0))
+    eng2.run_cycle()
+    entry2 = ledger2.decisions(kind="entry")[0]
+    assert "cota do dia (nível 2)" in entry2["reason"] and eng2.strategies[0].relax == 2
     monkeypatch.setattr(arena, "is_titular", lambda m: False)        # reserves: no quota, but they train aggressively
-    assert eng._quota_levels() == {} and eng.strategies[0].relax == cfg.RESERVE_RELAX
+    assert eng2._quota_levels() == {} and eng2.strategies[0].relax == cfg.RESERVE_RELAX
 
 
 def test_a_manual_order_makes_a_running_cycle_stop_early(ledger):
@@ -545,7 +603,7 @@ def test_a_position_that_goes_nowhere_is_closed_after_an_hour_but_a_winner_keeps
     assert ledger.positions() == [] and "sem tração" in ledger.closed_trades()[0]["reason"]
     price.p = 1.0
     eng.strategies[0].fire = True
-    eng.__dict__.pop("_entered", None)               # one trade per signal candle: let it enter again
+    eng.__dict__.pop("_entered", None); eng.ledger.delete_state("entered")               # one trade per signal candle: let it enter again
     eng.run_cycle()                                  # a new position, again held 1.5h but this time it is up 1%
     with ledger._lock:
         ledger.conn.execute("UPDATE positions SET opened_at=?", (old,))
@@ -602,7 +660,7 @@ def test_a_small_profit_is_sold_at_once_and_a_lab_reserve_trades_through_the_btc
     monkeypatch.setattr(cfg2, "BTC_FILTER", True)
     monkeypatch.setattr(PaperEngine, "_btc_ok", lambda self: False)
     eng.strategies[0].fire = True
-    eng.__dict__.pop("_entered", None)
+    eng.__dict__.pop("_entered", None); eng.ledger.delete_state("entered")
     eng.run_cycle()
     assert len(ledger.positions()) == 0                                # a plain engine: filter holds
     eng.lab_model = "whales2_g2_5"
@@ -694,3 +752,18 @@ def test_lab_reserves_scan_every_coin_while_titulars_keep_the_hourly_universe(le
 def test_lab_scalp_hold_only_for_lab():
     from src.solana.engine import _max_hold
     assert _max_hold("trend", 72, lab=True) == 0.5 and _max_hold("trend", 72) == 2   # real account keeps the 2h cap
+
+
+def test_a_restart_never_repeats_the_same_candles_entry(ledger, monkeypatch):
+    """The one-trade-per-signal memory is persisted: a new engine on the same ledger (an app restart) refuses to
+    re-enter on the candle that already produced a trade."""
+    from src.solana import config as cfg
+    monkeypatch.setattr(cfg, "SCALP_TP_PCT", 0)
+    price = Price(1.2)                                     # above the TP so the trade closes on the next cycle
+    eng = build(ledger, price)
+    assert eng.run_cycle()["entries"] == 1
+    eng.run_cycle()                                        # take-profit: position closed, signal spent
+    assert ledger.positions() == [] and len(ledger.closed_trades()) == 1
+    fresh = build(ledger, price)                           # the restart: new engine, same ledger
+    assert fresh.run_cycle()["entries"] == 0               # same candle, no repeat
+    assert "sinal já usado" in ledger.get_state("agents")["momentum"]["last_reason"]
