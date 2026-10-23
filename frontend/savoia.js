@@ -348,7 +348,7 @@ async function loadBrief(force = false) {
     const b = await api(`/ai-brief?kind=${KIND}${force ? "&refresh=true" : ""}`);
     const el = document.getElementById("ia-text");
     el.classList.toggle("dim", !b.text);
-    el.textContent = b.text || (b.busy ? "A IA está lendo a conta…" : b.error ? `Sem leitura agora: ${b.error}` : "Ainda sem leitura.");
+    el.textContent = (b.text || "").replace(/\*\*/g, "") || (b.busy ? "A IA está lendo a conta…" : b.error ? `Sem leitura agora: ${b.error}` : "Ainda sem leitura.");
     document.getElementById("ia-tag").textContent = b.ts ? `${look(b.model).label || b.model} · ${hhmm(new Date(b.ts * 1000).toISOString())}` : (b.busy ? "gerando…" : "–");
     document.getElementById("ia-meta").textContent = b.error && b.text ? `Última tentativa falhou (${b.error}); mostrando a leitura anterior.` : "Só informa: nunca abre, veta nem dimensiona trades. Atualiza a cada 20 min e conta no teto diário de IA.";
     if (b.busy) setTimeout(() => loadBrief(), 6000);
