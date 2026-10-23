@@ -704,9 +704,11 @@ def test_fast_15m_bots_trade_the_real_engine_through_a_weak_btc_one_at_a_time_wh
     assert [p["symbol"] for p in ledger.positions()] == ["AAA"]                        # the 15m bot trades through it... and only ONE position
     assert arena.size_for("whales_15m") == cfg2.LIVE_FAST_USD == 10.0
     members = [type("M", (), {"model": m})() for m in ("whales_15m", "short_break_15m", "whales2")]
-    assert [m.model for m in arena.eligible_for_real(members)] == ["whales_15m"]       # not the short, not an unproven AI/rule bot
+    # fast lane plays; the squad floor calls up the best non-short reserve too (owner's rule); the short never
+    assert [m.model for m in arena.eligible_for_real(members)] == ["whales_15m", "whales2"]
     monkeypatch.setattr(cfg2, "LIVE_FAST_ALLOW", False)
-    assert arena.eligible_for_real(members) == []                                      # switch off: back to the strict rule
+    called = [m.model for m in arena.eligible_for_real(members)]                       # switch off: no fast lane —
+    assert "short_break_15m" not in called and set(called) <= {"whales_15m", "whales2"}   # floor call-ups only, never the short
 
 
 def test_only_listed_fast_bots_get_real_access(monkeypatch):

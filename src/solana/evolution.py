@@ -136,12 +136,58 @@ def judge(trades: list[dict], born: datetime, now: datetime) -> dict | None:
             "win_rate": round(wr, 3), "pass": bool(window) and wr >= cfg.EVOLVE_MIN_WIN_RATE}
 
 
+def _real_trades() -> list[dict]:
+    """Closed trades of the real account, WITHOUT ever building the live engine (tests and cold starts stay pure)."""
+    from src.solana import hl_live
+    try:
+        return hl_live._live.ledger.closed_trades() if hl_live._live else []
+    except Exception:
+        return []
+
+
+def _review_titulares(data: dict, now: datetime) -> bool:
+    """The squad rule (owner, 23/10): a bot whose REAL-money form over DEMOTE_DAYS is bad goes to the BENCH — it
+    keeps learning in the lab and a reserve is called up in its place (arena.eligible_for_real keeps the floor of
+    MIN_TITULARES). It returns only after REHAB_TRADES lab trades since demotion with net profit and win rate >=
+    REHAB_WIN_RATE. On the bench it is a reserve like any other: keep failing and evolution replaces it (death)."""
+    from src.solana import arena
+    changed = False
+    demoted = data.setdefault("demoted", {})
+    real = _real_trades()
+    since = (now - timedelta(days=cfg.DEMOTE_DAYS)).isoformat(timespec="seconds")
+    for model, eng in list(arena.bots().items()):
+        if model in demoted:                              # bench: rehab is judged on lab trades since demotion
+            t = [x for x in eng.ledger.closed_trades() if x["exit_ts"] >= demoted[model]["at"]]
+            wins, net = sum(x["pnl_usd"] > 0 for x in t), sum(x["pnl_usd"] for x in t)
+            if len(t) >= cfg.REHAB_TRADES and net > 0 and wins / len(t) >= cfg.REHAB_WIN_RATE:
+                del demoted[model]
+                changed = True
+                eng.ledger.log_decision("evolution", reason=(
+                    f"⬆️ de volta ao time titular: no banco fez {len(t)} trades, {wins} vitorias (${net:+.2f}) — reabilitado"))
+            continue
+        t = [x for x in real if x["strategy"] in (model, f"llm:{model}") and x["exit_ts"] >= since]
+        net = sum(x["pnl_usd"] for x in t)
+        if len(t) >= cfg.DEMOTE_MIN_TRADES and net <= cfg.DEMOTE_NET_USD:
+            demoted[model] = {"at": now.isoformat(timespec="seconds"),
+                              "why": f"{len(t)} trades reais em {cfg.DEMOTE_DAYS:g} dias, ${net:+.2f}"}
+            changed = True
+            eng.ledger.log_decision("evolution", reason=(
+                f"🔻 rebaixado ao banco: {len(t)} trades na conta real em {cfg.DEMOTE_DAYS:g} dias deram ${net:+.2f} "
+                f"(limite ${cfg.DEMOTE_NET_USD:.2f}). Treina no laboratorio e volta se provar ({cfg.REHAB_TRADES} trades, "
+                f"lucro liquido, acerto >= {cfg.REHAB_WIN_RATE:.0%}); se seguir mal no banco, da lugar a um sucessor"))
+    return changed
+
+
 def check(now: datetime | None = None) -> list[dict]:
-    """Scheduler job: judge every reserve at its checkpoint; replace the ones below the bar. Returns what happened."""
+    """Scheduler job: review the squad (bench/rehab), judge every reserve at its checkpoint; replace the ones below
+    the bar. Returns what happened."""
     from src.solana import arena, learning
     now = now or datetime.now(timezone.utc)
     data = load()
     events = []
+    if _review_titulares(data, now):
+        save(data)
+        arena._called_up = set()          # squad changed: re-log the next call-ups
     for model in list(data["active"]):
         eng = arena.bots().get(model)
         if not eng or arena.is_titular(model):
@@ -154,6 +200,9 @@ def check(now: datetime | None = None) -> list[dict]:
         v = judge(trades, datetime.fromisoformat(born_s), now)
         if v is None or eng.ledger.get_state("judged_checkpoint") == v["checkpoint"]:
             continue
+        bench = (data.get("demoted") or {}).get(model)
+        if bench and v["end"] <= bench["at"]:
+            continue                 # window predates the bench: a demoted player dies only for BENCH form
         eng.ledger.set_state("judged_checkpoint", v["checkpoint"])
         eng.ledger.set_state("last_verdict", v)
         if v["trades"] == 0:
@@ -204,6 +253,9 @@ def replace(model: str, verdict: dict, trades: list[dict], record: dict, data: d
                          "born_at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "params": params,
                          "why": why, "inherited_avoid": avoid}
     data["active"][data["active"].index(model)] = new
+    data.get("demoted", {}).pop(model, None)              # the dead leave the bench
+    if model in data.get("promoted", []):
+        data["promoted"].remove(model)
     data["retired"].append({"model": model, "label": parent.get("label"), "at": verdict["end"], "verdict": verdict, "successor": new})
     old = arena.bots().pop(model)
     old.ledger.set_state("running", False)

@@ -163,6 +163,17 @@ LEARN_DAYS = _i("LEARN_DAYS", 30)
 LEARN_MIN_TRADES = _i("LEARN_MIN_TRADES", 6)
 LEARN_MAX_WIN_RATE = _f("LEARN_MAX_WIN_RATE", 0.35)
 MAX_TITULARES = _i("MAX_TITULARES", 6)
+# the squad rule (owner, 23/10/2026): never fewer than MIN_TITULARES fielded — when demotions leave a gap, the
+# best-scoring reserves are called up (at minimum size until proven). A titular whose REAL-account record over
+# DEMOTE_DAYS shows >= DEMOTE_MIN_TRADES trades netting <= DEMOTE_NET_USD is sent to the bench: it keeps learning
+# in the lab and returns only after REHAB_TRADES lab trades since demotion with net profit and win rate >=
+# REHAB_WIN_RATE. On the bench it is a reserve like any other: keep failing there and evolution replaces it (death).
+MIN_TITULARES = _i("MIN_TITULARES", 3)
+DEMOTE_DAYS = _f("DEMOTE_DAYS", 7)
+DEMOTE_MIN_TRADES = _i("DEMOTE_MIN_TRADES", 6)
+DEMOTE_NET_USD = _f("DEMOTE_NET_USD", -0.50)
+REHAB_TRADES = _i("REHAB_TRADES", 10)
+REHAB_WIN_RATE = _f("REHAB_WIN_RATE", 0.5)
 # the meme-coin trench (meme.py): lab only, paper money, real Solana prices
 MEME_ENABLED = os.getenv("MEME_ENABLED", "1") == "1"
 MEME_CYCLE_SEC = _i("MEME_CYCLE_SEC", 60)
