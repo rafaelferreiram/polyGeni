@@ -269,6 +269,13 @@ LIVE_FAST_BOTS = {m.strip() for m in os.getenv("LIVE_FAST_BOTS", "whales_15m,cop
 LIVE_FAST_USD = _f("LIVE_FAST_USD", 10.0)
 LIVE_FAST_MAX_OPEN = _i("LIVE_FAST_MAX_OPEN", 1)
 LIVE_ALLOW_SHORT = os.getenv("LIVE_ALLOW_SHORT", "0") == "1"
+# BEAR_MODE (owner, 23/10/2026: "all bots on alert for a falling market"): the short bots look for breakdowns sooner.
+# ShortBreak closes under the lowest low of the last BEAR_BREAK_BARS bars (20 by default, so 8 here) and ShortFade needs
+# RSI > BEAR_FADE_RSI (70 by default). Entry only: every real-account short limit above (1 open, per-day cap, daily loss,
+# stop <= LIVE_SHORT_MAX_STOP_PCT, BTC under its 50h average) is unchanged. BEAR_MODE=0 restores the strict rules.
+BEAR_MODE = os.getenv("BEAR_MODE", "0") == "1"
+BEAR_BREAK_BARS = _i("BEAR_BREAK_BARS", 8)
+BEAR_FADE_RSI = _f("BEAR_FADE_RSI", 65.0)
 LIVE_SHORT_MAX_OPEN = _i("LIVE_SHORT_MAX_OPEN", 1)
 LIVE_SHORT_MAX_PER_DAY = _i("LIVE_SHORT_MAX_PER_DAY", 3)
 LIVE_SHORT_DAILY_LOSS_USD = _f("LIVE_SHORT_DAILY_LOSS_USD", 1.0)
