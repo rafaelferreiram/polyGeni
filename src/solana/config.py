@@ -132,6 +132,11 @@ DAILY_GOAL_PCT = float(os.getenv("DAILY_GOAL_PCT", "0.02"))
 DAILY_GOAL_REST = os.getenv("DAILY_GOAL_REST", "1") == "1"
 DAILY_GOAL_TRADES = int(os.getenv("DAILY_GOAL_TRADES", "4"))
 SYNC_FAIL_LIMIT = int(os.getenv("SYNC_FAIL_LIMIT", "6"))   # consecutive unreachable-exchange cycles before the kill switch
+# fast-lane protection (§6/§12.3): open positions on the real account and its simulation are re-checked (marks,
+# protected stops, stop/target/time exits) every EXIT_WATCHDOG_SEC, independently of the 5-minute entry cycle —
+# a slow analysis or a delayed cycle never leaves an expired position unmanaged. Deterministic only: the watchdog
+# never asks an LLM and never opens anything. 0 = off.
+EXIT_WATCHDOG_SEC = int(os.getenv("EXIT_WATCHDOG_SEC", "60"))
 # bots allowed to spend real money without first proving themselves in the lab (validated by backtest; "trend"
 # enabled by the user on 2026-10-21). Any other bot needs LIVE_MIN_LAB_TRADES profitable lab trades.
 REAL_TRUSTED_BOTS = [m for m in os.getenv("REAL_TRUSTED_BOTS", "rules,trend").split(",") if m]

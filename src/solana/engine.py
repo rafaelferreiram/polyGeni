@@ -283,7 +283,25 @@ class PaperEngine:
         self.ledger.delete_state(f"hold:{pos['entry_order_id']}")
         return True
 
-    def mark_and_exit(self):
+    def watch_exits(self) -> dict | None:
+        """Fast lane (§6/§12.3): manage OPEN positions — marks, protected stops, stop/target/time exits — outside
+        the full cycle, so protection never waits for (or pays for) analysis. Deterministic only: no LLM exit
+        review, no entries. Skips silently when a cycle is already running (it does the same work)."""
+        if not self.ledger.positions():
+            return None
+        if not self._busy.acquire(blocking=False):
+            return {"busy": True}
+        try:
+            self.mark_and_exit(llm_review=False)
+            self.reconcile()
+            return {"watched": True}
+        except Exception as e:
+            self.ledger.log_decision("error", cycle=self.cycle, reason=f"exit watchdog: {e}")
+            return {"error": str(e)[:200]}
+        finally:
+            self._busy.release()
+
+    def mark_and_exit(self, llm_review: bool = True):
         now = datetime.now(timezone.utc)
         for pos in self.ledger.positions():
             held_h = (now - _ts(pos["opened_at"])).total_seconds() / 3600
@@ -322,7 +340,7 @@ class PaperEngine:
                 reason = f"sem tração: {held_h:.1f}h sem passar de +{cfg.STALE_EXIT_PCT:.1%} — fecha antes do tempo máximo"
             elif held_h >= limit:
                 reason = f"max holding time {limit:g}h reached"
-            elif self.decision_mode() == "llm" and self.team and pos.get("pool_address"):
+            elif llm_review and self.decision_mode() == "llm" and self.team and pos.get("pool_address"):
                 # the bot that opened the position manages its exit
                 owner = next((d for d in self.team if d.name == pos["strategy"]), self.llm)
                 try:

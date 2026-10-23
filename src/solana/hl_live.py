@@ -717,6 +717,21 @@ def schedule():
     if sch.get_job("shadow_cycle") is None:
         sch.add_job(shadow_cycle, "interval", seconds=cfg.LIVE_CYCLE_SEC, id="shadow_cycle", max_instances=1,
                     coalesce=True, next_run_time=datetime.now())
+    if cfg.EXIT_WATCHDOG_SEC and sch.get_job("exit_watchdog") is None:
+        sch.add_job(watch_exits, "interval", seconds=cfg.EXIT_WATCHDOG_SEC, id="exit_watchdog",
+                    max_instances=1, coalesce=True)
+
+
+def watch_exits() -> dict:
+    """Fast-lane protection tick: open positions on the armed real account and the running simulation are managed
+    every EXIT_WATCHDOG_SEC, whatever the 5-minute entry cycles are doing (§6/§12.3). Deterministic, never enters."""
+    out = {}
+    if is_armed():
+        out["real"] = get_live_engine().watch_exits()
+    eng = get_shadow_engine()
+    if eng.ledger.get_state("running", False):
+        out["sim"] = eng.watch_exits()
+    return out
 
 
 def is_armed() -> bool:

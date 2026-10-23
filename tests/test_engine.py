@@ -822,3 +822,61 @@ def test_a_second_entry_highly_correlated_with_an_open_position_is_skipped(ledge
     monkeypatch.setattr(cfg, "CORR_MAX_ENTRY", 0.0)                     # rollback: guard off
     assert eng.run_cycle()["entries"] == 1                              # TK2 now enters (TKN is already held)
     assert {p["symbol"] for p in ledger.positions()} == {"TKN", "TK2"}
+
+
+def test_exit_watchdog_manages_positions_without_a_cycle_and_without_llm(ledger, monkeypatch):
+    """§6/§12.3: protection must not wait for the 5-minute entry cycle. The watchdog marks, applies stops/targets/
+    time exits — and NEVER asks the LLM (the fast lane pays no analysis) — then steps aside while a cycle runs."""
+    from datetime import datetime, timedelta, timezone
+    from src.solana import config as cfg
+    monkeypatch.setattr(cfg, "SCALP_TP_PCT", 0)
+    price = Price(1.0)
+    eng = build(ledger, price)
+    assert eng.watch_exits() is None                     # no positions: free no-op
+    eng.run_cycle()
+    calls = []
+
+    class Owner:                                         # an LLM exit reviewer that must stay silent in the fast lane
+        name, enabled, _rules = "momentum", True, None
+
+        def review_exit(self, pos, candles, px):
+            calls.append(px)
+            return None
+    ledger.set_state("decision_mode", "llm")
+    eng.team = [Owner()]
+    price.p = 1.02                                       # between stop and target: only the LLM could exit here
+    assert eng.watch_exits() == {"watched": True}
+    assert calls == [] and len(ledger.positions()) == 1  # no LLM call, position untouched
+    with ledger._lock:                                   # now the position is past its hold cap
+        ledger.conn.execute("UPDATE positions SET opened_at=?",
+                            ((datetime.now(timezone.utc) - timedelta(hours=3)).isoformat(timespec="seconds"),))
+    ledger.set_state("hold:" + ledger.positions()[0]["entry_order_id"], 2.0)
+    assert eng.watch_exits() == {"watched": True}
+    assert ledger.positions() == [] and calls == []      # time exit fired deterministically, still no LLM
+    assert "max holding" in ledger.closed_trades()[0]["reason"]
+
+
+def test_exit_watchdog_steps_aside_while_a_cycle_runs(ledger):
+    price = Price(1.0)
+    eng = build(ledger, price)
+    eng.run_cycle()
+    assert eng._busy.acquire(blocking=False)             # a cycle is "running"
+    try:
+        assert eng.watch_exits() == {"busy": True}       # never two managers at once
+        assert len(ledger.positions()) == 1
+    finally:
+        eng._busy.release()
+
+
+def test_watchdog_tick_respects_armed_and_running(monkeypatch):
+    from types import SimpleNamespace
+    from src.solana import hl_live
+    seen = []
+    live = SimpleNamespace(watch_exits=lambda: seen.append("real"),
+                           ledger=SimpleNamespace(get_state=lambda k, d=None: {"armed": {"armed": False}}.get(k, d)))
+    sim = SimpleNamespace(watch_exits=lambda: seen.append("sim"),
+                          ledger=SimpleNamespace(get_state=lambda k, d=None: {"running": True}.get(k, d)))
+    monkeypatch.setattr(hl_live, "get_live_engine", lambda: live)
+    monkeypatch.setattr(hl_live, "get_shadow_engine", lambda: sim)
+    hl_live.watch_exits()
+    assert seen == ["sim"]                               # disarmed real account is not managed; running sim is
