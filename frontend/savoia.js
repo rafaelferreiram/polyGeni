@@ -250,6 +250,46 @@ const fmtPx = (v) => (v == null ? "–" : `$${Number(v) >= 100 ? Number(v).toFix
 const STRAT_MODEL = { trend: "trend", trend4h: "trend4h", whales: "whales", copy: "copy", short: "short", short_break: "short_break", short_break_15m: "short_break_15m", rebound_15m: "rebound_15m", rules: "rules", mean_reversion_atr: "rules",
   trend4h_15m: "trend4h_15m", whales_15m: "whales_15m", copy_15m: "copy_15m" };
 const botName = (s) => (s === "manual" ? "Manual" : look(s?.startsWith("llm:") ? s.slice(4) : STRAT_MODEL[s] || "rules").label);
+// Shorts are booked on a mirror price (2·entry − price) so the maths stay long-only: show the real market prices instead.
+const isShortPos = (p) => String(p.mint || "").endsWith("~short");
+const realPx = (p, x) => (isShortPos(p) && x != null ? 2 * p.entry_price - x : x);
+const sideBadge = (short) => (short ? '<span class="side short">🔻 SHORT</span>' : '<span class="side buy">🟢 COMPRA</span>');
+// hover text: first line is the title, the rest are lines (rendered by the single floating tooltip below)
+const tipAttr = (title, lines) => `data-tip="${esc([title, ...lines.filter(Boolean)].join("\n"))}"`;
+function botTipAttr(model) {
+  const key = lastArena?.leaderboard?.some((r) => r.model === model) ? model : STRAT_MODEL[model] || model;
+  const r = lastArena?.leaderboard?.find((x) => x.model === key) || {}, L = look(key);
+  const tit = r.green_light?.ok || r.green_light?.trusted;
+  return tipAttr(`${L.ico || "🤖"} ${botName(model)} · ${tit ? "⚽ titular" : "🪑 reserva"}`, [
+    L.role, r.state ? `Estado: ${r.state}` : null,
+    r.equity != null ? `Laboratório: ${usd(r.equity)} · ${r.trades ?? 0} trades${r.win_rate != null ? ` · acerto ${(r.win_rate * 100).toFixed(0)}%` : ""}` : null,
+    r.net_usd != null ? `Líquido: ${r.net_usd >= 0 ? "+" : "−"}$${Math.abs(r.net_usd).toFixed(2)}` : null,
+    r.open?.length ? `Em posição: ${r.open.join(", ")}` : null,
+    r.last_decision ? `Última decisão: ${r.last_decision.market ? r.last_decision.market + " · " : ""}${ACTION_PT[r.last_decision.action] || r.last_decision.action}` : null,
+    "clique no card do bot para ver tudo"]);
+}
+(function floatingTip() {
+  let el = null, cur = null;
+  const hide = () => { cur = null; if (el) el.style.opacity = "0"; };
+  const place = (e) => {
+    const w = el.offsetWidth, h = el.offsetHeight;
+    el.style.left = `${Math.max(8, Math.min(e.clientX + 14, innerWidth - w - 8))}px`;
+    el.style.top = `${e.clientY + 18 + h > innerHeight ? Math.max(8, e.clientY - h - 12) : e.clientY + 18}px`;
+  };
+  document.addEventListener("mouseover", (e) => {
+    const t = e.target.closest?.("[data-tip]");
+    if (t === cur) return;
+    if (!t) return hide();
+    if (!el) { el = document.createElement("div"); el.id = "gtip"; document.body.appendChild(el); }
+    cur = t;
+    const [head, ...rest] = t.dataset.tip.split("\n");
+    el.innerHTML = `<b>${esc(head)}</b>${rest.map((l) => `<div>${esc(l)}</div>`).join("")}`;
+    el.style.opacity = "1";
+    place(e);
+  });
+  document.addEventListener("mousemove", (e) => { if (cur && !cur.isConnected) hide(); else if (cur) place(e); });
+  document.addEventListener("scroll", hide, true);
+})();
 function renderPositions(a) {
   const ps = a.positions || [];
   document.getElementById("pos-tag").textContent = KIND === "sim" ? "conta simulada" : "conta real";
@@ -261,12 +301,19 @@ function renderPositions(a) {
     const pl = value - p.cost_usd, plPct = pl / p.cost_usd;
     const span = p.tp_price - p.stop_price;
     const at = (x) => `${(clamp01((x - p.stop_price) / span) * 100).toFixed(1)}%`;
-    return `<div class="pos ${pl >= 0 ? "win" : "lose"} ${openMint === p.mint ? "sel" : ""}" tabindex="0" role="button"
-      aria-label="Detalhes de ${esc(p.symbol)}" onclick="openPos('${esc(p.mint)}')" onkeydown="if(event.key==='Enter')openPos('${esc(p.mint)}')">
-      <div class="top"><span class="sym">${coin(p.symbol)}</span><span class="pl">${pnl(pl)} <small class="muted">${(plPct * 100).toFixed(2)}%</small></span></div>
-      <div class="sub"><span>bot ${esc(botName(p.strategy))} · aberta há ${ago(p.opened_at)}</span><span>${usd(p.cost_usd)}</span></div>
+    const short = isShortPos(p), rn = realPx(p, now), rStop = realPx(p, p.stop_price), rTp = realPx(p, p.tp_price);
+    const maxLoss = p.cost_usd * (p.entry_price - p.stop_price) / p.entry_price, maxGain = p.cost_usd * (p.tp_price - p.entry_price) / p.entry_price;
+    const tip = tipAttr(`${short ? "🔻 SHORT" : "🟢 COMPRA"} em ${p.symbol} · ${KIND === "real" ? "conta real" : "simulação"}`, [
+      short ? "Aposta que o preço CAI: ganha quando desce, perde quando sobe." : "Aposta que o preço SOBE: ganha quando sobe, perde quando desce.",
+      `Entrada ${fmtPx(p.entry_price)} → agora ${fmtPx(rn)} (${pnl(pl)})`,
+      `Stop ${fmtPx(rStop)} (perde ≈ $${maxLoss.toFixed(2)}) · alvo ${fmtPx(rTp)} (ganha ≈ $${maxGain.toFixed(2)})`,
+      `Bot: ${botName(p.strategy)} · aberta há ${ago(p.opened_at)}`, "clique para detalhes e vender/fechar"]);
+    return `<div class="pos ${short ? "is-short" : "is-buy"} ${pl >= 0 ? "win" : "lose"} ${openMint === p.mint ? "sel" : ""}" tabindex="0" role="button" ${tip}
+      aria-label="${short ? "Short" : "Compra"} em ${esc(p.symbol)}" onclick="openPos('${esc(p.mint)}')" onkeydown="if(event.key==='Enter')openPos('${esc(p.mint)}')">
+      <div class="top"><span class="sym">${coin(p.symbol)} ${sideBadge(short)}</span><span class="pl">${pnl(pl)} <small class="muted">${(plPct * 100).toFixed(2)}%</small></span></div>
+      <div class="sub"><span>bot <b class="botn" ${botTipAttr(p.strategy)}>${esc(botName(p.strategy))}</b> · aberta há ${ago(p.opened_at)}</span><span>${usd(p.cost_usd)}</span></div>
       <div class="track" title="entre o stop e o alvo"><span class="entry" style="left:${at(p.entry_price)}"></span><span class="now" style="left:${at(now)}"></span></div>
-      <div class="ends"><span>🛑 stop ${fmtPx(p.stop_price)}</span><span>entrada ${fmtPx(p.entry_price)} · agora ${fmtPx(now)}</span><span>🎯 ${fmtPx(p.tp_price)}</span></div>
+      <div class="ends"><span>🛑 stop ${fmtPx(rStop)}</span><span>entrada ${fmtPx(p.entry_price)} · agora ${fmtPx(rn)}</span><span>🎯 ${fmtPx(rTp)}</span></div>
     </div>`;
   }).join("") : `<div class="empty">Nenhuma posição aberta agora — os bots estão procurando a próxima entrada (veja o radar abaixo).</div>`);
 }
@@ -326,19 +373,19 @@ async function openPos(mint) {
   let p;
   try { p = await api(`/account/position?kind=${KIND}&mint=${encodeURIComponent(mint)}`); }
   catch (e) { box.hidden = true; openMint = null; return; }
-  const now = p.value / p.qty, held = p.held_h < 1 ? `${Math.round(p.held_h * 60)} min` : `${p.held_h.toFixed(1)} h`;
+  const short = isShortPos(p), now = realPx(p, p.value / p.qty), held = p.held_h < 1 ? `${Math.round(p.held_h * 60)} min` : `${p.held_h.toFixed(1)} h`;
   const row = (k, v) => `<div><span>${k}</span><b>${v}</b></div>`;
-  box.innerHTML = `<div class="posd-head">${coin(p.symbol)} <span class="muted">· bot ${esc(botName(p.strategy))} · ${KIND === "real" ? "💰 conta real" : "🧪 simulação"}</span>
+  box.innerHTML = `<div class="posd-head">${coin(p.symbol)} ${sideBadge(short)} <span class="muted">· bot ${esc(botName(p.strategy))} · ${KIND === "real" ? "💰 conta real" : "🧪 simulação"}</span>
       <button class="x" onclick="closePos()" aria-label="Fechar detalhes">✕</button></div>
     <div class="posd-grid">
-      ${row("Comprada em", time(p.opened_at))}${row("Ativa há", held)}
+      ${row(short ? "Aberta (short) em" : "Comprada em", time(p.opened_at))}${row("Ativa há", held)}
       ${row("Valor investido", usd(p.cost_usd))}${row("Valor agora", usd(p.value))}
       ${row("Resultado", `${pnl(p.pnl_usd)} (${p.pnl_pct >= 0 ? "+" : ""}${(p.pnl_pct * 100).toFixed(2)}%)`)}${row("Preço entrada → agora", `${fmtPx(p.entry_price)} → ${fmtPx(now)}`)}
-      ${row("🛑 Stop", fmtPx(p.stop_price))}${row("🎯 Alvo", fmtPx(p.tp_price))}
+      ${row("🛑 Stop", fmtPx(realPx(p, p.stop_price)))}${row("🎯 Alvo", fmtPx(realPx(p, p.tp_price)))}
       ${row("Quantidade", `${Number(p.qty).toPrecision(6)} ${esc(p.symbol)}`)}${row("Funding pago", usd(p.funding_usd, 4))}
     </div>
-    ${p.entry_reason ? `<div class="note" style="margin-top:8px">Por que comprou: ${esc(p.entry_reason)}</div>` : ""}
-    <div class="posd-actions"><button class="sell" onclick="sellPos('${esc(mint)}', this)">🔴 Vender agora (preço de mercado)</button></div>`;
+    ${p.entry_reason ? `<div class="note" style="margin-top:8px">Por que ${short ? "vendeu a descoberto" : "comprou"}: ${esc(p.entry_reason)}</div>` : ""}
+    <div class="posd-actions"><button class="sell" onclick="sellPos('${esc(mint)}', this)">${short ? "🔴 Fechar short agora (preço de mercado)" : "🔴 Vender agora (preço de mercado)"}</button></div>`;
   box.hidden = false;
   if (acc) renderPositions(acc);
 }
@@ -534,7 +581,7 @@ function renderRanking() {
   const medal = (i) => ["🥇", "🥈", "🥉"][i] || `${i + 1}º`;
   setHTML("rank-table", `<tr><th></th><th>Bot</th><th>Lucro</th><th>Lucrativos</th><th>Trades</th><th>Acerto</th></tr>` +
     rows.map((r, i) => { const L = look(r.model); return `<tr class="${i === 0 ? "me1" : ""}"><td class="pos">${medal(i)}</td>
-      <td>${esc(L.ico || "")} <b>${esc(L.label)}</b>${isTitular(r) ? " ⚽" : " 🪑"}${r.turbo_until && new Date(r.turbo_until) > new Date() ? " ⚡" : ""}</td>
+      <td ${botTipAttr(r.model)}>${esc(L.ico || "")} <b>${esc(L.label)}</b>${isTitular(r) ? " ⚽" : " 🪑"}${r.turbo_until && new Date(r.turbo_until) > new Date() ? " ⚡" : ""}</td>
       <td>${pnl(r.net)}</td><td>${r.wins}</td><td>${r.trades || 0}</td><td>${r.trades ? pct(r.win_rate) : "–"}</td></tr>`; }).join(""));
 }
 
@@ -734,7 +781,7 @@ function paintBotModal() {
   } else if (modalTab === "trades") {
     const open = [...d.positions_real.map((x) => ({ ...x, w: "💰 Real" })), ...d.positions_lab.map((x) => ({ ...x, w: "🧪 Lab" }))];
     body = `<h4>Posições abertas (${open.length})</h4>` + (open.length ? `<div class="tbl"><table><tr><th>Onde</th><th>Moeda</th><th>Desde</th><th class="n">Investido</th><th class="n">Agora</th><th class="n">Resultado</th></tr>` +
-        open.map((x) => `<tr><td>${x.w}</td><td>${coinIcon(x.symbol)}<b>${esc(x.symbol)}</b></td><td>${dt(x.opened_at)}</td><td class="n">${usd(x.cost)}</td><td class="n">${usd(x.now)}</td><td class="n">${pnl(x.pnl)}</td></tr>`).join("") + "</table></div>"
+        open.map((x) => `<tr><td>${x.w}</td><td>${coinIcon(x.symbol)}<b>${esc(x.symbol)}</b>${x.short === undefined ? "" : " " + sideBadge(!!x.short)}</td><td>${dt(x.opened_at)}</td><td class="n">${usd(x.cost)}</td><td class="n">${usd(x.now)}</td><td class="n">${pnl(x.pnl)}</td></tr>`).join("") + "</table></div>"
         : '<div class="empty">Nenhuma posição aberta.</div>') +
       `<h4>Trades fechados (${d.trades.length} mais recentes)</h4>` + (d.trades.length ? `<div class="tbl"><table><tr><th>Fechou</th><th>Onde</th><th>Moeda</th><th class="n">Investido</th><th class="n">Resultado</th><th class="n">%</th><th>Como saiu</th></tr>` +
         d.trades.map((t) => `<tr><td>${dt(t.exit_ts)}</td><td>${t.where === "real" ? "💰 Real" : "🧪 Lab"}</td><td>${coinIcon(t.symbol)}${esc(t.symbol)}</td>
