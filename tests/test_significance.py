@@ -46,8 +46,32 @@ def test_promotion_needs_the_significance_test_besides_wins_and_win_rate(tmp_pat
     monkeypatch.setattr(arena, "_bots", bots)
     fake = [{"pnl_usd": 0.1 if i < 12 else -0.1} for i in range(30)]          # 12 wins of 30 = 40%
     monkeypatch.setattr(type(bots["claude-haiku-5-5"].ledger), "closed_trades", lambda self: fake)
+    monkeypatch.setattr(arena, "net_of_cost", lambda m: (1.0, 0.1, 0.9))     # net positive: not what this test is about
     monkeypatch.setattr(arena, "significance", lambda m: {"p": 0.3})
     c = arena.can_promote("claude-haiku-5-5")
     assert not c["ok"] and c["p_value"] == 0.3 and c["wins"] == 12
     monkeypatch.setattr(arena, "significance", lambda m: {"p": 0.01})
     assert arena.can_promote("claude-haiku-5-5")["ok"]
+    monkeypatch.setattr(arena, "net_of_cost", lambda m: (-0.5, 0.1, -0.6))   # and a net loser never passes
+    assert not arena.can_promote("claude-haiku-5-5")["ok"]
+
+
+def test_point_in_time_twins_use_each_trades_own_era(tmp_path):
+    """§8.3: a bot that traded during a steady October rally must be judged against THAT rally — random entries in
+    it also made money, so +3% exits are not skill. Judged against today's flat bars the same record looks brilliant
+    (look-back drift). Failed window fetches fall back to the latest bars and are counted, never hidden."""
+    led = _book(str(tmp_path / "pit.db"), [101.0] * 15)       # +1%/trade: brilliant vs flat, ordinary in a rally
+    t0 = int(datetime(2026, 10, 1, tzinfo=timezone.utc).timestamp())
+    rally = [{"t": t0 + i * 3600, "open": 100 * 1.005 ** i, "high": 100 * 1.005 ** i * 1.004,
+              "low": 100 * 1.005 ** i * 0.998, "close": 100 * 1.005 ** i, "volume": 1e6} for i in range(400)]
+    flat_now = _candles()                                        # the drift: today's bars offer twins nothing
+    pit = sg.p_value(led, candles_fn=lambda coin: flat_now, window_fn=lambda coin, s, e: rally)
+    drift = sg.p_value(led, candles_fn=lambda coin: flat_now)
+    assert pit["point_in_time"] and pit["approx_windows"] == 0 and pit["version"] == 2
+    assert not drift["point_in_time"]
+    assert pit["random_pct"] > drift["random_pct"]               # twins in the rally made money too
+    assert pit["p"] > drift["p"]                                 # the era makes the record look less like skill
+    broken = sg.p_value(led, candles_fn=lambda coin: flat_now,
+                        window_fn=lambda coin, s, e: (_ for _ in ()).throw(RuntimeError("api down")))
+    assert broken["approx_windows"] == broken["trades"] == 15    # honest fallback, counted per trade
+    assert broken["p"] == drift["p"]                             # and identical to the latest-bars judgement

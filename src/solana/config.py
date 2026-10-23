@@ -132,6 +132,11 @@ DAILY_GOAL_PCT = float(os.getenv("DAILY_GOAL_PCT", "0.02"))
 DAILY_GOAL_REST = os.getenv("DAILY_GOAL_REST", "1") == "1"
 DAILY_GOAL_TRADES = int(os.getenv("DAILY_GOAL_TRADES", "4"))
 SYNC_FAIL_LIMIT = int(os.getenv("SYNC_FAIL_LIMIT", "6"))   # consecutive unreachable-exchange cycles before the kill switch
+# fast-lane protection (§6/§12.3): open positions on the real account and its simulation are re-checked (marks,
+# protected stops, stop/target/time exits) every EXIT_WATCHDOG_SEC, independently of the 5-minute entry cycle —
+# a slow analysis or a delayed cycle never leaves an expired position unmanaged. Deterministic only: the watchdog
+# never asks an LLM and never opens anything. 0 = off.
+EXIT_WATCHDOG_SEC = int(os.getenv("EXIT_WATCHDOG_SEC", "60"))
 # bots allowed to spend real money without first proving themselves in the lab (validated by backtest; "trend"
 # enabled by the user on 2026-10-21). Any other bot needs LIVE_MIN_LAB_TRADES profitable lab trades.
 REAL_TRUSTED_BOTS = [m for m in os.getenv("REAL_TRUSTED_BOTS", "rules,trend").split(",") if m]
@@ -184,6 +189,10 @@ MEME_MAX_HOLD_H = _f("MEME_MAX_HOLD_H", 2)
 # every trade, crypto or meme, is short: at most MAX_HOLD_CAP_H (the owner's rule — trades can last 30s or 2h, never a
 # buy-and-hold); the quick-win locks bank the fast moves before that. FOCUS_COINS are scanned first each cycle.
 MAX_HOLD_CAP_H = _f("MAX_HOLD_CAP_H", 2)
+# §5.5 holding policy, lab side: slower families (trend 24h, trend4h 48h, copy 12h) run their OWN horizon in the
+# lab up to this cap, building the evidence longer holds need; the 15m family keeps the scalp clock. Real money
+# stays under MAX_HOLD_CAP_H until that evidence exists.
+LAB_HOLD_CAP_H = _f("LAB_HOLD_CAP_H", 48.0)
 # crypto "no traction" exit: 149 time exits lost $9.15 (27% wins); trades held past 2h won 24%, under 1h 57%. After
 # STALE_EXIT_H without clearing +STALE_EXIT_PCT over entry the position is closed instead of waiting for the cap.
 STALE_EXIT_H = _f("STALE_EXIT_H", 1.0)
@@ -258,14 +267,21 @@ MEME_REAL_MAX_PRIORITY_LAMPORTS = _i("MEME_REAL_MAX_PRIORITY_LAMPORTS", 60_000) 
 # margin of error before a buy (edge.py): skip only when confident (this much evidence) that even the optimistic odds lose
 EDGE_CHECK = os.getenv("EDGE_CHECK", "1") == "1"
 EDGE_MIN_EVIDENCE = _i("EDGE_MIN_EVIDENCE", 30)
-# daily quota: a titular behind DAILY_MIN_TRADES completed trades (Lisbon day, pro rata) loosens its entry a notch or two
-# and aims at a closer target, so it completes buy+sell round trips; size, stops and the account limits do not change
+# daily quota: a titular behind DAILY_MIN_TRADES completed trades (Lisbon day, pro rata). Observational by default
+# (logged and shown, never changes entries): forcing trades to hit a count is an incentive against profitability.
+# QUOTA_RELAX_ENTRIES=1 restores the old behaviour (looser entry + closer target) as a rollback switch.
 DAILY_MIN_TRADES = _i("DAILY_MIN_TRADES", 5)
+QUOTA_RELAX_ENTRIES = os.getenv("QUOTA_RELAX_ENTRIES", "0") == "1"
 # manual promotion from the bot's modal (the user's rule): this many lab wins and at least this win rate
 PROMOTE_MIN_WINS = _i("PROMOTE_MIN_WINS", 12)
 PROMOTE_MIN_WIN_RATE = _f("PROMOTE_MIN_WIN_RATE", 0.35)
-# evolution: every EVOLVE_PERIOD_H of a reserve's life, under EVOLVE_MIN_WIN_RATE (or no trade) -> replaced by a successor
+# evolution: every EVOLVE_PERIOD_H of a reserve's life, under EVOLVE_MIN_WIN_RATE -> replaced by a successor.
+# An EMPTY window is NOT a fail (§8.5: waiting for its regime is healthy — punishing it breeds overtrading): a
+# reserve is only retired as "blind" after EVOLVE_IDLE_PERIODS consecutive empty windows while the rest of the
+# team closed ≥ EVOLVE_IDLE_TEAM_TRADES trades in that stretch (opportunities existed; this bot saw none).
 EVOLVE_PERIOD_H = _f("EVOLVE_PERIOD_H", 12)
+EVOLVE_IDLE_PERIODS = _i("EVOLVE_IDLE_PERIODS", 6)
+EVOLVE_IDLE_TEAM_TRADES = _i("EVOLVE_IDLE_TEAM_TRADES", 10)
 EVOLVE_MIN_WIN_RATE = _f("EVOLVE_MIN_WIN_RATE", 0.6)          # the real account fields at most this many bots: the best ones
 GREEN_LIGHT_TRADES = _i("GREEN_LIGHT_TRADES", 20)
 GREEN_LIGHT_WINS = _i("GREEN_LIGHT_WINS", 12)
@@ -284,6 +300,14 @@ QUICK_WIN2_PCT = _f("QUICK_WIN2_PCT", 0.012)
 QUICK_WIN2_KEEP = _f("QUICK_WIN2_KEEP", 0.8)
 # no buys while BTC is below its 50-hour average (when BTC falls almost every coin falls with it)
 BTC_FILTER = os.getenv("BTC_FILTER", "1") == "1"
+# ─── P1 Market Intelligence ───
+# regime classifier (regime.py): OBSERVATIONAL — logged, shown and tagged on every entry so its efficacy can be
+# compared against the BTC-50h filter on real trades; it gates nothing yet
+REGIME_ENABLED = os.getenv("REGIME_ENABLED", "1") == "1"
+# correlated-exposure guard: a new entry whose last CORR_WINDOW_H 1h returns correlate ≥ CORR_MAX_ENTRY with an
+# already-open same-direction position is economically redundant (no real diversification) and is skipped. 0 = off.
+CORR_MAX_ENTRY = _f("CORR_MAX_ENTRY", 0.92)
+CORR_WINDOW_H = _i("CORR_WINDOW_H", 48)
 # on the real/simulation accounts, one titular may hold at most this many positions (room for the others)
 MAX_POSITIONS_PER_BOT = _i("MAX_POSITIONS_PER_BOT", 3)
 # no burst of buys into one move: at most this many new buys per BURST_WINDOW_MIN on an account (2026-10-21 19h Lisbon:
@@ -313,6 +337,9 @@ LLM_MONTHLY_BUDGET_USD = _f("LLM_MONTHLY_BUDGET_USD", 5.0)      # hard cap on AI
 # real account's trading profit this month, never more than LLM_MONTHLY_BUDGET_USD. Over it, only rule bots trade.
 AI_BASE_MONTHLY_USD = _f("AI_BASE_MONTHLY_USD", 1.5)
 AI_PROFIT_SHARE = _f("AI_PROFIT_SHARE", 0.25)
+# daily brake on top of the monthly allowance: on 2026-10-21 one day burnt $1.77 (889 calls), 79% of the month.
+# 0 = off. The rules bots keep trading for free when AI is paused.
+AI_DAILY_BUDGET_USD = _f("AI_DAILY_BUDGET_USD", 0.25)
 # web search inflates every call (search results + $0.01/search); off unless it proves worth it
 LLM_WEB_SEARCHES = _i("LLM_WEB_SEARCHES", 0)
 LLM_PREFILTER = os.getenv("LLM_PREFILTER", "1") == "1"           # ask the AI only when there is a real setup

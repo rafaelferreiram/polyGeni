@@ -36,7 +36,8 @@ class FakeInfo:
     def user_state(self, user, dex=""):
         if dex:
             return {"assetPositions": [], "marginSummary": {"accountValue": "0"}}
-        return {"assetPositions": [{"position": {"coin": c, "szi": str(s)}} for c, s in self.positions.items()],
+        return {"assetPositions": [{"position": {"coin": c, "szi": str(s), "entryPx": str(self.mids[c])}}
+                                   for c, s in self.positions.items()],
                 "marginSummary": {"accountValue": str(self.account)}}
 
     def l2_snapshot(self, coin):
@@ -176,6 +177,38 @@ def test_sync_records_native_stop_and_flags_untracked(live):
     assert t["exit_price"] == pytest.approx(76000) and "exchange" in t["reason"]
     info.positions["SOL"] = 0.5                                            # someone traded by hand
     assert any("not in the ledger" in p for p in br.sync())
+
+
+def test_sync_adopts_an_orphan_with_a_pending_intent_instead_of_kill_switch(live):
+    """HYPE, 2026-10-21 23:05 UTC: the app died between the exchange fill and the ledger write and the kill switch
+    looped until a human adopted the position. With the intent journaled before submission, sync adopts it alone:
+    fill recorded from the exchange's numbers, stop/TP re-placed, no problem reported."""
+    from src.solana.ledger import now_iso
+    ledger, info, ex, br = live
+    ledger.set_state("pending:o9", dict(coin="BTC", mint="hl:BTC", symbol="BTC", strategy="trend", usd=12.0,
+                                        stop_price=76000.0, tp_price=84000.0, short=False, ts=now_iso(), meta={}))
+    info.positions["BTC"] = 0.00015                     # the order filled on the exchange; the ledger never heard of it
+    assert br.sync() == []                              # adopted, not a problem
+    fill = ledger.get_fill("o9")
+    assert fill and fill["side"] == "buy" and fill["qty"] == 0.00015 and json.loads(fill["meta"])["adopted"]
+    assert fill["price"] == pytest.approx(80000.0)      # the exchange's entry price
+    triggers = [c for c in ex.calls if c[0] == "trigger"]
+    assert {t[4] for t in triggers} == {"sl", "tp"}     # protection resting again
+    assert ledger.get_state("sl:o9") and ledger.get_state("tp:o9")
+    assert ledger.states("pending:") == {}              # journal consumed
+    assert "hl:BTC" in ledger.positions_from_fills()    # reconcile will materialize it
+
+
+def test_stale_pending_intents_are_swept_and_fresh_ones_kept(live):
+    """A rejected/unfilled order leaves an intent with no position: swept after an hour, never adopted."""
+    from datetime import datetime, timedelta, timezone
+    ledger, info, ex, br = live
+    old = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat(timespec="seconds")
+    fresh = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    ledger.set_state("pending:old", dict(coin="SOL", mint="hl:SOL", short=False, ts=old))
+    ledger.set_state("pending:new", dict(coin="SOL", mint="hl:SOL", short=False, ts=fresh))
+    assert br.sync() == []
+    assert list(ledger.states("pending:")) == ["pending:new"]   # old swept, fresh kept for its order to land
 
 
 def test_engine_trips_kill_switch_on_exchange_mismatch(live, monkeypatch):

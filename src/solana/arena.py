@@ -280,7 +280,8 @@ def significance(model: str) -> dict | None:
 def can_promote(model: str) -> dict:
     """The user's manual promotion rule: a reserve with ≥ PROMOTE_MIN_WINS winning lab trades and win rate ≥
     PROMOTE_MIN_WIN_RATE may be made titular from its modal (the automatic green light stays stricter) — provided the
-    record beats random entries with the same exits (significance.p_value < P_MAX), so luck is not promoted."""
+    record beats random entries with the same exits (significance.p_value < P_MAX), so luck is not promoted, and it is
+    NET POSITIVE after its AI cost (every path to real money shares this floor: a loser is never promoted)."""
     from src.solana.significance import P_MAX
     eng = bots().get(model)
     trades = eng.ledger.closed_trades() if eng else []
@@ -288,9 +289,11 @@ def can_promote(model: str) -> dict:
     wr = wins / len(trades) if trades else 0.0
     sig = significance(model)
     p = (sig or {}).get("p")
+    net = net_of_cost(model)[2] if eng else 0.0
     ok = (bool(eng) and not is_titular(model) and model not in LAB_ONLY_BOTS
-          and wins >= cfg.PROMOTE_MIN_WINS and wr >= cfg.PROMOTE_MIN_WIN_RATE and p is not None and p < P_MAX)
-    return {"ok": ok, "wins": wins, "trades": len(trades), "win_rate": round(wr, 3),
+          and wins >= cfg.PROMOTE_MIN_WINS and wr >= cfg.PROMOTE_MIN_WIN_RATE and net > 0
+          and p is not None and p < P_MAX)
+    return {"ok": ok, "wins": wins, "trades": len(trades), "win_rate": round(wr, 3), "net_usd": round(net, 4),
             "need_wins": cfg.PROMOTE_MIN_WINS, "need_win_rate": cfg.PROMOTE_MIN_WIN_RATE, "p_value": p, "p_max": P_MAX,
             "significance": sig}
 
@@ -343,7 +346,9 @@ def advise(model: str, now: datetime | None = None) -> dict | None:
         reasons.append("bot de short: a conta real ainda não executa short — se provar lucro, construímos a execução antes de promover")
     if c["p_value"] is not None and c["p_value"] >= c["p_max"] and c["wins"] >= cfg.PROMOTE_MIN_WINS:
         reasons.append(f"🎲 teste de sorte: p = {c['p_value']:.2f} — o resultado ainda não se distingue de entradas aleatórias com as mesmas saídas (precisa p < {c['p_max']:.2f})")
-    if c["ok"] and flag != "promote":
+    raw_rule = (c["wins"] >= cfg.PROMOTE_MIN_WINS and c["win_rate"] >= cfg.PROMOTE_MIN_WIN_RATE
+                and c["p_value"] is not None and c["p_value"] < c["p_max"])
+    if raw_rule and flag != "promote":
         reasons.append("bate a sua regra (12 vitórias, ≥35%), mas ainda não recomendo: " +
                        ("está no prejuízo" if net <= 0 else f"fator de lucro {pf:.2f} < 1,2" if pf < 1.2 else "menos de 20 trades"))
     return {"flag": flag, "label": label, "reasons": reasons, "period": period}
@@ -352,8 +357,9 @@ def advise(model: str, now: datetime | None = None) -> dict | None:
 def promote(model: str) -> dict:
     c = can_promote(model)
     if not c["ok"]:
-        raise ValueError(f"ainda não dá: precisa de {c['need_wins']} vitórias, acerto ≥ {c['need_win_rate']:.0%} e p < {c['p_max']:.2f} "
-                         f"no teste de sorte (tem {c['wins']}, {c['win_rate']:.0%} e p = {c['p_value'] if c['p_value'] is not None else '?'})")
+        raise ValueError(f"ainda não dá: precisa de {c['need_wins']} vitórias, acerto ≥ {c['need_win_rate']:.0%}, lucro líquido "
+                         f"positivo após custo de IA e p < {c['p_max']:.2f} no teste de sorte (tem {c['wins']}, "
+                         f"{c['win_rate']:.0%}, ${c['net_usd']:+.2f} e p = {c['p_value'] if c['p_value'] is not None else '?'})")
     data = evolution.load()
     data.setdefault("promoted", []).append(model)
     evolution.save(data)

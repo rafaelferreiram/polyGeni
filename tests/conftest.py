@@ -51,9 +51,11 @@ def _isolated_team_chat(tmp_path, monkeypatch):
 
 @pytest.fixture(autouse=True)
 def _no_btc_filter(monkeypatch):
-    """The BTC filter reads live BTC candles; tests turn it off (its own test turns it back on with fake candles)."""
+    """The BTC filter and the regime classifier read live BTC candles; tests turn both off (their own tests turn
+    them back on with fake candles)."""
     from src.solana import config as cfg
     monkeypatch.setattr(cfg, "BTC_FILTER", False)
+    monkeypatch.setattr(cfg, "REGIME_ENABLED", False)
 
 
 @pytest.fixture(autouse=True)

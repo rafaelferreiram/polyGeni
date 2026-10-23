@@ -239,11 +239,17 @@ class HyperliquidLiveBroker(Broker):
         lev = ex.update_leverage(int(cfg.LIVE_LEVERAGE), coin, is_cross=False)       # isolated, every time
         if not lev or lev.get("status") != "ok":
             raise RuntimeError(f"could not set {int(cfg.LIVE_LEVERAGE)}x isolated leverage: {lev}")
+        # intent journal BEFORE the order leaves: if the app dies between the exchange fill and the ledger write
+        # (HYPE, 2026-10-21 23:05 UTC), sync() adopts the orphan from this record instead of tripping the kill switch
+        self.ledger.set_state(f"pending:{order_id}", dict(
+            coin=coin, mint=instrument, symbol=symbol, strategy=strategy, usd=usd, stop_price=stop_price,
+            tp_price=tp_price, short=short, ts=now_iso(), meta=meta or {}))
         filled, avg, oid = _parse_fill(ex.market_open(coin, not short, sz, slippage=self.slippage, cloid=cloid))
         try:
             prot = self._protect(coin, filled, stop_price, tp_price, szd, short_entry=avg if short else None)
         except Exception as e:
             ex.market_close(coin, sz=filled, slippage=self.slippage)   # never leave a position unprotected
+            self.ledger.delete_state(f"pending:{order_id}")
             raise RuntimeError(f"protection orders failed, position closed immediately: {e}")
         notional = filled * avg
         fill, _ = self.ledger.append_fill(dict(
@@ -255,6 +261,7 @@ class HyperliquidLiveBroker(Broker):
             meta=json.dumps({**(meta or {}), "oid": oid, "sl_oid": prot["sl"], "tp_oid": prot["tp"],
                              "network": network(), "leverage": 1, "requested_usd": usd, "short": short}),
         ))
+        self.ledger.delete_state(f"pending:{order_id}")
         return fill
 
     def _stop_oid(self, entry_order_id: str, meta: dict):
@@ -283,7 +290,8 @@ class HyperliquidLiveBroker(Broker):
         ex, _ = self._connect()
         entry = self.ledger.get_fill(entry_order_id) or {}
         m = json.loads(entry.get("meta") or "{}")
-        for k, oid in (("sl_oid", self._stop_oid(entry_order_id, m)), ("tp_oid", m.get("tp_oid"))):
+        for k, oid in (("sl_oid", self._stop_oid(entry_order_id, m)),
+                       ("tp_oid", m.get("tp_oid") or self.ledger.get_state(f"tp:{entry_order_id}"))):
             if oid:
                 try:
                     ex.cancel(coin, oid)
@@ -401,14 +409,89 @@ class HyperliquidLiveBroker(Broker):
             self.ledger.set_state("transfers_since", max(r["time"] for r in rows))
         return done
 
+    def _adopt_pending(self, coin: str, szi: float) -> str | None:
+        """An exchange position with no ledger fill, but matching an intent journaled before submission: the app died
+        between the exchange fill and the ledger write. Record the fill from the exchange's numbers, make sure stop/TP
+        protection is resting, and return the order_id — instead of tripping the kill switch and waiting for a human."""
+        short = szi < 0
+        match = next(((k, v) for k, v in sorted(self.ledger.states("pending:").items(), key=lambda kv: kv[1].get("ts", ""))
+                      if v.get("coin") == coin and bool(v.get("short")) == short), None)
+        if not match:
+            return None
+        key, it = match
+        order_id = key[len("pending:"):]
+        ex, info = self._connect()
+        qty, avg, oid = abs(szi), None, None
+        try:                                           # the idempotent cloid finds the exact fill when it survived
+            o = (info.query_order_by_cloid(self.address, cloid_for(order_id)) or {}).get("order") or {}
+            o = o.get("order") or o
+            avg, oid = float(o.get("avgPx") or 0) or None, int(o["oid"]) if o.get("oid") else None
+        except Exception:
+            pass
+        if not avg:                                    # else the exchange's average entry price of the position
+            for dex in ("", "xyz"):
+                for pp in info.user_state(self.address, dex)["assetPositions"]:
+                    if pp["position"]["coin"] == coin and float(pp["position"]["szi"]):
+                        avg = float(pp["position"]["entryPx"])
+        if not avg:
+            return None
+        notional = qty * avg
+        self.ledger.append_fill(dict(
+            order_id=order_id, ts=now_iso(), venue=self.venue, side="buy", mint=it["mint"],
+            symbol=it.get("symbol") or coin, strategy=it.get("strategy"), qty=qty, decimals=0, usd_gross=notional,
+            fee_usd=self._fee(oid, notional) if oid else notional * TAKER_FALLBACK_BPS / 1e4, price=avg,
+            quote_price=avg, price_impact_pct=0, slippage_bps=0,
+            route=f"Hyperliquid {network()} adopted after restart",
+            stop_price=it.get("stop_price"), tp_price=it.get("tp_price"),
+            meta=json.dumps({**(it.get("meta") or {}), "oid": oid, "adopted": True, "network": network(),
+                             "requested_usd": it.get("usd"), "short": short})))
+        self.ledger.delete_state(key)
+        have = {}
+        try:                                           # protection may already rest (crash after _protect): reuse it
+            for o in info.frontend_open_orders(self.address):
+                if o.get("coin") == coin and o.get("reduceOnly") and o.get("isTrigger"):
+                    have["sl" if "stop" in str(o.get("orderType", "")).lower() else "tp"] = int(o["oid"])
+        except Exception:
+            pass
+        try:
+            szd = self._sz_decimals(coin)
+            for kind, px in (("sl", it.get("stop_price")), ("tp", it.get("tp_price"))):
+                if kind in have or not px:
+                    continue
+                trig = _round_px(2 * avg - px if short else px, szd)
+                resp = ex.order(coin, short, qty, trig,
+                                {"trigger": {"triggerPx": trig, "isMarket": True, "tpsl": kind}}, reduce_only=True)
+                have[kind] = _resting_oid(resp)
+        except Exception as e:                         # never keep an unprotected adopted position: close and book it
+            self.sell(f"exit-{order_id}", it["mint"], it.get("symbol") or coin, qty, strategy=it.get("strategy"),
+                      meta={"reason": f"adotada sem proteção possível — fechada imediatamente: {e}"})
+            self.ledger.log_decision("exit", mint=it["mint"], symbol=it.get("symbol") or coin, strategy=it.get("strategy"),
+                                     order_id=f"exit-{order_id}",
+                                     reason=f"posição {coin} adotada após reinício, mas sem conseguir repor stop/alvo: fechada ({e})")
+            return order_id
+        if have.get("sl"):
+            self.ledger.set_state(f"sl:{order_id}", have["sl"])     # move_stop and _cancel_protection find them here
+        if have.get("tp"):
+            self.ledger.set_state(f"tp:{order_id}", have["tp"])
+        return order_id
+
+    def _sweep_pending(self, ex_pos: dict):
+        """Intents older than an hour whose order never became a position (rejected / not filled): forget them."""
+        from datetime import timedelta
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(timespec="seconds")
+        for k, v in self.ledger.states("pending:").items():
+            if v.get("coin") not in ex_pos and v.get("ts", "") < cutoff:
+                self.ledger.delete_state(k)
+
     def sync(self) -> list[str]:
-        """Exchange is the truth: record native exits, flag untracked positions and equity drift."""
+        """Exchange is the truth: record native exits, adopt journaled orphans, flag the rest and equity drift."""
         problems = []
         try:
             self.record_transfers()
         except Exception as e:           # never let the transfer log break the safety sync
             logger.warning(f"transfer history: {e}")
         ex_pos = self.exchange_positions()
+        self._sweep_pending(ex_pos)
         mine = {p["mint"]: p for p in self.ledger.positions() if p.get("venue") == self.venue}
         for mint, p in mine.items():
             if hl.coin_of(mint) not in ex_pos:
@@ -421,6 +504,16 @@ class HyperliquidLiveBroker(Broker):
         shorts = {hl.coin_of(m) for m in mine if hl.is_short(m)}
         for coin, szi in ex_pos.items():
             if coin not in tracked:
+                try:
+                    adopted = self._adopt_pending(coin, szi)
+                except Exception as e:
+                    adopted = None
+                    logger.warning(f"adoption of {coin} failed: {e}")
+                if adopted:
+                    self.ledger.log_decision("entry", mint=f"hl:{coin}", symbol=coin, order_id=adopted,
+                                             reason=f"🧷 posição {coin} adotada após reinício (a ordem executou na exchange "
+                                                    "antes do registro no ledger): registrada e protegida")
+                    continue
                 problems.append(f"position {coin} ({szi}) on the exchange is not in the ledger")
             elif szi < 0 and coin not in shorts:
                 problems.append(f"{coin} is short on the exchange — the ledger holds it long")
@@ -624,6 +717,21 @@ def schedule():
     if sch.get_job("shadow_cycle") is None:
         sch.add_job(shadow_cycle, "interval", seconds=cfg.LIVE_CYCLE_SEC, id="shadow_cycle", max_instances=1,
                     coalesce=True, next_run_time=datetime.now())
+    if cfg.EXIT_WATCHDOG_SEC and sch.get_job("exit_watchdog") is None:
+        sch.add_job(watch_exits, "interval", seconds=cfg.EXIT_WATCHDOG_SEC, id="exit_watchdog",
+                    max_instances=1, coalesce=True)
+
+
+def watch_exits() -> dict:
+    """Fast-lane protection tick: open positions on the armed real account and the running simulation are managed
+    every EXIT_WATCHDOG_SEC, whatever the 5-minute entry cycles are doing (§6/§12.3). Deterministic, never enters."""
+    out = {}
+    if is_armed():
+        out["real"] = get_live_engine().watch_exits()
+    eng = get_shadow_engine()
+    if eng.ledger.get_state("running", False):
+        out["sim"] = eng.watch_exits()
+    return out
 
 
 def is_armed() -> bool:

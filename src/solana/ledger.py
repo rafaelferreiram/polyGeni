@@ -375,3 +375,11 @@ class Ledger:
 
     def set_state(self, key: str, value):
         self._x("INSERT OR REPLACE INTO state (key,value) VALUES (?,?)", (key, json.dumps(value)))
+
+    def delete_state(self, key: str):
+        self._x("DELETE FROM state WHERE key=?", (key,))
+
+    def states(self, prefix: str) -> dict:
+        """Every state entry whose key starts with prefix (e.g. the pending-order journal)."""
+        return {r["key"]: json.loads(r["value"]) for r in self._q("SELECT key, value FROM state WHERE key LIKE ?",
+                                                                  (prefix + "%",))}
