@@ -244,6 +244,23 @@
     .conf { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; }
     .conf div { background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; font-size: 12.5px; }
     .conf div.ok { border-color: rgba(52,211,153,.5); } .conf small { display: block; color: var(--muted); margin-top: 2px; }
+    /* broker look: account strip, positions table, watchlist, wallet connection */
+    .brokerbar { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
+    .brokerbar .c { background: var(--surface); padding: 10px 14px; } .brokerbar .c .l { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+    .brokerbar .c .v { font-size: 17px; font-weight: 650; font-variant-numeric: tabular-nums; margin-top: 2px; } .brokerbar .c .v small { color: var(--muted); font-weight: 500; font-size: 11px; }
+    .ptable { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+    .ptable th { color: var(--muted); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; text-align: right; padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+    .ptable td { padding: 9px 10px; border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent); text-align: right; white-space: nowrap; }
+    .ptable th:first-child, .ptable td:first-child, .ptable th.l, .ptable td.l { text-align: left; }
+    .ptable tbody tr { cursor: pointer; } .ptable tbody tr:hover { background: var(--surface-2); } .ptable tbody tr.sel { background: var(--surface-2); box-shadow: inset 3px 0 var(--accent); }
+    .ptable tr.is-short td:first-child { box-shadow: inset 4px 0 #f87171; } .ptable tr.is-buy td:first-child { box-shadow: inset 4px 0 #34d399; }
+    .positions.as-table { display: block; overflow-x: auto; padding: 0; }
+    .ia-text { white-space: pre-line; line-height: 1.6; font-size: 14px; } .ia-text.dim { color: var(--muted); }
+    button.mini { padding: 4px 10px; font-size: 12px; }
+    .wallet-conn { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+    .wc { background: var(--surface-2); border: 1px solid var(--border); border-radius: 14px; padding: 14px; } .wc h3 { margin: 0 0 6px; font-size: 14px; }
+    .wc .row { display: flex; justify-content: space-between; gap: 10px; font-size: 12.5px; padding: 3px 0; } .wc .row span:first-child { color: var(--muted); }
+    .wc .acts { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
     /* side of an open position: short vs buy, visible at a glance */
     .side { display: inline-block; vertical-align: middle; margin-left: 6px; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: .03em; }
     .side.short { background: rgba(248,113,113,.18); color: #fca5a5; border: 1px solid rgba(248,113,113,.55); }
@@ -625,6 +642,20 @@
       <div class="kpi"><div class="l">Posições abertas</div><div class="v" id="k-pos">–</div><div class="s" id="k-pos-s">–</div></div>
       <div class="kpi"><div class="l">Trades · acerto</div><div class="v" id="k-tr">–</div><div class="s" id="k-tr-s">–</div></div>
     </section>
+    <section class="brokerbar" id="brokerbar" aria-label="Resumo da conta"></section>
+    <section class="panel" id="ia">
+      <h2><span>🧠 Leitura da IA <span class="tag" id="ia-tag">–</span></span><span class="note"><button class="mini" onclick="refreshBrief(this)">↻ Atualizar</button></span></h2>
+      <div class="ia-text" id="ia-text">carregando…</div>
+      <div class="note" id="ia-meta">Só informa: nunca abre, veta nem dimensiona trades. Atualiza a cada 20 min e conta no teto diário de IA.</div>
+    </section>
+    <section class="panel" id="watchlist">
+      <h2><span>📈 Watchlist <span class="tag">preço, 24h e RSI das moedas que os bots vigiam</span></span></h2>
+      <div class="tbl"><table id="wl-table"></table></div>
+    </section>
+    <section class="panel" id="conectar">
+      <h2><span>🔌 Carteiras conectadas <span class="tag">somente leitura · nada é assinado</span></span></h2>
+      <div class="wallet-conn" id="wallet-conn"></div>
+    </section>
     <section class="panel" id="carteiras">
       <h2><span>👛 Carteiras <span class="tag">cripto na Hyperliquid · memes na Solana</span></span>
         <span class="seg" id="wallet-seg" role="group" aria-label="Contas"><button data-v="real" class="on" onclick="setWalletView('real')">💰 Real</button><button data-v="fake" onclick="setWalletView('fake')">🧪 Fake</button></span></h2>
@@ -632,7 +663,7 @@
     </section>
     <div class="two">
     <section class="panel" id="posicoes">
-      <h2><span>Posições abertas <span class="tag" id="pos-tag">–</span></span><span class="note" id="pos-head"></span></h2>
+      <h2><span>Posições abertas <span class="tag" id="pos-tag">–</span></span><span class="note" id="pos-head"></span><span class="seg" id="pos-view" role="group" aria-label="Visual das posições"><button data-v="cards" onclick="setPosView('cards')">▦ Cards</button><button data-v="table" onclick="setPosView('table')">☰ Tabela</button></span></h2>
       <div class="positions" id="positions"></div>
       <div class="posd" id="pos-detail" hidden></div>
       <div class="boost">
@@ -845,6 +876,6 @@
 
   <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <script src="https://unpkg.com/qrcode-generator@1.4.4/qrcode.js"></script>
-  <script src="/static/savoia.js?v=133"></script>
+  <script src="/static/savoia.js?v=134"></script>
 </body>
 </html>

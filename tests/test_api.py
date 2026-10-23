@@ -125,3 +125,38 @@ def test_phantom_connect_helpers_are_get_without_token_but_loopback_only(client,
     monkeypatch.setattr(pr, "LOCAL_CLIENTS", {"127.0.0.1"})                                      # not loopback any more
     assert client.get("/api/paper/meme/wallet/blockhash").status_code == 403
     assert client.post("/api/paper/meme/wallet/withdraw").status_code == 403                    # POSTs still need the token too
+
+
+def test_ai_brief_is_generated_in_the_background_cached_and_never_needs_the_model_in_the_request(client, monkeypatch):
+    import time
+    from src.solana import agents, brief
+    calls = []
+    monkeypatch.setattr(brief.cfg, "ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr(brief, "_snapshot", lambda eng, kind: {"conta": kind})
+    monkeypatch.setattr(agents, "anthropic_llm", lambda prompt, **kw: calls.append(kw) or "• tudo calmo")
+    brief._cache.clear()
+    first = client.get("/api/paper/ai-brief", params={"kind": "sim"}).json()
+    assert "busy" in first                                    # the request never waits for the model: it runs in a thread
+    for _ in range(50):
+        if brief._cache["sim"].get("text"):
+            break
+        time.sleep(0.05)
+    second = client.get("/api/paper/ai-brief", params={"kind": "sim"}).json()
+    assert second["text"] == "• tudo calmo" and second["busy"] is False
+    client.get("/api/paper/ai-brief", params={"kind": "sim"})
+    assert len(calls) == 1 and calls[0]["max_searches"] == 0   # cached for 20 min; no web search
+
+
+def test_ai_brief_without_a_key_says_so_and_calls_nothing(client, monkeypatch):
+    from src.solana import brief
+    monkeypatch.setattr(brief.cfg, "ANTHROPIC_API_KEY", "")
+    assert client.get("/api/paper/ai-brief").json()["error"] == "sem ANTHROPIC_API_KEY"
+
+
+def test_wallet_balance_endpoints_validate_the_address_and_expose_only_public_data(client, monkeypatch):
+    from src.solana import market_data as md
+    assert client.get("/api/paper/wallet/solana-balance", params={"address": "not-an-address!"}).status_code == 400
+    monkeypatch.setattr(md, "rpc", lambda method, params: {"value": 2_500_000_000})
+    ok = client.get("/api/paper/wallet/solana-balance", params={"address": "So11111111111111111111111111111111111111112"})
+    assert ok.json()["sol"] == 2.5
+    assert set(client.get("/api/paper/wallet/hl-address").json()) == {"address"}
