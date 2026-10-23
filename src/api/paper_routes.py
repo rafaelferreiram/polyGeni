@@ -866,13 +866,6 @@ def account_transactions(kind: str = "sim", limit: int = 100):
     return {"rows": sorted(rows, key=lambda r: r["ts"], reverse=True)[:limit]}
 
 
-@router.get("/ai-brief")
-def ai_brief(kind: str = "real", refresh: bool = False):
-    """Short AI read of the account (informational only; cached 20 min; generated in the background)."""
-    from src.solana import brief
-    return brief.get(_account_engine(kind), kind, force=refresh)
-
-
 @router.get("/wallet/hl-address")
 def wallet_hl_address():
     """The public address of the Hyperliquid account the bots trade (so a connected MetaMask can be compared with it)."""
