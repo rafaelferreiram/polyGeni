@@ -1,13 +1,14 @@
 :root {
-  --bg: #0d0d0f;
-  --surface: #16161a;
-  --border: #2a2a30;
-  --accent: #7f5af0;
-  --green: #2cb67d;
-  --red: #ef4565;
-  --yellow: #f2c94c;
-  --text: #fffffe;
-  --muted: #72757e;
+  --bg: #0a110d;
+  --surface: #101814;
+  --border: #24352b;
+  --accent: #34d399;
+  --green: #34d399;
+  --red: #f87171;
+  --yellow: #fbbf24;
+  --gold: #d4af37;
+  --text: #ecf2ee;
+  --muted: #8fa097;
   --font: 'Inter', system-ui, sans-serif;
 }
 

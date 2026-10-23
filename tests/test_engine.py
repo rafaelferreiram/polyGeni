@@ -749,9 +749,14 @@ def test_lab_reserves_scan_every_coin_while_titulars_keep_the_hourly_universe(le
     assert run("whales2_g2_5", False) == 3                                         # a reserve: all coins
 
 
-def test_lab_scalp_hold_only_for_lab():
+def test_holding_policy_short_for_fast_family_long_for_slow_families_real_capped():
+    """§5.5: each family trades its own horizon in the lab — 15m twins on the scalp clock, trend/trend4h on their
+    strategy horizon (up to LAB_HOLD_CAP_H) — while real money stays under the owner's 2h cap until evidence."""
     from src.solana.engine import _max_hold
-    assert _max_hold("trend", 72, lab=True) == 0.5 and _max_hold("trend", 72) == 2   # real account keeps the 2h cap
+    assert _max_hold("whales_15m", 72, lab=True) == 0.5              # fast family: short trades
+    assert _max_hold("trend", 72, lab=True) == 24                    # slow family: its own 24h horizon in the lab
+    assert _max_hold("trend4h", 72, lab=True) == 48                  # capped by LAB_HOLD_CAP_H
+    assert _max_hold("trend", 72) == 2 and _max_hold("trend4h", 72) == 2   # real account keeps the 2h cap
 
 
 def test_a_restart_never_repeats_the_same_candles_entry(ledger, monkeypatch):
