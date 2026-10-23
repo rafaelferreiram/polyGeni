@@ -234,7 +234,6 @@ async function refresh() {
   renderPositions(a);
   renderBrokerBar(a);
   renderWatchlist(a);
-  loadBrief();
   initWalletConn();
   fillManualCoins(a);
   renderGoals(a);
@@ -339,23 +338,6 @@ function renderWatchlist(a) {
     <td>${Number(w.rsi).toFixed(0)}</td><td>${WL_STATUS[w.status] || (w.up ? "⚪ longe" : "🔻 em baixa")}</td>
     <td>${w.symbol in held ? sideBadge(held[w.symbol]) : '<span class="muted">–</span>'}</td></tr>`));
 }
-// AI read of the account: generated in the background on the server, cached 20 min
-let briefAt = 0;
-async function loadBrief(force = false) {
-  if (!force && Date.now() - briefAt < 30000) return;
-  briefAt = Date.now();
-  try {
-    const b = await api(`/ai-brief?kind=${KIND}${force ? "&refresh=true" : ""}`);
-    const el = document.getElementById("ia-text");
-    el.classList.toggle("dim", !b.text);
-    el.textContent = (b.text || "").replace(/\*\*/g, "") || (b.busy ? "A IA está lendo a conta…" : b.error ? `Sem leitura agora: ${b.error}` : "Ainda sem leitura.");
-    document.getElementById("ia-tag").textContent = b.ts ? `${look(b.model).label || b.model} · ${hhmm(new Date(b.ts * 1000).toISOString())}` : (b.busy ? "gerando…" : "–");
-    document.getElementById("ia-meta").textContent = b.error && b.text ? `Última tentativa falhou (${b.error}); mostrando a leitura anterior.` : "Só informa: nunca abre, veta nem dimensiona trades. Atualiza a cada 20 min e conta no teto diário de IA.";
-    if (b.busy) setTimeout(() => loadBrief(), 6000);
-  } catch (e) { document.getElementById("ia-text").textContent = "Leitura da IA indisponível."; }
-}
-function refreshBrief(btn) { run(btn, "Pedindo…", async () => { briefAt = 0; await loadBrief(true); return {}; }, "🧠 Pedi uma leitura nova à IA"); }
-
 // MetaMask (Hyperliquid is an EVM account) and Phantom (Solana): connect, show address and balance. Nothing is ever signed or sent.
 const WC = { mm: null, ph: null, hl: null };
 const EVM_CHAINS = { "0x1": "Ethereum", "0xa4b1": "Arbitrum One", "0x2105": "Base", "0xa": "Optimism", "0x89": "Polygon", "0x38": "BNB Chain" };
@@ -408,24 +390,34 @@ async function disconnectWallet(which) {
   else WC.mm = null;                           // MetaMask has no programmatic disconnect: we just stop showing it
   renderWalletConn();
 }
+function copyAddr(btn, text) {
+  (navigator.clipboard?.writeText(text) || Promise.reject()).then(() => {
+    btn.textContent = "✓"; setTimeout(() => { btn.textContent = "📋"; }, 1200);
+  }).catch(() => { /* clipboard blocked: the title still shows the full address */ });
+}
 function renderWalletConn() {
   const el = document.getElementById("wallet-conn");
   if (!el) return;
-  const row = (k, v) => `<div class="row"><span>${k}</span><b>${v}</b></div>`;
   const mm = WC.mm, ph = WC.ph, same = mm && WC.hl && mm.address.toLowerCase() === WC.hl.toLowerCase();
-  setHTML("wallet-conn", `
-    <div class="wc"><h3>🦊 MetaMask <span class="muted">· EVM / Hyperliquid</span></h3>${mm ? `
-      ${row("Endereço", `<span title="${esc(mm.address)}">${short(mm.address)}</span>`)}${row("Rede", esc(mm.chain))}${row("Saldo nativo", `${mm.eth.toFixed(4)} ETH`)}
-      ${row("Conta dos bots", same ? '<span class="green">✅ é esta carteira</span>' : WC.hl ? `<span class="muted">outra (${short(WC.hl)})</span>` : "–")}
-      <div class="acts"><button class="mini" onclick="disconnectWallet('mm')">Esconder</button></div>`
-      : `<div class="note">${metamaskProvider() ? "Mostra seu endereço e saldo, e se é a mesma carteira da conta Hyperliquid dos bots." : '<span class="red">extensão não detectada neste navegador</span>'}</div>
-      <div class="acts"><button class="mini" onclick="connectMetamask(this)">Conectar MetaMask</button></div>`}</div>
-    <div class="wc"><h3>👻 Phantom <span class="muted">· Solana</span></h3>${ph ? `
-      ${row("Endereço", `<span title="${esc(ph.address)}">${short(ph.address)}</span>`)}${row("Saldo", ph.sol == null ? "–" : `${ph.sol.toFixed(4)} SOL`)}
-      ${row("Carteira de memes", '<span class="muted">depósito e saque na seção Trincheira</span>')}
-      <div class="acts"><button class="mini" onclick="disconnectWallet('ph')">Desconectar</button></div>`
-      : `<div class="note">${phantomProvider() ? "Mostra seu endereço e saldo em SOL." : '<span class="red">extensão não detectada neste navegador</span>'}</div>
-      <div class="acts"><button class="mini" onclick="connectPhantomView(this)">Conectar Phantom</button></div>`}</div>`);
+  const row = (k, v) => `<div class="row"><span>${k}</span><b>${v}</b></div>`;
+  const addr = (x) => `<span class="addr" title="${esc(x)}">${short(x)} <button onclick="copyAddr(this, '${esc(x)}')" title="Copiar endereço" aria-label="Copiar endereço">📋</button></span>`;
+  const card = (c) => `<div class="wc" style="--wc:${c.color}">
+    <div class="head"><span class="logo">${c.ico}</span><div><h3>${c.name}</h3><div class="sub">${c.sub}</div></div>
+      <span class="chip ${c.on ? "on" : ""}">${c.on ? "● conectada" : "○ não conectada"}</span></div>${c.body}</div>`;
+  setHTML("wallet-conn", [
+    card({ color: "#f6851b", ico: "🦊", name: "MetaMask", sub: "EVM · conta Hyperliquid", on: !!mm,
+      body: mm ? `<div class="bal">${mm.eth.toFixed(4)} <small>ETH · ${esc(mm.chain)}</small></div>${addr(mm.address)}
+          ${row("Conta dos bots", same ? '<span class="green">✅ é esta carteira</span>' : WC.hl ? `<span class="muted">outra (${short(WC.hl)})</span>` : "–")}
+          <div class="acts"><button class="mini" onclick="disconnectWallet('mm')">Esconder</button></div>`
+        : `<div class="hint">${metamaskProvider() ? "Veja endereço, saldo e se é a mesma carteira da conta dos bots." : '<span class="red">extensão não detectada</span> — instale/ative e recarregue'}</div>
+          <div class="acts"><button class="mini connect" onclick="connectMetamask(this)">Conectar MetaMask</button></div>` }),
+    card({ color: "#ab9ff2", ico: "👻", name: "Phantom", sub: "Solana", on: !!ph,
+      body: ph ? `<div class="bal">${ph.sol == null ? "–" : ph.sol.toFixed(4)} <small>SOL</small></div>${addr(ph.address)}
+          ${row("Carteira de memes", '<a href="#trincheira">depósito e saque na Trincheira</a>')}
+          <div class="acts"><button class="mini" onclick="disconnectWallet('ph')">Desconectar</button></div>`
+        : `<div class="hint">${phantomProvider() ? "Veja seu endereço e saldo em SOL." : '<span class="red">extensão não detectada</span> — instale/ative e recarregue'}</div>
+          <div class="acts"><button class="mini connect" onclick="connectPhantomView(this)">Conectar Phantom</button></div>` }),
+  ].join(""));
 }
 let wcInit = false;
 async function initWalletConn() {            // silent reconnect of wallets the user already approved for this site (no popup)
