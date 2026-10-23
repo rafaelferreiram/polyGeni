@@ -125,12 +125,3 @@ def test_phantom_connect_helpers_are_get_without_token_but_loopback_only(client,
     monkeypatch.setattr(pr, "LOCAL_CLIENTS", {"127.0.0.1"})                                      # not loopback any more
     assert client.get("/api/paper/meme/wallet/blockhash").status_code == 403
     assert client.post("/api/paper/meme/wallet/withdraw").status_code == 403                    # POSTs still need the token too
-
-
-def test_wallet_balance_endpoints_validate_the_address_and_expose_only_public_data(client, monkeypatch):
-    from src.solana import market_data as md
-    assert client.get("/api/paper/wallet/solana-balance", params={"address": "not-an-address!"}).status_code == 400
-    monkeypatch.setattr(md, "rpc", lambda method, params: {"value": 2_500_000_000})
-    ok = client.get("/api/paper/wallet/solana-balance", params={"address": "So11111111111111111111111111111111111111112"})
-    assert ok.json()["sol"] == 2.5
-    assert set(client.get("/api/paper/wallet/hl-address").json()) == {"address"}

@@ -234,7 +234,7 @@ async function refresh() {
   renderPositions(a);
   renderBrokerBar(a);
   renderWatchlist(a);
-  initWalletConn();
+  initMetamask();
   fillManualCoins(a);
   renderGoals(a);
   renderRadar(a);
@@ -338,11 +338,10 @@ function renderWatchlist(a) {
     <td>${Number(w.rsi).toFixed(0)}</td><td>${WL_STATUS[w.status] || (w.up ? "⚪ longe" : "🔻 em baixa")}</td>
     <td>${w.symbol in held ? sideBadge(held[w.symbol]) : '<span class="muted">–</span>'}</td></tr>`));
 }
-// MetaMask (Hyperliquid is an EVM account) and Phantom (Solana): connect, show address and balance. Nothing is ever signed or sent.
-const WC = { mm: null, ph: null, hl: null };
+// Your MetaMask, read-only, shown inside the 👛 Carteiras card: found by EIP-6963 (rdns io.metamask), because Coinbase
+// Wallet also claims isMetaMask and owns window.ethereum. Nothing is ever signed or sent.
+const WC = { mm: null };
 const EVM_CHAINS = { "0x1": "Ethereum", "0xa4b1": "Arbitrum One", "0x2105": "Base", "0xa": "Optimism", "0x89": "Polygon", "0x38": "BNB Chain" };
-// Coinbase Wallet (and others) also set isMetaMask=true and take over window.ethereum, so MetaMask is found by its EIP-6963
-// identity (rdns io.metamask), never by that flag. Fallback for old builds: a provider that is not Coinbase/Phantom/Brave/Rabby/Trust.
 const EIP6963 = new Map();
 window.addEventListener("eip6963:announceProvider", (e) => { if (e.detail?.info?.rdns) EIP6963.set(e.detail.info.rdns, e.detail.provider); });
 window.dispatchEvent(new Event("eip6963:requestProvider"));
@@ -358,7 +357,6 @@ const walletsSeen = () => [...EIP6963.keys()].join(", ");
 async function readMetamask(prov, accounts) {
   if (!accounts?.length) { WC.mm = null; return; }
   const [chain, hex] = await Promise.all([prov.request({ method: "eth_chainId" }), prov.request({ method: "eth_getBalance", params: [accounts[0], "latest"] })]);
-  if (!WC.hl) { try { WC.hl = (await api("/wallet/hl-address")).address || ""; } catch (e) { WC.hl = ""; } }
   WC.mm = { address: accounts[0], chain: EVM_CHAINS[chain] || `rede ${parseInt(chain, 16)}`, eth: parseInt(hex, 16) / 1e18 };
 }
 async function connectMetamask(btn) {
@@ -367,69 +365,19 @@ async function connectMetamask(btn) {
     for (let i = 0; !prov && i < 10; i++) { await new Promise((r) => setTimeout(r, 200)); prov = metamaskProvider(); }
     if (!prov) throw new Error(`MetaMask não encontrada neste navegador${walletsSeen() ? ` (carteiras vistas: ${walletsSeen()})` : ""}. Instale/ative a extensão MetaMask e recarregue.`);
     await readMetamask(prov, await prov.request({ method: "eth_requestAccounts" }));
-    prov.on?.("accountsChanged", (acs) => readMetamask(prov, acs).then(renderWalletConn));
-    prov.on?.("chainChanged", () => prov.request({ method: "eth_accounts" }).then((acs) => readMetamask(prov, acs)).then(renderWalletConn));
+    prov.on?.("accountsChanged", (acs) => readMetamask(prov, acs).then(renderWallets));
+    prov.on?.("chainChanged", () => prov.request({ method: "eth_accounts" }).then((acs) => readMetamask(prov, acs)).then(renderWallets));
     return {};
-  }, "🦊 MetaMask conectada (somente leitura)").then(renderWalletConn);
+  }, "🦊 MetaMask conectada (somente leitura)").then(renderWallets);
 }
-async function readPhantom(addr) {
-  if (!addr) { WC.ph = null; return; }
-  let sol = null;
-  try { sol = (await api(`/wallet/solana-balance?address=${encodeURIComponent(addr)}`)).sol; } catch (e) { /* RPC busy: show the address anyway */ }
-  WC.ph = { address: addr, sol };
-}
-async function connectPhantomView(btn) {
-  run(btn, "Aprove na Phantom…", async () => {
-    const addr = await phantomKey();
-    await readPhantom(addr);
-    return {};
-  }, "👻 Phantom conectada (somente leitura)").then(renderWalletConn);
-}
-async function disconnectWallet(which) {
-  if (which === "ph") { try { await phantomProvider()?.disconnect(); } catch (e) { /* already disconnected */ } WC.ph = null; }
-  else WC.mm = null;                           // MetaMask has no programmatic disconnect: we just stop showing it
-  renderWalletConn();
-}
-function copyAddr(btn, text) {
-  (navigator.clipboard?.writeText(text) || Promise.reject()).then(() => {
-    btn.textContent = "✓"; setTimeout(() => { btn.textContent = "📋"; }, 1200);
-  }).catch(() => { /* clipboard blocked: the title still shows the full address */ });
-}
-function renderWalletConn() {
-  const el = document.getElementById("wallet-conn");
-  if (!el) return;
-  const mm = WC.mm, ph = WC.ph, same = mm && WC.hl && mm.address.toLowerCase() === WC.hl.toLowerCase();
-  const row = (k, v) => `<div class="row"><span>${k}</span><b>${v}</b></div>`;
-  const addr = (x) => `<span class="addr" title="${esc(x)}">${short(x)} <button onclick="copyAddr(this, '${esc(x)}')" title="Copiar endereço" aria-label="Copiar endereço">📋</button></span>`;
-  const card = (c) => `<div class="wc" style="--wc:${c.color}">
-    <div class="head"><span class="logo">${c.ico}</span><div><h3>${c.name}</h3><div class="sub">${c.sub}</div></div>
-      <span class="chip ${c.on ? "on" : ""}">${c.on ? "● conectada" : "○ não conectada"}</span></div>${c.body}</div>`;
-  setHTML("wallet-conn", [
-    card({ color: "#f6851b", ico: "🦊", name: "MetaMask", sub: "EVM · conta Hyperliquid", on: !!mm,
-      body: mm ? `<div class="bal">${mm.eth.toFixed(4)} <small>ETH · ${esc(mm.chain)}</small></div>${addr(mm.address)}
-          ${row("Conta dos bots", same ? '<span class="green">✅ é esta carteira</span>' : WC.hl ? `<span class="muted">outra (${short(WC.hl)})</span>` : "–")}
-          <div class="acts"><button class="mini" onclick="disconnectWallet('mm')">Esconder</button></div>`
-        : `<div class="hint">${metamaskProvider() ? "Veja endereço, saldo e se é a mesma carteira da conta dos bots." : '<span class="red">extensão não detectada</span> — instale/ative e recarregue'}</div>
-          <div class="acts"><button class="mini connect" onclick="connectMetamask(this)">Conectar MetaMask</button></div>` }),
-    card({ color: "#ab9ff2", ico: "👻", name: "Phantom", sub: "Solana", on: !!ph,
-      body: ph ? `<div class="bal">${ph.sol == null ? "–" : ph.sol.toFixed(4)} <small>SOL</small></div>${addr(ph.address)}
-          ${row("Carteira de memes", '<a href="#trincheira">depósito e saque na Trincheira</a>')}
-          <div class="acts"><button class="mini" onclick="disconnectWallet('ph')">Desconectar</button></div>`
-        : `<div class="hint">${phantomProvider() ? "Veja seu endereço e saldo em SOL." : '<span class="red">extensão não detectada</span> — instale/ative e recarregue'}</div>
-          <div class="acts"><button class="mini connect" onclick="connectPhantomView(this)">Conectar Phantom</button></div>` }),
-  ].join(""));
-}
-let wcInit = false;
-async function initWalletConn() {            // silent reconnect of wallets the user already approved for this site (no popup)
-  if (wcInit) return;
-  wcInit = true;
-  renderWalletConn();
+let mmInit = false;
+async function initMetamask() {              // silent reconnect if this site was already approved (no popup)
+  if (mmInit) return;
+  mmInit = true;
   try {
     const prov = metamaskProvider();
-    if (prov) { const acs = await prov.request({ method: "eth_accounts" }); if (acs.length) { await readMetamask(prov, acs); renderWalletConn(); } }
-    const ph = phantomProvider();
-    if (ph) { const r = await ph.connect({ onlyIfTrusted: true }).catch(() => null); if (r?.publicKey) { await readPhantom(r.publicKey.toString()); renderWalletConn(); } }
-  } catch (e) { /* extensions not ready: the buttons still work */ }
+    if (prov) { const acs = await prov.request({ method: "eth_accounts" }); if (acs.length) { await readMetamask(prov, acs); renderWallets(); } }
+  } catch (e) { /* extension not ready: the button still works */ }
 }
 function renderPositions(a) {
   const ps = a.positions || [];
@@ -1116,13 +1064,18 @@ function renderWallets() {
     <div class="big">${fake ? usd(labC.equity) : A ? usd(A.exchange_balance ?? A.equity) : "–"}<small>${fake ? "saldo simulado dos bots em treino" : "saldo na Hyperliquid"}</small></div>
     ${walletRows(fake ? [["Bots em treino", labBots.length], ["Trades fechados", labC.trades], ["Posições abertas", labC.n], ["Resultado líquido", pnl(labC.net)]]
       : [["Disponível", A ? usd(A.available) : "–"], ["Em margem", A ? usd(A.margin_used) : "–"],
-         ["Posições abertas", A ? A.positions?.length ?? "–" : "–"], ["Resultado fechado", A ? pnl(A.pnl_usd) : "–"]])}
+         ["Posições abertas", A ? A.positions?.length ?? "–" : "–"], ["Resultado fechado", A ? pnl(A.pnl_usd) : "–"],
+         ["Sua MetaMask", WC.mm ? (c.account && WC.mm.address.toLowerCase() === c.account.toLowerCase()
+            ? `<span class="green">✅ é esta conta</span> · ${WC.mm.eth.toFixed(4)} ETH`
+            : `<span title="${esc(WC.mm.address)}">${esc(short(WC.mm.address))}</span> · ${esc(WC.mm.chain)} · ${WC.mm.eth.toFixed(4)} ETH <span class="muted">(outra conta)</span>`)
+          : '<span class="muted">não conectada · somente leitura</span>']])}
     <div class="addr">${fake ? '<span class="muted">Soma das contas simuladas dos bots (titulares e reservas): dinheiro de mentira.</span>'
       : `Endereço: ${c.account ? `<code title="${esc(c.account)}">${esc(short(c.account))}</code><button class="link" onclick="copyText('${esc(c.account)}')">copiar</button>` : '<span class="muted">conta real não configurada</span>'}`}</div>
     <div class="acts">${fake ? `<button onclick="showTab('bots')">⚽ Ver o time</button>`
       : `<a class="btn" href="#fundos" onclick="openAnchor('#fundos'); return false;"><button class="primary">➕ Depositar USDC</button></a>
       <a class="btn" href="https://app.hyperliquid.xyz/portfolio" target="_blank" rel="noopener"><button>Hyperliquid ↗</button></a>
-      ${c.account ? `<a class="btn" href="https://arbiscan.io/address/${esc(c.account)}" target="_blank" rel="noopener"><button>Arbiscan ↗</button></a>` : ""}`}</div></div>`;
+      ${c.account ? `<a class="btn" href="https://arbiscan.io/address/${esc(c.account)}" target="_blank" rel="noopener"><button>Arbiscan ↗</button></a>` : ""}
+      ${REMOTE ? "" : `<button onclick="connectMetamask(this)">🦊 ${WC.mm ? "Trocar" : "Conectar"} MetaMask</button>`}`}</div></div>`;
   // right: Phantom / Solana — your Phantom's real balance (the bot trades from its own wallet), or the paper meme team
   const w = memeWallet, bots = Object.values(memeBots);
   const lab = { equity: 0, open: 0, n: 0, pnl: 0 };
