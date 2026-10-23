@@ -767,3 +767,58 @@ def test_a_restart_never_repeats_the_same_candles_entry(ledger, monkeypatch):
     fresh = build(ledger, price)                           # the restart: new engine, same ledger
     assert fresh.run_cycle()["entries"] == 0               # same candle, no repeat
     assert "sinal já usado" in ledger.get_state("agents")["momentum"]["last_reason"]
+
+
+def test_regime_is_logged_tagged_on_entries_and_the_intent_rides_the_decision(ledger, monkeypatch):
+    """P1: the regime is observational — stored, logged on change, tagged on every entry (the evidence a future
+    gate needs) — and the §20 intent, validated before Risk, is attached to the entry decision with its sizing."""
+    from src.solana import config as cfg, hyperliquid as hl
+    from tests.test_regime import _candles
+    monkeypatch.setattr(cfg, "REGIME_ENABLED", True)
+    bull = _candles([100 * 1.005 ** i for i in range(250)])
+    monkeypatch.setattr(hl, "candles", lambda coin, interval="1h": bull)
+    eng = build(ledger, Price(1.0))
+    eng.run_cycle()
+    reg = ledger.get_state("regime")
+    # BTC rallies but the fake market's breadth is 0/1 coins in uptrend: honestly downgraded to "alta fraca"
+    assert reg["state"] == "alta fraca" and reg["calibrated"] is False
+    entry = ledger.decisions(kind="entry")[0]
+    assert "regime alta fraca" in entry["signals"]["tags"]
+    it = entry["signals"]["intent"]
+    assert it["side"] == "buy" and it["market_type"] == "spot" and it["version"] == 1
+    assert it["decision_id"] == entry["order_id"] and it["risk_budget_request_usd"] > 0
+    stop_frac = 1 - it["stop_price"] / it["expected_entry_price"]        # ATR-resized stop (2.5% on flat candles)
+    assert it["estimated_loss_at_stop_usd"] == pytest.approx(it["risk_budget_request_usd"] * stop_frac, rel=1e-4)
+    eng.run_cycle()                                       # unchanged regime: logged only on change
+    assert sum(d["kind"] == "regime" for d in ledger.decisions(100)) == 1
+
+
+def test_a_second_entry_highly_correlated_with_an_open_position_is_skipped(ledger, monkeypatch):
+    """P1: two near-copies of one bet add exposure, not diversification — the redundant entry is vetoed.
+    CORR_MAX_ENTRY=0 disables the guard (rollback)."""
+    import time as _t
+    from src.solana import config as cfg
+
+    def wavy(n=60):
+        closes, pat = [1.0], (0.011, -0.006, 0.014, -0.01, 0.004)
+        for i in range(n - 1):
+            closes.append(closes[-1] * (1 + pat[i % len(pat)]))
+        now = int(_t.time()) // 3600 * 3600
+        return [dict(t=now - (n - 1 - i) * 3600, open=c, high=c * 1.001, low=c * 0.999, close=c, volume=100.0)
+                for i, c in enumerate(closes)]
+
+    class TwoScout:
+        def candidates(self):
+            return [candidate(), candidate(mint="Token2222222222222222222222222222222222222222",
+                                           symbol="TK2", pair_address="Pool222")]
+
+    series = wavy()
+    broker = PaperBroker(ledger, quote_fn=Price(1.0).quote, sol_usd_fn=lambda: 100.0, slippage_bps=0, fee_lamports=0)
+    eng = PaperEngine(ledger, TwoScout(), FakeSafety(), [FixedStrategy()], DebateAgent(enabled=False), RiskAgent(),
+                      ExecutorAgent(broker), candles_fn=lambda pool: series, profiles={})
+    s = eng.run_cycle()
+    assert s["entries"] == 1                                            # identical series: the copy is redundant
+    assert any("exposição redundante" in d["reason"] for d in ledger.decisions(kind="veto"))
+    monkeypatch.setattr(cfg, "CORR_MAX_ENTRY", 0.0)                     # rollback: guard off
+    assert eng.run_cycle()["entries"] == 1                              # TK2 now enters (TKN is already held)
+    assert {p["symbol"] for p in ledger.positions()} == {"TKN", "TK2"}
