@@ -2,7 +2,6 @@
 /api/paper — Solana PAPER trading state. Every response carries mode=PAPER.
 Deposits/withdrawals here move SIMULATED money only; wallets are watch-only.
 """
-import re
 import hmac
 import os
 import threading
@@ -864,24 +863,6 @@ def account_transactions(kind: str = "sim", limit: int = 100):
     rows += [{"ts": m["ts"], "type": "depósito" if m["kind"] == "deposit" else "saque", "symbol": "USDC", "bot": None,
               "usd": m["amount_usd"], "price": None, "qty": None, "fee_usd": 0, "note": m["note"]} for m in led.cash_movements(limit)]
     return {"rows": sorted(rows, key=lambda r: r["ts"], reverse=True)[:limit]}
-
-
-@router.get("/wallet/hl-address")
-def wallet_hl_address():
-    """The public address of the Hyperliquid account the bots trade (so a connected MetaMask can be compared with it)."""
-    return {"address": cfg.HL_ACCOUNT_ADDRESS}
-
-
-@router.get("/wallet/solana-balance")
-def wallet_solana_balance(address: str):
-    """SOL balance of a connected Phantom address (read-only, through our RPC so the browser needs no CORS)."""
-    from src.solana import market_data as md
-    if not re.fullmatch(r"[1-9A-HJ-NP-Za-km-z]{32,44}", address):
-        raise HTTPException(400, "endereço Solana inválido")
-    try:
-        return {"address": address, "sol": md.rpc("getBalance", [address])["value"] / 1e9}
-    except Exception as e:
-        raise HTTPException(502, f"RPC da Solana indisponível: {str(e)[:80]}")
 
 
 @router.get("/funding")
