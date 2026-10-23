@@ -232,6 +232,10 @@ async function refresh() {
   renderTeam();
   renderThermo(a);
   renderPositions(a);
+  renderBrokerBar(a);
+  renderWatchlist(a);
+  loadBrief();
+  initWalletConn();
   fillManualCoins(a);
   renderGoals(a);
   renderRadar(a);
@@ -291,11 +295,148 @@ function botTipAttr(model) {
   document.addEventListener("mousemove", (e) => { if (cur && !cur.isConnected) hide(); else if (cur) place(e); });
   document.addEventListener("scroll", hide, true);
 })();
+// ─── broker look: positions table, account strip, watchlist, AI read, read-only wallet connection ───
+let POS_VIEW = (() => { try { return localStorage.getItem("posView") || "cards"; } catch (e) { return "cards"; } })();
+function setPosView(v) {
+  POS_VIEW = v;
+  try { localStorage.setItem("posView", v); } catch (e) { /* private mode */ }
+  if (acc) renderPositions(acc);
+}
+function posTable(ps) {
+  const rows = ps.map((p) => {
+    const value = p.mark_value ?? p.cost_usd, now = p.mark_price ?? p.entry_price * value / p.cost_usd;
+    const pl = value - p.cost_usd, short = isShortPos(p), rn = realPx(p, now);
+    const maxLoss = p.cost_usd * (p.entry_price - p.stop_price) / p.entry_price, maxGain = p.cost_usd * (p.tp_price - p.entry_price) / p.entry_price;
+    const tip = tipAttr(`${short ? "🔻 SHORT" : "🟢 COMPRA"} em ${p.symbol}`, [
+      short ? "Aposta que o preço CAI." : "Aposta que o preço SOBE.", `Stop perde ≈ $${maxLoss.toFixed(2)} · alvo ganha ≈ $${maxGain.toFixed(2)}`, `Bot: ${botName(p.strategy)}`, "clique para detalhes e vender/fechar"]);
+    return `<tr class="${short ? "is-short" : "is-buy"} ${openMint === p.mint ? "sel" : ""}" ${tip} tabindex="0" onclick="openPos('${esc(p.mint)}')" onkeydown="if(event.key==='Enter')openPos('${esc(p.mint)}')">
+      <td class="l">${coin(p.symbol)}</td><td class="l">${sideBadge(short)}</td><td>${usd(p.cost_usd)}</td><td>${fmtPx(p.entry_price)}</td><td>${fmtPx(rn)}</td>
+      <td>${pnl(pl)}</td><td class="${pl >= 0 ? "green" : "red"}">${pl >= 0 ? "+" : ""}${(pl / p.cost_usd * 100).toFixed(2)}%</td>
+      <td>${fmtPx(realPx(p, p.stop_price))}</td><td>${fmtPx(realPx(p, p.tp_price))}</td><td class="l"><b class="botn" ${botTipAttr(p.strategy)}>${esc(botName(p.strategy))}</b></td><td>${ago(p.opened_at)}</td></tr>`;
+  }).join("");
+  const tot = ps.reduce((s, p) => s + (p.mark_value ?? p.cost_usd) - p.cost_usd, 0), cost = ps.reduce((s, p) => s + p.cost_usd, 0);
+  return `<table class="ptable"><thead><tr><th class="l">Ativo</th><th class="l">Lado</th><th>Tamanho</th><th>Entrada</th><th>Atual</th><th>P&amp;L $</th><th>P&amp;L %</th><th>Stop</th><th>Alvo</th><th class="l">Bot</th><th>Aberta há</th></tr></thead>
+    <tbody>${rows}</tbody><tfoot><tr><td class="l" colspan="2"><b>Total</b></td><td>${usd(cost)}</td><td colspan="2"></td><td>${pnl(tot)}</td><td class="${tot >= 0 ? "green" : "red"}">${tot >= 0 ? "+" : ""}${cost ? (tot / cost * 100).toFixed(2) : "0.00"}%</td><td colspan="5"></td></tr></tfoot></table>`;
+}
+function renderBrokerBar(a) {
+  const av = availableOf(a), ps = a.positions || [];
+  const open = ps.reduce((s, p) => s + (p.mark_value ?? p.cost_usd) - p.cost_usd, 0), day = a.goals?.day_gain_usd;
+  const bal = KIND === "real" && a.exchange_balance !== undefined ? a.exchange_balance : a.equity;
+  const cell = (l, v, s = "") => `<div class="c"><div class="l">${l}</div><div class="v">${v}${s ? ` <small>${s}</small>` : ""}</div></div>`;
+  setHTML("brokerbar", [
+    cell("Saldo", usd(bal)), cell("Disponível", usd(av.available)), cell("Em margem", usd(av.margin)),
+    cell("Poder de compra", usd(a.buying_power, 0), `${a.limits.leverage}x`),
+    cell("P&amp;L aberto", pnl(open)), cell("P&amp;L do dia", day == null ? "–" : pnl(day)),
+    cell("Exposição", `${bal ? ((a.exposure / bal) * 100).toFixed(0) : 0}%`, `${ps.length}/${a.limits.max_positions || "–"} pos.`),
+  ].join(""));
+}
+const WL_STATUS = { pronto: "✅ pronto", perto: "👀 perto", aguardando: "⏳ aguardando" };
+function renderWatchlist(a) {
+  const seen = new Set(), rows = (a.market_temp?.watch || []).filter((w) => !seen.has(w.symbol) && seen.add(w.symbol));
+  const held = Object.fromEntries((a.positions || []).map((p) => [p.symbol, isShortPos(p)]));
+  table("wl-table", ["Ativo", "Preço", "24h", "RSI", "Situação", "Posição"], rows.map((w) => `<tr>
+    <td>${coin(w.symbol)}</td><td>${fmtPx(w.price)}</td><td class="${w.ch24 >= 0 ? "green" : "red"}">${w.ch24 >= 0 ? "+" : ""}${Number(w.ch24).toFixed(2)}%</td>
+    <td>${Number(w.rsi).toFixed(0)}</td><td>${WL_STATUS[w.status] || (w.up ? "⚪ longe" : "🔻 em baixa")}</td>
+    <td>${w.symbol in held ? sideBadge(held[w.symbol]) : '<span class="muted">–</span>'}</td></tr>`));
+}
+// AI read of the account: generated in the background on the server, cached 20 min
+let briefAt = 0;
+async function loadBrief(force = false) {
+  if (!force && Date.now() - briefAt < 30000) return;
+  briefAt = Date.now();
+  try {
+    const b = await api(`/ai-brief?kind=${KIND}${force ? "&refresh=true" : ""}`);
+    const el = document.getElementById("ia-text");
+    el.classList.toggle("dim", !b.text);
+    el.textContent = b.text || (b.busy ? "A IA está lendo a conta…" : b.error ? `Sem leitura agora: ${b.error}` : "Ainda sem leitura.");
+    document.getElementById("ia-tag").textContent = b.ts ? `${look(b.model).label || b.model} · ${hhmm(new Date(b.ts * 1000).toISOString())}` : (b.busy ? "gerando…" : "–");
+    document.getElementById("ia-meta").textContent = b.error && b.text ? `Última tentativa falhou (${b.error}); mostrando a leitura anterior.` : "Só informa: nunca abre, veta nem dimensiona trades. Atualiza a cada 20 min e conta no teto diário de IA.";
+    if (b.busy) setTimeout(() => loadBrief(), 6000);
+  } catch (e) { document.getElementById("ia-text").textContent = "Leitura da IA indisponível."; }
+}
+function refreshBrief(btn) { run(btn, "Pedindo…", async () => { briefAt = 0; await loadBrief(true); return {}; }, "🧠 Pedi uma leitura nova à IA"); }
+
+// MetaMask (Hyperliquid is an EVM account) and Phantom (Solana): connect, show address and balance. Nothing is ever signed or sent.
+const WC = { mm: null, ph: null, hl: null };
+const EVM_CHAINS = { "0x1": "Ethereum", "0xa4b1": "Arbitrum One", "0x2105": "Base", "0xa": "Optimism", "0x89": "Polygon", "0x38": "BNB Chain" };
+const metamaskProvider = () => {
+  const e = window.ethereum;
+  if (!e) return null;
+  return (e.providers?.length ? e.providers : [e]).find((p) => p.isMetaMask && !p.isPhantom && !p.isBraveWallet) || null;
+};
+async function readMetamask(prov, accounts) {
+  if (!accounts?.length) { WC.mm = null; return; }
+  const [chain, hex] = await Promise.all([prov.request({ method: "eth_chainId" }), prov.request({ method: "eth_getBalance", params: [accounts[0], "latest"] })]);
+  if (!WC.hl) { try { WC.hl = (await api("/wallet/hl-address")).address || ""; } catch (e) { WC.hl = ""; } }
+  WC.mm = { address: accounts[0], chain: EVM_CHAINS[chain] || `rede ${parseInt(chain, 16)}`, eth: parseInt(hex, 16) / 1e18 };
+}
+async function connectMetamask(btn) {
+  run(btn, "Aprove na MetaMask…", async () => {
+    const prov = metamaskProvider();
+    if (!prov) throw new Error("MetaMask não encontrada neste navegador (instale/desbloqueie a extensão e recarregue).");
+    await readMetamask(prov, await prov.request({ method: "eth_requestAccounts" }));
+    prov.on?.("accountsChanged", (acs) => readMetamask(prov, acs).then(renderWalletConn));
+    prov.on?.("chainChanged", () => prov.request({ method: "eth_accounts" }).then((acs) => readMetamask(prov, acs)).then(renderWalletConn));
+    return {};
+  }, "🦊 MetaMask conectada (somente leitura)").then(renderWalletConn);
+}
+async function readPhantom(addr) {
+  if (!addr) { WC.ph = null; return; }
+  let sol = null;
+  try { sol = (await api(`/wallet/solana-balance?address=${encodeURIComponent(addr)}`)).sol; } catch (e) { /* RPC busy: show the address anyway */ }
+  WC.ph = { address: addr, sol };
+}
+async function connectPhantomView(btn) {
+  run(btn, "Aprove na Phantom…", async () => {
+    const addr = await phantomKey();
+    await readPhantom(addr);
+    return {};
+  }, "👻 Phantom conectada (somente leitura)").then(renderWalletConn);
+}
+async function disconnectWallet(which) {
+  if (which === "ph") { try { await phantomProvider()?.disconnect(); } catch (e) { /* already disconnected */ } WC.ph = null; }
+  else WC.mm = null;                           // MetaMask has no programmatic disconnect: we just stop showing it
+  renderWalletConn();
+}
+function renderWalletConn() {
+  const el = document.getElementById("wallet-conn");
+  if (!el) return;
+  const row = (k, v) => `<div class="row"><span>${k}</span><b>${v}</b></div>`;
+  const mm = WC.mm, ph = WC.ph, same = mm && WC.hl && mm.address.toLowerCase() === WC.hl.toLowerCase();
+  setHTML("wallet-conn", `
+    <div class="wc"><h3>🦊 MetaMask <span class="muted">· EVM / Hyperliquid</span></h3>${mm ? `
+      ${row("Endereço", `<span title="${esc(mm.address)}">${short(mm.address)}</span>`)}${row("Rede", esc(mm.chain))}${row("Saldo nativo", `${mm.eth.toFixed(4)} ETH`)}
+      ${row("Conta dos bots", same ? '<span class="green">✅ é esta carteira</span>' : WC.hl ? `<span class="muted">outra (${short(WC.hl)})</span>` : "–")}
+      <div class="acts"><button class="mini" onclick="disconnectWallet('mm')">Esconder</button></div>`
+      : `<div class="note">${metamaskProvider() ? "Mostra seu endereço e saldo, e se é a mesma carteira da conta Hyperliquid dos bots." : '<span class="red">extensão não detectada neste navegador</span>'}</div>
+      <div class="acts"><button class="mini" onclick="connectMetamask(this)">Conectar MetaMask</button></div>`}</div>
+    <div class="wc"><h3>👻 Phantom <span class="muted">· Solana</span></h3>${ph ? `
+      ${row("Endereço", `<span title="${esc(ph.address)}">${short(ph.address)}</span>`)}${row("Saldo", ph.sol == null ? "–" : `${ph.sol.toFixed(4)} SOL`)}
+      ${row("Carteira de memes", '<span class="muted">depósito e saque na seção Trincheira</span>')}
+      <div class="acts"><button class="mini" onclick="disconnectWallet('ph')">Desconectar</button></div>`
+      : `<div class="note">${phantomProvider() ? "Mostra seu endereço e saldo em SOL." : '<span class="red">extensão não detectada neste navegador</span>'}</div>
+      <div class="acts"><button class="mini" onclick="connectPhantomView(this)">Conectar Phantom</button></div>`}</div>`);
+}
+let wcInit = false;
+async function initWalletConn() {            // silent reconnect of wallets the user already approved for this site (no popup)
+  if (wcInit) return;
+  wcInit = true;
+  renderWalletConn();
+  try {
+    const prov = metamaskProvider();
+    if (prov) { const acs = await prov.request({ method: "eth_accounts" }); if (acs.length) { await readMetamask(prov, acs); renderWalletConn(); } }
+    const ph = phantomProvider();
+    if (ph) { const r = await ph.connect({ onlyIfTrusted: true }).catch(() => null); if (r?.publicKey) { await readPhantom(r.publicKey.toString()); renderWalletConn(); } }
+  } catch (e) { /* extensions not ready: the buttons still work */ }
+}
 function renderPositions(a) {
   const ps = a.positions || [];
   document.getElementById("pos-tag").textContent = KIND === "sim" ? "conta simulada" : "conta real";
   const closed = a.trades.length;
   document.getElementById("pos-head").innerHTML = `${ps.length} aberta${ps.length === 1 ? "" : "s"} · ${closed} trade${closed === 1 ? "" : "s"} fechado${closed === 1 ? "" : "s"}${closed ? ` · resultado ${pnl(a.trades.reduce((x, t) => x + t.pnl_usd, 0))}` : ""}`;
+  document.getElementById("positions").classList.toggle("as-table", POS_VIEW === "table");
+  document.querySelectorAll("#pos-view button").forEach((b) => b.classList.toggle("on", b.dataset.v === POS_VIEW));
+  if (POS_VIEW === "table" && ps.length) { setHTML("positions", posTable(ps)); return; }
   setHTML("positions", ps.length ? ps.map((p) => {
     const value = p.mark_value ?? p.cost_usd;
     const now = p.mark_price ?? p.entry_price * value / p.cost_usd;
