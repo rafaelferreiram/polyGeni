@@ -249,7 +249,8 @@ async function refresh() {
 const fmtPx = (v) => (v == null ? "–" : `$${Number(v) >= 100 ? Number(v).toFixed(2) : Number(v).toPrecision(4)}`);
 const STRAT_MODEL = { trend: "trend", trend4h: "trend4h", whales: "whales", copy: "copy", short: "short", short_break: "short_break", short_break_15m: "short_break_15m", rebound_15m: "rebound_15m", rules: "rules", mean_reversion_atr: "rules",
   trend4h_15m: "trend4h_15m", whales_15m: "whales_15m", copy_15m: "copy_15m" };
-const botName = (s) => (s === "manual" ? "Manual" : look(s?.startsWith("llm:") ? s.slice(4) : STRAT_MODEL[s] || "rules").label);
+const botName = (s) => (s === "manual" ? "Manual" : look(s?.startsWith("llm:") ? s.slice(4)
+  : lastArena?.leaderboard?.some((r) => r.model === s) ? s : STRAT_MODEL[s] || "rules").label);   // evolved reserves (short_break_g2_8) are arena models
 // Shorts are booked on a mirror price (2·entry − price) so the maths stay long-only: show the real market prices instead.
 const isShortPos = (p) => String(p.mint || "").endsWith("~short");
 const realPx = (p, x) => (isShortPos(p) && x != null ? 2 * p.entry_price - x : x);
@@ -305,7 +306,7 @@ function renderPositions(a) {
     const maxLoss = p.cost_usd * (p.entry_price - p.stop_price) / p.entry_price, maxGain = p.cost_usd * (p.tp_price - p.entry_price) / p.entry_price;
     const tip = tipAttr(`${short ? "🔻 SHORT" : "🟢 COMPRA"} em ${p.symbol} · ${KIND === "real" ? "conta real" : "simulação"}`, [
       short ? "Aposta que o preço CAI: ganha quando desce, perde quando sobe." : "Aposta que o preço SOBE: ganha quando sobe, perde quando desce.",
-      `Entrada ${fmtPx(p.entry_price)} → agora ${fmtPx(rn)} (${pnl(pl)})`,
+      `Entrada ${fmtPx(p.entry_price)} → agora ${fmtPx(rn)} (${pl >= 0 ? "+" : "−"}$${Math.abs(pl).toFixed(2)})`,
       `Stop ${fmtPx(rStop)} (perde ≈ $${maxLoss.toFixed(2)}) · alvo ${fmtPx(rTp)} (ganha ≈ $${maxGain.toFixed(2)})`,
       `Bot: ${botName(p.strategy)} · aberta há ${ago(p.opened_at)}`, "clique para detalhes e vender/fechar"]);
     return `<div class="pos ${short ? "is-short" : "is-buy"} ${pl >= 0 ? "win" : "lose"} ${openMint === p.mint ? "sel" : ""}" tabindex="0" role="button" ${tip}
