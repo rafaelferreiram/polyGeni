@@ -126,9 +126,14 @@ def green_light(model: str) -> dict:
     """Is this bot ready for real money? Trusted (backtest-validated) bots are; the others need GREEN_LIGHT_TRADES
     closed lab trades, GREEN_LIGHT_WINS of them winners, with net profit after their AI cost, win rate ≥ GREEN_LIGHT_WIN_RATE and profit factor ≥
     GREEN_LIGHT_PROFIT_FACTOR."""
+    data = evolution.load()
+    if model in (data.get("demoted") or {}):     # no banco: nenhuma via (nem trusted) devolve dinheiro real sem reabilitacao
+        d = data["demoted"][model]
+        return {"ok": False, "demoted": True, "since": d.get("at"), "why": d.get("why"),
+                "rehab": {"trades": cfg.REHAB_TRADES, "win_rate": cfg.REHAB_WIN_RATE, "net": "positivo"}}
     if model in cfg.REAL_TRUSTED_BOTS and model not in LAB_ONLY_BOTS:
         return {"ok": True, "trusted": True}
-    if model in evolution.load().get("promoted", []):        # promoted by the user from the bot's modal
+    if model in data.get("promoted", []):        # promoted by the user from the bot's modal
         return {"ok": True, "trusted": True, "promoted": True}
     eng = (_bots or {}).get(model)
     trades = eng.ledger.closed_trades() if eng else []
@@ -413,11 +418,20 @@ def _apply_training_boost(eng):
     eng.risk.max_capital_usd = max(cfg.TRAIN_BOOST_CAPITAL_USD, cfg.LAB_CAPITAL_USD) if on else cfg.LAB_CAPITAL_USD
 
 
+_called_up: set = set()
+
+
 def eligible_for_real(members: list) -> list:
     """Real money only for bots with evidence: REAL_TRUSTED_BOTS (backtest-validated rule bots), and every other bot
-    (AI) once it has ≥ LIVE_MIN_LAB_TRADES lab trades and positive expectancy after its AI cost."""
+    (AI) once it has ≥ LIVE_MIN_LAB_TRADES lab trades and positive expectancy after its AI cost. The squad rule
+    (owner, 23/10): at most MAX_TITULARES on the pitch, never fewer than MIN_TITULARES — demotions open room and
+    the best-scoring reserves are called up (at minimum size until proven); a benched bot plays only after rehab."""
+    global _called_up
+    demoted = set(evolution.load().get("demoted") or {})
     ok = []
     for m in members:
+        if m.model in demoted:               # no banco: treina no laboratorio, nao joga com dinheiro real
+            continue
         if m.model in cfg.REAL_TRUSTED_BOTS:
             ok.append(m)
             continue
@@ -428,7 +442,23 @@ def eligible_for_real(members: list) -> list:
         ok = [m for m in ok if m in best]
     if cfg.LIVE_FAST_ALLOW:              # the owner lets the 15-minute bots trade real money, small and one at a time
         from src.solana.strategies import is_fast
-        ok += [m for m in members if m not in ok and is_fast(m.model)]
+        ok += [m for m in members if m not in ok and m.model not in demoted and is_fast(m.model)]
+    floor = min(cfg.MIN_TITULARES, cfg.MAX_TITULARES)
+    if len(ok) < floor:                  # the floor: call up the bench's best (shorts never; size stays the minimum)
+        from src.solana.strategies import SHORT_BOTS
+        bench = [m for m in members if m not in ok and m.model not in demoted
+                 and evolution.base_of(m.model.removeprefix("llm:")) not in SHORT_BOTS]
+        bench.sort(key=lambda m: (-reward(m.model).get("points", 0), -net_of_cost(m.model)[2]))
+        called = bench[:floor - len(ok)]
+        for m in called:
+            if m.model not in _called_up:
+                eng = (_bots or {}).get(m.model)
+                if eng:
+                    eng.ledger.log_decision("evolution", reason=(
+                        f"📣 convocado ao time titular: o elenco caiu abaixo de {cfg.MIN_TITULARES} — joga pequeno "
+                        "(tamanho minimo) ate provar que merece a vaga"))
+        _called_up = {m.model for m in called}
+        ok += called
     return ok
 
 
