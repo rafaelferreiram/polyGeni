@@ -260,6 +260,9 @@ def take_handoff(model: str, symbol: str, strategy: str):
 
 
 _sig_cache: dict[str, tuple[int, dict]] = {}
+_sig_busy: set[str] = set()
+import threading as _th
+_sig_lock, _sig_serial = _th.Lock(), _th.Lock()
 
 
 def significance(model: str) -> dict | None:
@@ -273,13 +276,26 @@ def significance(model: str) -> dict | None:
     hit = _sig_cache.get(model)
     if hit and hit[0] == n:
         return hit[1]
-    try:
-        out = sg.p_value(eng.ledger, "15m" if model in FAST_BOTS else "1h")
-    except Exception as e:                           # candles unavailable right now: not cached, next call retries
-        logger.warning(f"significance {model}: {e}")
-        return {"p": None, "error": str(e)[:80]}
-    _sig_cache[model] = (n, out)
-    return out
+    # The test downloads dozens of candle windows (rate-limited): never inside a request. A cold cache after a restart made
+    # /arena take minutes, the watchdog restarted the app, the cache went cold again, and the HL budget starved the real cycle
+    # (2026-10-23). Compute in one background thread; until it lands p is None, so can_promote stays closed (fail-safe).
+    with _sig_lock:
+        if model in _sig_busy:
+            return {"p": None, "pending": True}
+        _sig_busy.add(model)
+
+    def run():
+        try:
+            with _sig_serial:                        # one bot at a time: a single stream of HL calls
+                _sig_cache[model] = (n, sg.p_value(eng.ledger, "15m" if model in FAST_BOTS else "1h"))
+        except Exception as e:                       # candles unavailable right now: not cached, next call retries
+            logger.warning(f"significance {model}: {e}")
+        finally:
+            with _sig_lock:
+                _sig_busy.discard(model)
+    import threading
+    threading.Thread(target=run, daemon=True, name=f"significance-{model}").start()
+    return {"p": None, "pending": True}
 
 
 def can_promote(model: str) -> dict:
