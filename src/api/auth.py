@@ -86,7 +86,7 @@ def _page(msg: str = "") -> HTMLResponse:
     err = f'<p class="err" role="alert">{html.escape(msg)}</p>' if msg else ""
     return HTMLResponse(f"""<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Savoia — entrar</title>
-<link rel="icon" href="/static/favicon.svg?v=2"><style>
+<link rel="icon" href="/static/favicon.svg?v=3"><style>
 :root{{--bg:#0b0e0d;--panel:#121715;--border:#24302b;--text:#e6ece9;--muted:#8a9a93;--accent:#6fd3a0;--red:#ef7b7b}}
 *{{box-sizing:border-box}}body{{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--bg);color:var(--text);
 font:15px/1.5 system-ui,-apple-system,sans-serif;padding:16px}}form{{width:100%;max-width:340px;background:var(--panel);
@@ -95,7 +95,7 @@ label{{display:block;font-size:13px;color:var(--muted);margin:12px 0 6px}}input{
 border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:16px}}button{{width:100%;margin-top:20px;padding:13px;
 border:0;border-radius:10px;background:var(--accent);color:#06130d;font-weight:700;font-size:15px;cursor:pointer}}
 .err{{color:var(--red);margin:12px 0 0}}</style></head><body><form method="post" action="/login">
-<h1>Savoia</h1><p>Acesso remoto · somente leitura</p>
+<img src="/static/favicon.svg?v=3" width="76" height="76" alt="" style="display:block;margin:0 auto 10px"><h1 style="text-align:center">Savoia</h1><p style="text-align:center">bot auto crypto trade · Acesso remoto, somente leitura</p>
 <label for="u">Usuário</label><input id="u" name="user" autocomplete="username" autocapitalize="off" required>
 <label for="p">Senha</label><input id="p" name="password" type="password" autocomplete="current-password" required>
 {err}<button type="submit">Entrar</button></form></body></html>""", status_code=401 if msg else 200)
