@@ -355,7 +355,8 @@ class ShortFade:
         window = closes[-20:]
         upper = mean(window) + 2 * pstdev(window)
         r = rsi(closes)
-        if not (closes[-1] < ema(closes[-600:], 200) and closes[-1] > upper and r > 70):
+        from src.solana import config as cfg
+        if not (closes[-1] < ema(closes[-600:], 200) and closes[-1] > upper and r > (cfg.BEAR_FADE_RSI if cfg.BEAR_MODE else 70)):
             return None
         stop, tp, a = _atr_stops(candles, 2.0, 3.0)
         # the engine treats a short as a long on the mirror price, so stop/target stay "below/above" the entry
@@ -379,7 +380,9 @@ class ShortBreak:
             return None
         relax = getattr(self, "relax", 0)
         r = rsi(closes)
-        if not (closes[-1] < ema(closes[-150:], 50) and closes[-1] < min(c["low"] for c in candles[-21:-1]) and 25 - 5 * relax <= r <= 45 + 5 * relax):
+        from src.solana import config as cfg
+        bars = cfg.BEAR_BREAK_BARS if cfg.BEAR_MODE else 20              # BEAR_MODE: a breakdown of a shorter range counts
+        if not (closes[-1] < ema(closes[-150:], 50) and closes[-1] < min(c["low"] for c in candles[-bars - 1:-1]) and 25 - 5 * relax <= r <= 45 + 5 * relax):
             return None
         stop, tp, a = _atr_stops(candles, 1.5, 2.5)
         # same mirror convention as ShortFade: the engine holds a short as a long on the mirror price

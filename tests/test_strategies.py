@@ -109,6 +109,36 @@ def test_short_break_sells_a_breakdown_in_a_downtrend_and_ignores_uptrends_and_f
     assert ShortBreak().signal(up) is None and ShortBreak().signal(flat_candles(80)) is None
 
 
+def _pause_then_breakdown():
+    """Downtrend, a flush to ~89.7, then 8 bars pausing near 92 and a close at 90.2: under the last 8 bars' low (90.3 after the
+    pause) but still above the lowest low of the last 20 bars (89.7)."""
+    bar = lambda i, c: dict(t=i, open=c, high=c + 0.3, low=c - 0.3, close=c, volume=100)
+    closes = [120 - 0.5 * i for i in range(52)] + [93.0, 92.0, 91.0, 90.0] + [90.8, 91.6, 91.2, 92.0, 91.4, 92.2, 91.6, 92.4] + [90.2]
+    return [bar(i, c) for i, c in enumerate(closes)]
+
+
+def test_bear_mode_makes_short_break_sell_a_short_range_breakdown_and_default_stays_strict(monkeypatch):
+    from src.solana import config as cfg
+    from src.solana.strategies import ShortBreak
+    candles = _pause_then_breakdown()
+    monkeypatch.setattr(cfg, "BEAR_MODE", False)
+    assert ShortBreak().signal(candles) is None                       # strict rule: needs a new 20-bar low
+    monkeypatch.setattr(cfg, "BEAR_MODE", True)
+    monkeypatch.setattr(cfg, "BEAR_BREAK_BARS", 8)
+    bear = ShortBreak().signal(candles)
+    assert bear and bear.indicators["side"] == "short" and bear.stop_price < bear.ref_price < bear.tp_price
+    monkeypatch.setattr(cfg, "BEAR_BREAK_BARS", 20)
+    assert ShortBreak().signal(candles) is None                       # the knob really is the lookback
+
+
+def test_bear_mode_lowers_the_short_fade_rsi_but_never_the_downtrend_requirement(monkeypatch):
+    from src.solana import config as cfg
+    from src.solana.strategies import ShortFade
+    monkeypatch.setattr(cfg, "BEAR_MODE", True)
+    up = [dict(t=i, open=100 + 0.5 * i, high=100 + 0.5 * i + 0.3, low=100 + 0.5 * i - 0.3, close=100 + 0.5 * i, volume=100) for i in range(260)]
+    assert ShortFade().signal(up) is None            # above its EMA200 (an uptrend): no short, whatever the mode
+
+
 def test_rebound_buys_the_first_green_bar_after_an_oversold_flush_and_nothing_else():
     from src.solana.strategies import Rebound, RULE_BOTS, FAST_BOTS
     from src.solana import config as cfg
