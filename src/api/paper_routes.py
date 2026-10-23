@@ -695,9 +695,10 @@ def arena_bot(model: str):
     real = [t for t in hl_live.get_live_engine().ledger.closed_trades() if t["strategy"] == model]
     pos_lab = [{"symbol": p["symbol"], "opened_at": p["opened_at"], "cost": round(p["cost_usd"], 2),
                 "now": round(p["mark_value"] or p["cost_usd"], 2), "pnl": round((p["mark_value"] or p["cost_usd"]) - p["cost_usd"], 4),
-                "stop": p["stop_price"], "tp": p["tp_price"]} for p in eng.ledger.positions()]
+                "stop": p["stop_price"], "tp": p["tp_price"], "short": p["mint"].endswith("~short")} for p in eng.ledger.positions()]
     pos_real = [{"symbol": p["symbol"], "opened_at": p["opened_at"], "cost": round(p["cost_usd"], 2),
-                 "now": round(p["mark_value"] or p["cost_usd"], 2), "pnl": round((p["mark_value"] or p["cost_usd"]) - p["cost_usd"], 4)}
+                 "now": round(p["mark_value"] or p["cost_usd"], 2), "pnl": round((p["mark_value"] or p["cost_usd"]) - p["cost_usd"], 4),
+                 "short": p["mint"].endswith("~short")}
                 for p in hl_live.get_live_engine().ledger.positions() if p["strategy"] == model]
     days: dict[str, dict] = {}
     for src, rows in (("lab", lab), ("real", real)):
