@@ -1,6 +1,8 @@
 """
 Natural selection for the reserves. Every EVOLVE_PERIOD_H (12h) of a reserve's life its trades of that period are
-judged: win rate below EVOLVE_MIN_WIN_RATE (60%) — or no trade at all — and the bot is retired. Its place goes to a
+judged: win rate below EVOLVE_MIN_WIN_RATE (60%) and the bot is retired. An EMPTY window is never a fail (waiting
+for its regime is healthy); only EVOLVE_IDLE_PERIODS consecutive empty windows while the team kept finding trades
+retire a bot as blind. A retiree's place goes to a
 successor named after a Palmeiras Libertadores champion (1999, 2020, 2021), same family of strategy, born with:
   1. adjusted exits learned from how the parent lost (wider stop if stops did the damage, closer target if the target
      was rarely reached, no forced 2h exit if time exits lost, longer hold if trades ran out of time),
@@ -154,6 +156,24 @@ def check(now: datetime | None = None) -> list[dict]:
             continue
         eng.ledger.set_state("judged_checkpoint", v["checkpoint"])
         eng.ledger.set_state("last_verdict", v)
+        if v["trades"] == 0:
+            # §8.5: an empty window is not a fail — a bot that waits for its regime is doing its job. "Blind" is
+            # different: many empty windows in a row WHILE the rest of the team kept finding trades.
+            idle = (eng.ledger.get_state("idle_checkpoints") or 0) + 1
+            eng.ledger.set_state("idle_checkpoints", idle)
+            since = (now - timedelta(hours=cfg.EVOLVE_PERIOD_H * idle)).isoformat(timespec="seconds")
+            team_n = sum(t["exit_ts"] >= since for m2, e2 in arena.bots().items() if m2 != model
+                         for t in e2.ledger.closed_trades())
+            if idle >= cfg.EVOLVE_IDLE_PERIODS and team_n >= cfg.EVOLVE_IDLE_TEAM_TRADES:
+                v = {**v, "idle": True, "idle_checkpoints": idle, "team_trades": team_n}
+                events.append(replace(model, v, trades, learning.record(eng.ledger, model), data))
+            else:
+                eng.ledger.log_decision("evolution", reason=(
+                    f"✳️ {idle}ª janela de {cfg.EVOLVE_PERIOD_H:.0f}h sem trades — esperar o regime certo não é punido "
+                    f"(corte só após {cfg.EVOLVE_IDLE_PERIODS} janelas vazias seguidas com o time operando; "
+                    f"o time fechou {team_n} nesse intervalo)"))
+            continue
+        eng.ledger.set_state("idle_checkpoints", 0)
         if v["pass"]:
             eng.ledger.log_decision("evolution", reason=f"✅ passou no corte de {cfg.EVOLVE_PERIOD_H}h: {v['wins']}/{v['trades']} ({v['win_rate']:.0%})")
             continue
@@ -187,8 +207,11 @@ def replace(model: str, verdict: dict, trades: list[dict], record: dict, data: d
     data["retired"].append({"model": model, "label": parent.get("label"), "at": verdict["end"], "verdict": verdict, "successor": new})
     old = arena.bots().pop(model)
     old.ledger.set_state("running", False)
-    old.ledger.log_decision("evolution", reason=f"❌ aposentado no corte de {cfg.EVOLVE_PERIOD_H}h: {verdict['wins']}/{verdict['trades']} "
-                                                 f"({verdict['win_rate']:.0%} < {cfg.EVOLVE_MIN_WIN_RATE:.0%}); sucessor: {label}")
+    old.ledger.log_decision("evolution", reason=(
+        f"❌ aposentado: {verdict['idle_checkpoints']} janelas de {cfg.EVOLVE_PERIOD_H:.0f}h sem um único trade enquanto "
+        f"o time fechou {verdict['team_trades']} — não identifica sinais; sucessor: {label}" if verdict.get("idle") else
+        f"❌ aposentado no corte de {cfg.EVOLVE_PERIOD_H}h: {verdict['wins']}/{verdict['trades']} "
+        f"({verdict['win_rate']:.0%} < {cfg.EVOLVE_MIN_WIN_RATE:.0%}); sucessor: {label}"))
     register(data)
     eng = arena.build_bot(new)
     eng.ledger.set_state("born_at", data["bots"][new]["born_at"])

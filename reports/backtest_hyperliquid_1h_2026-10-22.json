@@ -1,0 +1,412 @@
+{
+ "momentum": {
+  "oos": {
+   "return_pct": -4.51,
+   "max_dd_pct": 27.18,
+   "sharpe": 0.01,
+   "trades": 292,
+   "win_rate": 41.4
+  },
+  "folds": [
+   {
+    "fold": 1,
+    "params": {
+     "lookback": 24,
+     "vol_mult": 2.0,
+     "regime_sma": null
+    },
+    "return_pct": -6.13,
+    "max_dd_pct": 18.1,
+    "sharpe": -0.88,
+    "trades": 83,
+    "win_rate": 47.0
+   },
+   {
+    "fold": 2,
+    "params": {
+     "lookback": 48,
+     "vol_mult": 1.5,
+     "regime_sma": 200
+    },
+    "return_pct": 30.36,
+    "max_dd_pct": 15.07,
+    "sharpe": 4.56,
+    "trades": 99,
+    "win_rate": 51.5
+   },
+   {
+    "fold": 3,
+    "params": {
+     "lookback": 48,
+     "vol_mult": 2.0,
+     "regime_sma": 200
+    },
+    "return_pct": -21.97,
+    "max_dd_pct": 27.18,
+    "sharpe": -3.3,
+    "trades": 110,
+    "win_rate": 28.2
+   }
+  ],
+  "params": [
+   {
+    "lookback": 24,
+    "vol_mult": 2.0,
+    "regime_sma": null
+   },
+   {
+    "lookback": 48,
+    "vol_mult": 1.5,
+    "regime_sma": 200
+   },
+   {
+    "lookback": 48,
+    "vol_mult": 2.0,
+    "regime_sma": 200
+   }
+  ]
+ },
+ "mean_reversion": {
+  "oos": {
+   "return_pct": 7.92,
+   "max_dd_pct": 13.37,
+   "sharpe": 0.92,
+   "trades": 120,
+   "win_rate": 53.3
+  },
+  "folds": [
+   {
+    "fold": 1,
+    "params": {
+     "k": 2.5,
+     "rsi_max": 25,
+     "regime_sma": 200
+    },
+    "return_pct": 2.65,
+    "max_dd_pct": 4.08,
+    "sharpe": 1.33,
+    "trades": 20,
+    "win_rate": 65.0
+   },
+   {
+    "fold": 2,
+    "params": {
+     "k": 2.0,
+     "rsi_max": 25,
+     "regime_sma": 200
+    },
+    "return_pct": -2.14,
+    "max_dd_pct": 7.48,
+    "sharpe": -0.71,
+    "trades": 32,
+    "win_rate": 40.6
+   },
+   {
+    "fold": 3,
+    "params": {
+     "k": 2.5,
+     "rsi_max": 25,
+     "regime_sma": null
+    },
+    "return_pct": 7.43,
+    "max_dd_pct": 13.37,
+    "sharpe": 1.8,
+    "trades": 68,
+    "win_rate": 55.9
+   }
+  ],
+  "params": [
+   {
+    "k": 2.5,
+    "rsi_max": 25,
+    "regime_sma": 200
+   },
+   {
+    "k": 2.0,
+    "rsi_max": 25,
+    "regime_sma": 200
+   },
+   {
+    "k": 2.5,
+    "rsi_max": 25,
+    "regime_sma": null
+   }
+  ]
+ },
+ "hold_BTC": {
+  "oos": {
+   "return_pct": 31.59,
+   "max_dd_pct": 13.42,
+   "sharpe": 2.19,
+   "trades": 0,
+   "win_rate": null
+  }
+ },
+ "hold_ETH": {
+  "oos": {
+   "return_pct": 45.09,
+   "max_dd_pct": 17.45,
+   "sharpe": 2.27,
+   "trades": 0,
+   "win_rate": null
+  }
+ },
+ "hold_SOL": {
+  "oos": {
+   "return_pct": 59.1,
+   "max_dd_pct": 19.06,
+   "sharpe": 2.48,
+   "trades": 0,
+   "win_rate": null
+  }
+ },
+ "hold_HYPE": {
+  "oos": {
+   "return_pct": 33.82,
+   "max_dd_pct": 33.44,
+   "sharpe": 1.4,
+   "trades": 0,
+   "win_rate": null
+  }
+ },
+ "hold_XRP": {
+  "oos": {
+   "return_pct": 14.92,
+   "max_dd_pct": 24.4,
+   "sharpe": 0.91,
+   "trades": 0,
+   "win_rate": null
+  }
+ },
+ "hold_BNB": {
+  "oos": {
+   "return_pct": 23.07,
+   "max_dd_pct": 13.77,
+   "sharpe": 1.7,
+   "trades": 0,
+   "win_rate": null
+  }
+ },
+ "hold_DOGE": {
+  "oos": {
+   "return_pct": -7.15,
+   "max_dd_pct": 26.7,
+   "sharpe": -0.01,
+   "trades": 0,
+   "win_rate": null
+  }
+ },
+ "hold_ADA": {
+  "oos": {
+   "return_pct": 27.95,
+   "max_dd_pct": 26.76,
+   "sharpe": 1.24,
+   "trades": 0,
+   "win_rate": null
+  }
+ },
+ "hold_TRX": {
+  "oos": {
+   "return_pct": 1.7,
+   "max_dd_pct": 8.5,
+   "sharpe": 0.35,
+   "trades": 0,
+   "win_rate": null
+  }
+ },
+ "hold_AVAX": {
+  "oos": {
+   "return_pct": 37.58,
+   "max_dd_pct": 23.27,
+   "sharpe": 1.53,
+   "trades": 0,
+   "win_rate": null
+  }
+ },
+ "hold_LINK": {
+  "oos": {
+   "return_pct": 52.11,
+   "max_dd_pct": 25.26,
+   "sharpe": 2.05,
+   "trades": 0,
+   "win_rate": null
+  }
+ },
+ "hold_LTC": {
+  "oos": {
+   "return_pct": 36.31,
+   "max_dd_pct": 23.59,
+   "sharpe": 1.74,
+   "trades": 0,
+   "win_rate": null
+  }
+ },
+ "hold_BCH": {
+  "oos": {
+   "return_pct": 34.99,
+   "max_dd_pct": 29.98,
+   "sharpe": 1.45,
+   "trades": 0,
+   "win_rate": null
+  }
+ },
+ "hold_XLM": {
+  "oos": {
+   "return_pct": -8.93,
+   "max_dd_pct": 38.42,
+   "sharpe": 0.06,
+   "trades": 0,
+   "win_rate": null
+  }
+ },
+ "hold_HBAR": {
+  "oos": {
+   "return_pct": 0.3,
+   "max_dd_pct": 39.32,
+   "sharpe": 0.36,
+   "trades": 0,
+   "win_rate": null
+  }
+ },
+ "hold_DOT": {
+  "oos": {
+   "return_pct": 16.03,
+   "max_dd_pct": 30.2,
+   "sharpe": 0.9,
+   "trades": 0,
+   "win_rate": null
+  }
+ },
+ "hold_SUI": {
+  "oos": {
+   "return_pct": 30.1,
+   "max_dd_pct": 28.3,
+   "sharpe": 1.28,
+   "trades": 0,
+   "win_rate": null
+  }
+ },
+ "hold_NEAR": {
+  "oos": {
+   "return_pct": 124.95,
+   "max_dd_pct": 39.14,
+   "sharpe": 2.51,
+   "trades": 0,
+   "win_rate": null
+  }
+ },
+ "hold_AAVE": {
+  "oos": {
+   "return_pct": 135.66,
+   "max_dd_pct": 22.1,
+   "sharpe": 3.17,
+   "trades": 0,
+   "win_rate": null
+  }
+ },
+ "hold_UNI": {
+  "oos": {
+   "return_pct": 182.42,
+   "max_dd_pct": 36.56,
+   "sharpe": 3.18,
+   "trades": 0,
+   "win_rate": null
+  }
+ },
+ "hold_ARB": {
+  "oos": {
+   "return_pct": 122.47,
+   "max_dd_pct": 34.55,
+   "sharpe": 2.47,
+   "trades": 0,
+   "win_rate": null
+  }
+ },
+ "hold_TAO": {
+  "oos": {
+   "return_pct": 25.08,
+   "max_dd_pct": 33.9,
+   "sharpe": 1.14,
+   "trades": 0,
+   "win_rate": null
+  }
+ },
+ "hold_ZEC": {
+  "oos": {
+   "return_pct": 185.68,
+   "max_dd_pct": 37.33,
+   "sharpe": 3.23,
+   "trades": 0,
+   "win_rate": null
+  }
+ },
+ "hold_XMR": {
+  "oos": {
+   "return_pct": 95.12,
+   "max_dd_pct": 27.42,
+   "sharpe": 2.59,
+   "trades": 0,
+   "win_rate": null
+  }
+ },
+ "hold_WLD": {
+  "oos": {
+   "return_pct": 6.61,
+   "max_dd_pct": 57.85,
+   "sharpe": 0.73,
+   "trades": 0,
+   "win_rate": null
+  }
+ },
+ "hold_ENA": {
+  "oos": {
+   "return_pct": 146.26,
+   "max_dd_pct": 40.19,
+   "sharpe": 2.64,
+   "trades": 0,
+   "win_rate": null
+  }
+ },
+ "hold_ZRO": {
+  "oos": {
+   "return_pct": 111.66,
+   "max_dd_pct": 41.42,
+   "sharpe": 2.23,
+   "trades": 0,
+   "win_rate": null
+  }
+ },
+ "hold_ONDO": {
+  "oos": {
+   "return_pct": 19.83,
+   "max_dd_pct": 30.57,
+   "sharpe": 0.99,
+   "trades": 0,
+   "win_rate": null
+  }
+ },
+ "hold_kPEPE": {
+  "oos": {
+   "return_pct": 58.32,
+   "max_dd_pct": 30.54,
+   "sharpe": 1.84,
+   "trades": 0,
+   "win_rate": null
+  }
+ },
+ "hold_PUMP": {
+  "oos": {
+   "return_pct": 198.15,
+   "max_dd_pct": 42.24,
+   "sharpe": 2.86,
+   "trades": 0,
+   "win_rate": null
+  }
+ },
+ "_span": {
+  "oos_start": "2026-06-09T23:00:00+00:00",
+  "oos_end": "2026-10-22T23:00:00+00:00",
+  "bars": 3241,
+  "folds": 4
+ }
+}

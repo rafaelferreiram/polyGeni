@@ -266,8 +266,13 @@ QUOTA_RELAX_ENTRIES = os.getenv("QUOTA_RELAX_ENTRIES", "0") == "1"
 # manual promotion from the bot's modal (the user's rule): this many lab wins and at least this win rate
 PROMOTE_MIN_WINS = _i("PROMOTE_MIN_WINS", 12)
 PROMOTE_MIN_WIN_RATE = _f("PROMOTE_MIN_WIN_RATE", 0.35)
-# evolution: every EVOLVE_PERIOD_H of a reserve's life, under EVOLVE_MIN_WIN_RATE (or no trade) -> replaced by a successor
+# evolution: every EVOLVE_PERIOD_H of a reserve's life, under EVOLVE_MIN_WIN_RATE -> replaced by a successor.
+# An EMPTY window is NOT a fail (§8.5: waiting for its regime is healthy — punishing it breeds overtrading): a
+# reserve is only retired as "blind" after EVOLVE_IDLE_PERIODS consecutive empty windows while the rest of the
+# team closed ≥ EVOLVE_IDLE_TEAM_TRADES trades in that stretch (opportunities existed; this bot saw none).
 EVOLVE_PERIOD_H = _f("EVOLVE_PERIOD_H", 12)
+EVOLVE_IDLE_PERIODS = _i("EVOLVE_IDLE_PERIODS", 6)
+EVOLVE_IDLE_TEAM_TRADES = _i("EVOLVE_IDLE_TEAM_TRADES", 10)
 EVOLVE_MIN_WIN_RATE = _f("EVOLVE_MIN_WIN_RATE", 0.6)          # the real account fields at most this many bots: the best ones
 GREEN_LIGHT_TRADES = _i("GREEN_LIGHT_TRADES", 20)
 GREEN_LIGHT_WINS = _i("GREEN_LIGHT_WINS", 12)
