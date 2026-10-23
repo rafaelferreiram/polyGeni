@@ -276,6 +276,10 @@ LIVE_ALLOW_SHORT = os.getenv("LIVE_ALLOW_SHORT", "0") == "1"
 BEAR_MODE = os.getenv("BEAR_MODE", "0") == "1"
 BEAR_BREAK_BARS = _i("BEAR_BREAK_BARS", 8)
 BEAR_FADE_RSI = _f("BEAR_FADE_RSI", 65.0)
+# BEAR_OVERRIDE_BOTS (owner, 23/10/2026: "go make money with the bots"): with BEAR_MODE on, these bots skip the two statistical
+# gates (team-learning avoid list and the edge/EV check) so a breakdown short can actually be taken and measured live.
+# Only those gates: the real-account short limits ($10, 2x, 1 open, 3/day, $1 daily short loss, stop <= 3%, BTC filter) still apply.
+BEAR_OVERRIDE_BOTS = [m for m in os.getenv("BEAR_OVERRIDE_BOTS", "").split(",") if m]
 LIVE_SHORT_MAX_OPEN = _i("LIVE_SHORT_MAX_OPEN", 1)
 LIVE_SHORT_MAX_PER_DAY = _i("LIVE_SHORT_MAX_PER_DAY", 3)
 LIVE_SHORT_DAILY_LOSS_USD = _f("LIVE_SHORT_DAILY_LOSS_USD", 1.0)

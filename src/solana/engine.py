@@ -737,7 +737,8 @@ class PaperEngine:
                 tags = learning.situation(candles, c.symbol)
                 if reg and reg.get("state") not in (None, "sem dados"):
                     tags = tags + [f"regime {reg['state']}"]      # per-regime record: the evidence a future gate needs
-                if cfg.SELF_LEARNING:
+                bear_override = cfg.BEAR_MODE and strat.name in cfg.BEAR_OVERRIDE_BOTS
+                if cfg.SELF_LEARNING and not bear_override:
                     rec = learning.record(self._learn_ledger(strat.name), strat.name)
                     from src.solana import evolution
                     team = learning.team_record()
@@ -751,7 +752,7 @@ class PaperEngine:
                                                  signals={"tags": tags}, reason=f"aprendizado: evita {why}")
                         stats["vetoes"] += 1
                         continue
-                if lab_model and cfg.SELF_LEARNING and not getattr(sig, "handed", False):
+                if lab_model and cfg.SELF_LEARNING and not bear_override and not getattr(sig, "handed", False):
                     from src.solana import arena
                     if mate := learning.better_teammate(lab_model, tags):
                         arena.post_handoff(mate[0], c.symbol, sig, lab_model, mate[1])
@@ -760,7 +761,7 @@ class PaperEngine:
                                                  reason=f"📨 passou {c.symbol} para {mate[0]}: {mate[1]}")
                         continue
                 est = None
-                if cfg.EDGE_CHECK:                      # margin of error: odds of this trade from every memory we have
+                if cfg.EDGE_CHECK and not bear_override:   # margin of error: odds of this trade from every memory we have
                     from src.solana import arena, edge as edge_mod
                     mine = self._learn_ledger(strat.name)
                     pay = edge_mod.payoff(mine.closed_trades(), edge_mod.payoff(
