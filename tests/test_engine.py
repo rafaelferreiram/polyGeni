@@ -887,3 +887,32 @@ def test_watchdog_tick_respects_armed_and_running(monkeypatch):
     monkeypatch.setattr(hl_live, "get_shadow_engine", lambda: sim)
     hl_live.watch_exits()
     assert seen == ["sim"]                               # disarmed real account is not managed; running sim is
+
+
+def test_an_open_long_blocks_the_same_coins_short_in_the_same_cycle(ledger):
+    """SOL incident (24/10/2026): one bot bought SOL and another shorted it 11s later — on a one-way venue the
+    short order just closed the long, paying fees for nothing. The opposite direction of a held coin is vetoed."""
+    class Both:
+        def candidates(self):
+            return [candidate(mint="hl:BTC", symbol="BTC"), candidate(mint="hl:BTC~short", symbol="BTC")]
+
+    class Fire:
+        capital_pct = 0.5
+
+        def __init__(self, name):
+            self.name = name
+
+        def signal(self, candles):
+            return Signal(self.name, 1.0, 0.05, 0.10, "fixture")
+
+    broker = PaperBroker(ledger, quote_fn=Price(1.0).quote, sol_usd_fn=lambda: 100.0, slippage_bps=0, fee_lamports=0)
+    eng = PaperEngine(ledger, Both(), FakeSafety(), [Fire("momentum"), Fire("short_break")], DebateAgent(enabled=False),
+                      RiskAgent(), ExecutorAgent(broker), candles_fn=lambda pool: flat_candles(60), profiles={})
+    eng.run_cycle()
+    entries = ledger.decisions(kind="entry")
+    assert len(entries) == 1 and entries[0]["mint"] == "hl:BTC"
+    vetoes = [d for d in ledger.decisions(kind="veto") if "direção oposta" in (d["reason"] or "")]
+    assert vetoes and vetoes[0]["mint"] == "hl:BTC~short"
+    # and on the next cycle, with the long still open, the short stays blocked
+    eng.run_cycle()
+    assert all(d["mint"] == "hl:BTC" for d in ledger.decisions(kind="entry"))
