@@ -361,8 +361,10 @@ class HyperliquidLiveBroker(Broker):
         sz = sum(float(f["sz"]) for f in fills)
         if sz <= 0:
             raise RuntimeError(f"{coin} is gone from the exchange but no closing fills were found")
-        notional = sum(float(f["sz"]) * float(f["px"]) for f in fills)
-        avg = notional / sz
+        avg = sum(float(f["sz"]) * float(f["px"]) for f in fills) / sz
+        # cap by the position's own qty: the closing fills may include other orders on the same coin (24/10/2026:
+        # another bot's SOL sell matched this filter and the exit was booked at double its value)
+        notional = min(sz, qty) * avg
         if short:                                    # book it on the mirror price, like every other short fill
             notional, avg = min(sz, qty) * (2 * self._short_entry(instrument, entry_id) - avg), 2 * self._short_entry(instrument, entry_id) - avg
         if entry_id:
@@ -370,7 +372,8 @@ class HyperliquidLiveBroker(Broker):
         fill, _ = self.ledger.append_fill(dict(
             order_id=order_id, ts=now_iso(), venue=self.venue, side="sell", mint=instrument, symbol=symbol,
             strategy=strategy, qty=min(sz, qty), decimals=0, usd_gross=notional,
-            fee_usd=sum(float(f.get("fee", 0)) for f in fills), price=avg, quote_price=avg, price_impact_pct=0,
+            fee_usd=sum(float(f.get("fee", 0)) for f in fills) * min(sz, qty) / sz,
+            price=avg, quote_price=avg, price_impact_pct=0,
             slippage_bps=0, route=f"Hyperliquid {network()} native trigger",
             stop_price=None, tp_price=None, meta=json.dumps({"reason": "stop/take-profit filled on the exchange",
                                                              "oids": [f.get("oid") for f in fills]}),
