@@ -518,3 +518,20 @@ def test_429_is_retried_with_waits_and_other_errors_are_not():
     api = hl_live.with_429_retry(Bad(), sleep=lambda s: pytest.fail("slept on a 422"))
     with pytest.raises(ClientError):
         api.post("/exchange")
+
+
+def test_native_exit_books_only_this_positions_qty_even_with_other_fills_on_the_coin(live):
+    """SOL (24/10/2026): another bot's sell on the same coin matched the closing-fills filter and the long's exit
+    was booked at double its value, inflating the ledger's cash by one position size."""
+    ledger, info, ex, br = live
+    entry = buy(br)
+    ledger.upsert_position({**ledger.positions_from_fills()["hl:BTC"], "mark_price": None, "mark_value": None})
+    info.positions.pop("BTC")
+    qty = float(entry["qty"])
+    info.fills.append({"oid": 998, "coin": "BTC", "side": "A", "sz": str(qty), "px": "80000", "fee": "0.004", "time": 10**15})
+    info.fills.append({"oid": 999, "coin": "BTC", "side": "A", "sz": str(qty), "px": "80000", "fee": "0.004", "time": 10**15})
+    assert br.sync() == []
+    exit_fill = [f for f in ledger.fills(10) if f["side"] == "sell"][0]
+    assert exit_fill["usd_gross"] == pytest.approx(qty * 80000)
+    assert exit_fill["qty"] == pytest.approx(qty)
+    assert exit_fill["fee_usd"] == pytest.approx(0.004)
