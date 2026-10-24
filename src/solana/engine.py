@@ -656,6 +656,13 @@ class PaperEngine:
                 break
             if c.mint in held:          # already holding it: its stop/target and exit review handle it — no AI tokens
                 continue
+            opposite = c.mint.removesuffix("~short") if c.mint.endswith("~short") else c.mint + "~short"
+            if opposite in held:        # one-way venue (Hyperliquid): the opposite side would CLOSE the open
+                self.ledger.log_decision(  # position, not hedge it (incident: SOL long + short, 24/10/2026)
+                    "veto", cycle=self.cycle, mint=c.mint, symbol=c.symbol,
+                    reason=f"{c.symbol}: direção oposta já aberta — numa exchange de posição única a ordem fecharia a posição")
+                stats["vetoes"] += 1
+                continue
             if why := self._redundant(c, corr_map):   # correlated with an open position: no real diversification
                 self._agent("risk", last_reason=f"{c.symbol}: {why}")
                 if time.time() - self._safety_logged.get(f"corr:{c.mint}", 0) > 3600:   # don't flood the log
@@ -851,6 +858,7 @@ class PaperEngine:
                 # the hold cap in force NOW is this trade's contract: a later config change never closes it retroactively
                 self.ledger.set_state(f"hold:{order_id}", _max_hold(strat.name, self.max_hold_h, bool(lab_model)))
                 self.reconcile()
+                held.add(c.mint)        # within this cycle too: a later candidate must see this entry
                 stats["entries"] += 1
                 self._agent("executor", last_reason=f"bought {c.symbol} ${fill['usd_gross']:.2f}", approved=1)
                 self.ledger.log_decision("entry", cycle=self.cycle, mint=c.mint, symbol=c.symbol,
