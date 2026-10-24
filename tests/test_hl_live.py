@@ -483,3 +483,38 @@ def test_short_gate_enforces_regime_and_the_small_limits(live, monkeypatch):
     monkeypatch.setattr(cfg, "LIVE_SHORT_MAX_OPEN", 5)
     monkeypatch.setattr(cfg, "LIVE_SHORT_MAX_PER_DAY", 1)
     assert "por dia" in hl_live.short_gate(ledger, False)
+
+
+def test_429_is_retried_with_waits_and_other_errors_are_not():
+    from hyperliquid.utils.error import ClientError
+
+    class Api:
+        def __init__(self, failures):
+            self.failures, self.calls = failures, []
+
+        def post(self, url_path, payload=None):
+            self.calls.append(url_path)
+            if len(self.calls) <= self.failures:
+                raise ClientError(429, None, "rate limited", None)
+            return {"ok": True}
+
+    waits = []
+    api = hl_live.with_429_retry(Api(failures=2), sleep=waits.append)
+    assert api.post("/info", {"type": "allMids"}) == {"ok": True}
+    assert len(api.calls) == 3 and waits == [2.0, 5.0]
+
+    # the waits run out: the last 429 propagates
+    waits.clear()
+    api = hl_live.with_429_retry(Api(failures=99), sleep=waits.append)
+    with pytest.raises(ClientError):
+        api.post("/exchange")
+    assert waits == list(hl_live.RETRY_WAITS)
+
+    # a non-429 client error (bad request) is never retried
+    class Bad:
+        def post(self, url_path, payload=None):
+            raise ClientError(422, "bad", "bad order", None)
+
+    api = hl_live.with_429_retry(Bad(), sleep=lambda s: pytest.fail("slept on a 422"))
+    with pytest.raises(ClientError):
+        api.post("/exchange")
