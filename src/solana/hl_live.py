@@ -40,6 +40,30 @@ def network() -> str:
     return cfg.HL_NETWORK if cfg.HL_NETWORK in API_URLS else "testnet"
 
 
+RETRY_WAITS = (2.0, 5.0, 12.0)
+
+
+def with_429_retry(api, sleep=time.sleep):
+    """Hyperliquid rejects requests over its rate limit with 429 before processing them, and the SDK gives up on the
+    first one — losing the whole 3-minute cycle (sync skipped, entries refused). Waiting a few seconds inside the
+    call wins the cycle back; only 429 is retried, so an order can never execute twice."""
+    inner = api.post
+
+    def post(url_path, payload=None):
+        from hyperliquid.utils.error import ClientError
+        for wait in (*RETRY_WAITS, None):
+            try:
+                return inner(url_path, payload)
+            except ClientError as e:
+                if wait is None or getattr(e, "status_code", None) != 429:
+                    raise
+                logger.info(f"HL 429 on {url_path}: retrying in {wait:.0f}s")
+                sleep(wait)
+
+    api.post = post
+    return api
+
+
 def info_url() -> str:
     return API_URLS[network()] + "/info"
 
@@ -134,8 +158,9 @@ class HyperliquidLiveBroker(Broker):
             from eth_account import Account
             from hyperliquid.exchange import Exchange
             wallet = Account.from_key(api_key())
-            self._exchange = Exchange(wallet, API_URLS[network()], account_address=self.address, perp_dexs=["", "xyz"])
-            self._info = self._exchange.info
+            self._exchange = with_429_retry(
+                Exchange(wallet, API_URLS[network()], account_address=self.address, perp_dexs=["", "xyz"]))
+            self._info = with_429_retry(self._exchange.info)
         return self._exchange, self._info
 
     def _sz_decimals(self, coin: str) -> int:
